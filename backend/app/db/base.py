@@ -5,6 +5,9 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, func
 from sqlmodel import Field, SQLModel
 
+# Alias SQLModel as Base for compatibility with existing code
+Base = SQLModel
+
 # Naming convention for database constraints and indexes
 # This ensures consistent naming across all migrations
 NAMING_CONVENTION = {
@@ -23,17 +26,17 @@ class TimestampMixin(SQLModel):
     """Mixin for created_at and updated_at timestamps."""
 
     created_at: datetime = Field(
-        sa_column=Column(
-            DateTime(timezone=True),
-            server_default=func.now(),
-            nullable=False,
-        ),
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={
+            "server_default": func.now(),
+            "nullable": False,
+        },
     )
     updated_at: datetime | None = Field(
         default=None,
-        sa_column=Column(
-            DateTime(timezone=True),
-            onupdate=func.now(),
-            nullable=True,
-        ),
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={
+            "onupdate": func.now(),
+            "nullable": True,
+        },
     )

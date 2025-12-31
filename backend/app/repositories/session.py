@@ -1,6 +1,6 @@
 """Session repository (PostgreSQL async)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -70,7 +70,7 @@ async def create(
 async def update_last_used(db: AsyncSession, session_id: UUID) -> None:
     """Update session last used timestamp."""
     await db.execute(
-        update(Session).where(Session.id == session_id).values(last_used_at=datetime.utcnow())
+        update(Session).where(Session.id == session_id).values(last_used_at=datetime.now(timezone.utc))
     )
     await db.flush()
 

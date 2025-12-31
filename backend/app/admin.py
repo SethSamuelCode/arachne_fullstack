@@ -58,7 +58,11 @@ def discover_models(base: type[DeclarativeBase]) -> list[type]:
     Returns:
         List of model classes that inherit from the Base.
     """
-    return [mapper.class_ for mapper in base.registry.mappers]
+    if hasattr(base, "registry"):
+        return [mapper.class_ for mapper in base.registry.mappers]
+    elif hasattr(base, "_sa_registry"):
+        return [mapper.class_ for mapper in base._sa_registry.mappers]
+    return []
 
 
 def get_model_columns(model: type) -> list[str]:

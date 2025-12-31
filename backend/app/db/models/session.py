@@ -1,7 +1,7 @@
 """Session database model for tracking user sessions using SQLModel."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -33,9 +33,11 @@ class Session(SQLModel, table=True):
     user_agent: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     is_active: bool = Field(default=True)
     created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
     last_used_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
     expires_at: datetime = Field(
