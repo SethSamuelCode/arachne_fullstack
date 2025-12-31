@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseWebSocketOptions {
-  url: string;
+  url: string | null;
   onMessage?: (event: MessageEvent) => void;
   onOpen?: () => void;
-  onClose?: () => void;
+  onClose?: (event: CloseEvent) => void;
   onError?: (error: Event) => void;
   reconnect?: boolean;
   reconnectInterval?: number;
@@ -43,6 +43,7 @@ export function useWebSocket({
   }, [onMessage, onOpen, onClose, onError]);
 
   const connect = useCallback(() => {
+    if (!url) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     const ws = new WebSocket(url);
@@ -58,9 +59,14 @@ export function useWebSocket({
       onMessageRef.current?.(event);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setIsConnected(false);
-      onCloseRef.current?.();
+      onCloseRef.current?.(event);
+
+      // Don't reconnect if it was a clean close or auth failure (4001)
+      if (event.code === 4001) {
+        return;
+      }
 
       if (reconnect && reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectTimeoutRef.current = setTimeout(() => {

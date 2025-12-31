@@ -36,4 +36,4 @@ export const ROUTES = {
 } as const;
 
 // WebSocket URL (for chat - this needs to be direct to backend for WS)
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://srv.fluffyb.net:8550";

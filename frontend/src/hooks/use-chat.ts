@@ -159,13 +159,20 @@ export function useChat(options: UseChatOptions = {}) {
     [currentMessageId, addMessage, updateMessage, addToolCall, updateToolCall, setCurrentConversationId, onConversationCreated]
   );
 
+  const handleWebSocketClose = useCallback((event: CloseEvent) => {
+    if (event.code === 4001) {
+      console.error("WebSocket authentication failed");
+    }
+  }, []);
+
   const wsUrl = token 
     ? `${WS_URL}/api/v1/ws/agent?token=${token}` 
-    : `${WS_URL}/api/v1/ws/agent`;
+    : null;
 
   const { isConnected, connect, disconnect, sendMessage } = useWebSocket({
     url: wsUrl,
     onMessage: handleWebSocketMessage,
+    onClose: handleWebSocketClose,
   });
 
   const sendChatMessage = useCallback(

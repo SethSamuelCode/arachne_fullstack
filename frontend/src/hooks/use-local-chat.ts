@@ -119,7 +119,7 @@ export function useLocalChat() {
     [currentMessageId, addMessage, updateMessage, addToolCall, updateToolCall]
   );
 
-  const wsUrl = `${WS_URL}/api/v1/ws/agent`;
+  const wsUrl = null; // Local chat should not connect to backend agent without auth
 
   const { isConnected, connect, disconnect, sendMessage } = useWebSocket({
     url: wsUrl,
@@ -142,7 +142,20 @@ export function useLocalChat() {
       addMessage(userMessage);
 
       setIsProcessing(true);
-      sendMessage({ message: content });
+      // sendMessage({ message: content });
+      // Mock response for local chat since we can't connect to backend without auth
+      setTimeout(() => {
+        const newMsgId = nanoid();
+        addMessage({
+          id: newMsgId,
+          role: "assistant",
+          content: "I am a local placeholder. Please log in to use the AI agent.",
+          timestamp: new Date(),
+          isStreaming: false,
+          toolCalls: [],
+        });
+        setIsProcessing(false);
+      }, 1000);
     },
     [addMessage, sendMessage, currentConversationId, createConversation]
   );
