@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { nanoid } from "nanoid";
 import { useWebSocket } from "./use-websocket";
 import { useChatStore } from "@/stores";
@@ -26,6 +26,23 @@ export function useChat(options: UseChatOptions = {}) {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/token")
+      .then((res) => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then((data) => {
+        if (data?.access_token) {
+          setToken(data.access_token);
+        }
+      })
+      .catch(() => {
+        // Ignore error
+      });
+  }, []);
 
   const handleWebSocketMessage = useCallback(
     (event: MessageEvent) => {
@@ -142,7 +159,9 @@ export function useChat(options: UseChatOptions = {}) {
     [currentMessageId, addMessage, updateMessage, addToolCall, updateToolCall, setCurrentConversationId, onConversationCreated]
   );
 
-  const wsUrl = `${WS_URL}/api/v1/ws/agent`;
+  const wsUrl = token 
+    ? `${WS_URL}/api/v1/ws/agent?token=${token}` 
+    : `${WS_URL}/api/v1/ws/agent`;
 
   const { isConnected, connect, disconnect, sendMessage } = useWebSocket({
     url: wsUrl,
