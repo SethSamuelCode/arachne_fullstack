@@ -1,0 +1,5 @@
+FROM oven/bun:canary-alpine AS base
+
+# Install dependencies 
+WORKDIR /app 
+

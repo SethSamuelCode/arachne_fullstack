@@ -97,7 +97,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      # start_period: 30s
     restart: unless-stopped
 
   celery_beat:
@@ -149,7 +149,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      # start_period: 10s
     restart: unless-stopped
 
   s3:
@@ -171,6 +171,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: arachne_fullstack_frontend
+    ports:
+      - "3552:3552"
+    volumes:
+      - ./frontend:/app
+    env_file:
+      - ./frontend/.env
+    command: bun run dev
+    networks:
+      - backend
+    depends_on:
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:

@@ -104,3 +104,4 @@ logs/
 Thumbs.db
 
 # Project specific
+copilot-*
