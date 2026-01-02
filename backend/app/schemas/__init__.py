@@ -27,6 +27,8 @@ from app.schemas.webhook import (
     WebhookTestResponse,
 )
 
+from app.schemas.models import GeminiModelName, DEFAULT_GEMINI_MODEL
+
 __all__ = [
     "UserCreate",
     "UserRead",
@@ -52,4 +54,6 @@ __all__ = [
     "WebhookListResponse",
     "WebhookDeliveryListResponse",
     "WebhookTestResponse",
+    "GeminiModelName",
+    "DEFAULT_GEMINI_MODEL",
 ]

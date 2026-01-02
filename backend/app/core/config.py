@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=find_env_file(),
         env_ignore_empty=True,
-        extra="ignore",
+        extra="allow",
     )
 
     # === Project ===

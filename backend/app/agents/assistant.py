@@ -17,11 +17,14 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.settings import ModelSettings
 
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tools import get_current_datetime
 from app.core.config import settings
+
+from app.schemas import DEFAULT_GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -50,20 +53,18 @@ class AssistantAgent:
         temperature: float | None = None,
         system_prompt: str | None = None,
     ):
-        self.model_name = model_name or settings.AI_MODEL
+        self.model_name = DEFAULT_GEMINI_MODEL
         self.temperature = temperature or settings.AI_TEMPERATURE
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self._agent: Agent[Deps, str] | None = None
 
     def _create_agent(self) -> Agent[Deps, str]:
         """Create and configure the PydanticAI agent."""
-        model = OpenAIChatModel(
-            self.model_name,
-            provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
-        )
+        model = GoogleModel(model_name=self.model_name)
 
         agent = Agent[Deps, str](
             model=model,
+            deps_type=Deps,
             model_settings=ModelSettings(temperature=self.temperature),
             system_prompt=self.system_prompt,
         )
