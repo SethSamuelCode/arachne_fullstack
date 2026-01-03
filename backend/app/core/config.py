@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=find_env_file(),
         env_ignore_empty=True,
-        extra="allow",
+        case_sensitive=False,
+        extra="ignore",
     )
 
     # === Project ===
@@ -143,5 +144,7 @@ class Settings(BaseSettings):
             )
         return v
 
+    # == Web Search (Tavily) ===
+    TAVILY_API_KEY: str | None = None
 
 settings = Settings()

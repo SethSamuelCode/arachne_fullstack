@@ -15,30 +15,20 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.settings import ModelSettings
 
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
-from app.agents.tools import get_current_datetime
 from app.core.config import settings
 
 from app.schemas import DEFAULT_GEMINI_MODEL
 
+from app.agents.tool_register import register_tools
+from app.schemas.assistant import Deps
+
+
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class Deps:
-    """Dependencies for the assistant agent.
-
-    These are passed to tools via RunContext.
-    """
-
-    user_id: str | None = None
-    user_name: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class AssistantAgent:
@@ -69,20 +59,11 @@ class AssistantAgent:
             system_prompt=self.system_prompt,
         )
 
-        self._register_tools(agent)
+        register_tools(agent)
 
         return agent
 
-    def _register_tools(self, agent: Agent[Deps, str]) -> None:
-        """Register all tools on the agent."""
 
-        @agent.tool
-        async def current_datetime(ctx: RunContext[Deps]) -> str:
-            """Get the current date and time.
-
-            Use this tool when you need to know the current date or time.
-            """
-            return get_current_datetime()
 
     @property
     def agent(self) -> Agent[Deps, str]:

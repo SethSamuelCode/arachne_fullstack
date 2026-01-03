@@ -28,6 +28,14 @@ from app.schemas.webhook import (
 )
 
 from app.schemas.models import GeminiModelName, DEFAULT_GEMINI_MODEL
+from app.schemas.web_search import (
+    WebSearchRequest,
+    WebSearchResult,
+    WebSearchResponse,
+    FetchUrlRequest,
+    FetchUrlResponse,
+)
+from app.schemas.assistant import Deps
 
 __all__ = [
     "UserCreate",
@@ -56,4 +64,10 @@ __all__ = [
     "WebhookTestResponse",
     "GeminiModelName",
     "DEFAULT_GEMINI_MODEL",
+    "WebSearchRequest",
+    "WebSearchResult",
+    "WebSearchResponse",
+    "FetchUrlRequest",
+    "FetchUrlResponse",
+    "Deps",
 ]
