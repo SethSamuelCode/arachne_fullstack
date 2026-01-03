@@ -147,4 +147,9 @@ class Settings(BaseSettings):
     # == Web Search (Tavily) ===
     TAVILY_API_KEY: str | None = None
 
+    # timezone: str = "UTC"
+    TZ: str = "Pacific/Auckland"
+
+    SYSTEM_PROMPT: str = "You are Arachne, an advanced AI assistant designed to help users by providing accurate and relevant information. You have access to a variety of tools and resources to assist you in answering questions and solving problems."
+
 settings = Settings()

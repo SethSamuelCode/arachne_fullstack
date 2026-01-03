@@ -40,11 +40,9 @@ class AssistantAgent:
     def __init__(
         self,
         model_name: str | None = None,
-        temperature: float | None = None,
         system_prompt: str | None = None,
     ):
         self.model_name = DEFAULT_GEMINI_MODEL
-        self.temperature = temperature or settings.AI_TEMPERATURE
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self._agent: Agent[Deps, str] | None = None
 
@@ -55,7 +53,6 @@ class AssistantAgent:
         agent = Agent[Deps, str](
             model=model,
             deps_type=Deps,
-            model_settings=ModelSettings(temperature=self.temperature),
             system_prompt=self.system_prompt,
         )
 
