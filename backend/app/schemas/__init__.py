@@ -36,6 +36,7 @@ from app.schemas.web_search import (
     FetchUrlResponse,
 )
 from app.schemas.assistant import Deps
+from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 __all__ = [
     "UserCreate",
@@ -70,4 +71,5 @@ __all__ = [
     "FetchUrlRequest",
     "FetchUrlResponse",
     "Deps",
+    "SpawnAgentDeps",
 ]
