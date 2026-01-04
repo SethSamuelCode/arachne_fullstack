@@ -18,6 +18,7 @@ class SingleTask(BaseModel):
 class Plan(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str = Field(default="", description="Name of the plan.", examples=["Project Launch Plan", "Marketing Strategy Plan"])
+    plan_description: str = Field(default="", description="Detailed description of the plan and its objectives.", examples=["This plan outlines the steps to successfully launch the new product.", "This plan details the marketing strategies for the upcoming quarter."])    
     steps: list[SingleTask] = Field(default=[], description="List of tasks that make up the plan.")
     plan_notes: str | None = Field(default=None, description="Additional notes or context for the plan.", examples=["Include budget considerations.", "Outline key milestones."])
     plan_completed: bool = Field(default=False, description="Indicates whether the plan has been completed.")

@@ -202,3 +202,19 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         plan_service = get_plan_service()
         result = plan_service.delete_plan(plan_id)
         return result
+    
+    @agent.tool
+    async def get_all_plans(
+        ctx: RunContext[TDeps],
+    ) -> list:
+        """Retrieve a summary of all plans.
+
+        Use this tool to get a list of all existing plans with their IDs, names, and descriptions.
+
+        Returns:
+            A list of tuples containing plan ID, name, and description.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+        plan_service = get_plan_service()
+        result = plan_service.get_all_plans()
+        return result

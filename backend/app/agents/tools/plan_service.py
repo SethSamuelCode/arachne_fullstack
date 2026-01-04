@@ -47,6 +47,12 @@ class PlanStore:
             return f"plan {plan_id} deleted"
         return f"plan {plan_id} not found"
 
+    def get_all_plans(self) -> list:
+        export_list = []
+        for plan in self.plans.values():
+            export_list.append((plan.id, plan.name, plan.plan_description))
+        return export_list
+
 plan_service = PlanStore()
 
 def get_plan_service():
