@@ -10,6 +10,7 @@ from app.schemas.models import GeminiModelName
 from typing import Any
 from pydantic_ai.models.google import GoogleModel
 from app.schemas import DEFAULT_GEMINI_MODEL
+from app.schemas.planning import Plan
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
@@ -120,4 +121,84 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             result = await sub_agent.run(user_input, deps=child_deps)
             return _stringify(result.output)
             
-            
+    @agent.tool
+    async def create_plan(
+        ctx: RunContext[TDeps],
+        plan: Plan
+    ) -> str:
+        """Create a new plan.
+
+        Use this tool to create a structured plan with a list of tasks.
+        
+        Args:
+            plan: The plan object containing the name and list of tasks (steps).
+
+        Returns:
+            The ID of the created plan.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+        plan_service = get_plan_service()
+        plan_id = plan_service.create_plan(plan)
+        return plan_id
+
+    @agent.tool
+    async def get_plan(
+        ctx: RunContext[TDeps],
+        plan_id: str
+    ) -> Plan | str:
+        """Retrieve a plan by its ID.
+
+        Use this tool to fetch the details of an existing plan, including its tasks and status.
+
+        Args:
+            plan_id: The unique identifier of the plan to retrieve.
+
+        Returns:
+            The Plan object if found, or an error message.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+        plan_service = get_plan_service()
+        plan = plan_service.get_plan(plan_id)
+        return plan
+    
+    @agent.tool
+    async def update_plan(
+        ctx: RunContext[TDeps],
+        plan_id: str,
+        plan_data: Plan
+    ) -> str:
+        """Update an existing plan.
+
+        Use this tool to modify a plan's details, such as marking tasks as completed, adding new tasks, or changing the plan name.
+
+        Args:
+            plan_id: The unique identifier of the plan to update.
+            plan_data: The updated plan object.
+
+        Returns:
+            A confirmation message indicating the result of the update.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+        plan_service = get_plan_service()
+        result = plan_service.update_plan(plan_id, plan_data)
+        return result
+    
+    @agent.tool
+    async def delete_plan(
+        ctx: RunContext[TDeps],
+        plan_id: str
+    ) -> str:
+        """Delete a plan.
+
+        Use this tool to remove a plan when it is no longer needed.
+
+        Args:
+            plan_id: The unique identifier of the plan to delete.
+
+        Returns:
+            A confirmation message indicating the result of the deletion.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+        plan_service = get_plan_service()
+        result = plan_service.delete_plan(plan_id)
+        return result
