@@ -8,6 +8,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: arachne_fullstack_backend
+    user: root
     ports:
       - "8550:8550"
     volumes:

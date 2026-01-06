@@ -46,17 +46,9 @@ class PythonExecutor:
         if not self.is_available or client is None:
             return {"output": "", "error": "Docker is not available."}
 
-        # Create temp dir for code
-        temp_dir = tempfile.mkdtemp()
-        script_path = os.path.join(temp_dir, "script.py")
+        # Create temp dir for code - Removed to avoid bind mount issues in DooD
+        # Passing code via environment variable instead
         
-        try:
-            with open(script_path, "w") as f:
-                f.write(code)
-        except Exception as e:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return {"output": "", "error": f"Failed to prepare code: {str(e)}"}
-
         container: Any | None = None
 
         try:
@@ -67,6 +59,7 @@ class PythonExecutor:
                 "AWS_SECRET_ACCESS_KEY": settings.S3_SECRET_KEY,
                 "AWS_REGION": settings.S3_REGION,
                 "S3_BUCKET": settings.S3_BUCKET,
+                "PYTHON_CODE": code,
             }
             if settings.S3_ENDPOINT:
                 env_vars["AWS_ENDPOINT_URL"] = settings.S3_ENDPOINT
@@ -76,9 +69,8 @@ class PythonExecutor:
                 None,
                 lambda: client.containers.run(
                     image=settings.PYTHON_SANDBOX_IMAGE,
-                    command="python /app/script.py",
+                    command=["python", "-c", "import os; exec(compile(os.environ.get('PYTHON_CODE', ''), 'script.py', 'exec'))"],
                     detach=True,
-                    volumes={temp_dir: {"bind": "/app", "mode": "ro"}},
                     stderr=True,
                     stdout=True,
                     environment=env_vars,
@@ -115,7 +107,7 @@ class PythonExecutor:
                     await loop.run_in_executor(None, lambda: container.remove(force=True))
                 except Exception:
                     pass
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            # shutil.rmtree(temp_dir, ignore_errors=True)
 
 python_executor = PythonExecutor()
 

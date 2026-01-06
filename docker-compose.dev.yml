@@ -13,9 +13,11 @@ services:
     container_name: arachne_fullstack_backend
     ports:
       - "8000:8000"
+    user: root
     volumes:
       - ./backend/app:/app/app:ro
       - ./backend/cli:/app/cli:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - ./backend/.env
     environment:
@@ -140,6 +142,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  python_sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    volumes: 
+      - python-file-store:/filestore
+    container_name: arachne_fullstack_python_sandbox
+    image: python-sandbox:latest
+    entrypoint: ["echo", "Sandbox image built successfully"]
+
 networks:
   backend:
     driver: bridge
@@ -147,4 +159,5 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  python-file-store:
   s3_data:
