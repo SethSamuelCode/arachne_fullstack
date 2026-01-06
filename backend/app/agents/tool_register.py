@@ -372,3 +372,49 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         s3 = get_s3_service()
         s3.copy_file(source_object_name, dest_object_name)
         return f"Successfully copied {source_object_name} to {dest_object_name}"
+    
+    @agent.tool
+    async def python_execute_code(ctx: RunContext[TDeps], code: str, timeout: int = 600) -> dict[str, Any]:
+        """Execute Python code in an ephemeral Docker container.
+        
+        Use this tool to run Python scripts for data analysis, scraping, or complex calculations.
+        
+        Environment & Storage:
+        - Internet access: Enabled.
+        - Persistence: Ephemeral (reset after each call).
+        - S3 Storage: You can store persistent data in S3 using `boto3`.
+          Environment variables are pre-configured: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL`, and `S3_BUCKET`.
+          Example:
+          ```python
+          import boto3, os
+          s3 = boto3.client("s3")
+          s3.put_object(Bucket=os.environ["S3_BUCKET"], Key="my_data.txt", Body="content")
+          ```
+
+        Available Libraries:
+            * Web/HTTP: requests, httpx, aiohttp
+            * Scraping: beautifulsoup4, lxml, html5lib, cssselect
+            * Data Science: pandas, numpy, scipy, scikit-learn, statsmodels, sympy, networkx
+            * Visualization: matplotlib, seaborn, plotly, imageio
+            * Documents: pypdf, python-docx, python-pptx, openpyxl, xlrd, ebooklib, reportlab, weasyprint
+            * Text/NLP: nltk, textblob, markdown, regex, html2text, inscriptis, unidecode, ftfy, chardet
+            * Finance: yfinance (stock data), fredapi (economic data)
+            * Databases: psycopg2-binary (PostgreSQL), pymysql (MySQL), pymongo (MongoDB), redis
+            * APIs: pyjwt, authlib, cryptography, ecdsa, graphql-core, grpcio, protobuf
+            * Geo: geopy, shapely
+            * Image: opencv-python-headless, pytesseract (OCR), Pillow, qrcode, python-barcode, pyzbar
+            * Date/Time: python-dateutil, pytz, arrow, pendulum
+            * Data Formats: pyyaml, toml, xmltodict, defusedxml, jsonschema
+            * Network: paramiko (SSH), dnspython, websockets
+            * Cloud: boto3 (AWS)
+            * Archives: py7zr
+            * Media: mutagen, pydub, av (video)
+            * Validation: pydantic, marshmallow, email-validator, phonenumbers
+            * Fuzzy Matching: fuzzywuzzy, python-Levenshtein
+            * Search: whoosh
+            * Utilities: tqdm, cachetools, diskcache, joblib, faker, loguru, colorama
+        """
+        from app.services.python import get_python_executor
+        python_executor = get_python_executor()
+        result = await python_executor.execute_code(code, timeout)
+        return result

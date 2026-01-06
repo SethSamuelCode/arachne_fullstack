@@ -62,6 +62,15 @@ class PythonExecutor:
         try:
             loop = asyncio.get_running_loop()
             
+            env_vars = {
+                "AWS_ACCESS_KEY_ID": settings.S3_ACCESS_KEY,
+                "AWS_SECRET_ACCESS_KEY": settings.S3_SECRET_KEY,
+                "AWS_REGION": settings.S3_REGION,
+                "S3_BUCKET": settings.S3_BUCKET,
+            }
+            if settings.S3_ENDPOINT:
+                env_vars["AWS_ENDPOINT_URL"] = settings.S3_ENDPOINT
+
             # Run container in executor to avoid blocking event loop
             container = await loop.run_in_executor(
                 None,
@@ -72,6 +81,7 @@ class PythonExecutor:
                     volumes={temp_dir: {"bind": "/app", "mode": "ro"}},
                     stderr=True,
                     stdout=True,
+                    environment=env_vars,
                     # network and resource limits lifted for advanced uses 
                 )
             )
@@ -106,3 +116,9 @@ class PythonExecutor:
                 except Exception:
                     pass
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+python_executor = PythonExecutor()
+
+def get_python_executor() -> PythonExecutor:
+    """Get the global Python executor instance."""
+    return python_executor

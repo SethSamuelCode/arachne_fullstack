@@ -199,6 +199,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sandbox
+    volumes: 
+      - python-file-store:/filestore
+    container_name: arachne_fullstack_python_sandbox
     image: python-sandbox:latest
     entrypoint: ["echo", "Sandbox image built successfully"]
 
@@ -210,3 +213,4 @@ volumes:
   postgres_data:
   redis_data:
   s3_data:
+  python-file-store:
