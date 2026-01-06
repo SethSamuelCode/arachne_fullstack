@@ -217,6 +217,7 @@ dependencies = [
     { name = "tabulate" },
     { name = "tavily" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "uvloop" },
 ]
 
 [package.optional-dependencies]
@@ -268,6 +269,7 @@ requires-dist = [
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tavily", specifier = ">=1.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
+    { name = "uvloop", specifier = ">=0.22.1" },
 ]
 provides-extras = ["dev"]
 
