@@ -321,7 +321,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return f"Successfully deleted object {object_name}"
 
     @agent.tool
-    async def s3_generate_presigned_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
+    async def s3_generate_presigned_download_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
         """Generate a temporary public URL to access a private S3 object.
 
         Use this tool when you need to share a file link with a user or an external system.
@@ -335,7 +335,25 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         """
         from app.services.s3 import get_s3_service
         s3 = get_s3_service()
-        return s3.generate_presigned_url(object_name, expiration)
+        return s3.generate_presigned_download_url(object_name, expiration)
+    
+    @agent.tool
+    async def s3_generate_presigned_upload_post_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
+        """Generate a presigned POST URL and fields for uploading a file to S3.
+
+        Use this tool when you need to enable a client/user to upload a file directly to S3 via a POST request.
+        The returned dictionary contains the 'url' and specific 'fields' that MUST be included in the form data of the POST request.
+
+        ARGS:
+            object_name: The key (name) of the object in S3.
+            expiration: Validity duration in seconds (default: 3600).
+
+        RETURNS:
+            A dictionary (as a string) with keys 'url' (the upload endpoint) and 'fields' (a dictionary of form fields required for authentication).
+        """
+        from app.services.s3 import get_s3_service
+        s3 = get_s3_service()
+        return s3.generate_presigned_post(object_name, expiration)
 
     @agent.tool
     async def s3_copy_file(ctx: RunContext[TDeps], source_object_name: str, dest_object_name: str) -> str:

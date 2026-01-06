@@ -97,7 +97,7 @@ class s3Service:
             print(f"Error listing objects in S3: {e}")
             raise e
         
-    def generate_presigned_url(self, object_name: str, expiration: int = 3600) -> str:
+    def generate_presigned_download_url(self, object_name: str, expiration: int = 3600) -> str:
         """Generate a presigned URL to share an S3 object
 
         :param object_name: S3 object name
@@ -113,7 +113,7 @@ class s3Service:
             print(f"Error generating presigned URL for S3 object: {e}")
             raise e
         return response
-    def generate_presigned_post(self, object_name: str, expiration: int = 3600) -> dict:
+    def generate_presigned_post(self, object_name: str, expiration: int = 3600) -> str:
         """Generate a presigned POST to share an S3 object
 
         :param object_name: S3 object name
