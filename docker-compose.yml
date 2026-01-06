@@ -157,8 +157,7 @@ services:
     container_name: arachne_fullstack_s3
     command: server /data
     env_file:
-      - path: .env.prod
-        required: true
+      - .env.prod
     ports:
       - "9055:9000"
       - "9011:9001"
