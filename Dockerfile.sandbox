@@ -1,0 +1,163 @@
+# Python sandbox image with comprehensive research packages
+FROM python:3.13-trixie
+
+# Install system dependencies for some packages
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libpq-dev \
+    tesseract-ocr
+
+# Install comprehensive packages for research/data tasks
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
+    # Web & HTTP
+    requests \
+    httpx \
+    aiohttp \
+    # Web Scraping & Parsing
+    beautifulsoup4 \
+    lxml \
+    html5lib \
+    # Data Science & Analysis
+    pandas \
+    numpy \
+    scipy \
+    scikit-learn \
+    statsmodels \
+    # Visualization
+    matplotlib \
+    seaborn \
+    plotly \
+    # Document Processing
+    pypdf \
+    Pillow \
+    openpyxl \
+    xlrd \
+    # Data Formats
+    pyyaml \
+    toml \
+    # Date & Time
+    python-dateutil \
+    pytz \
+    # Text Processing
+    nltk \
+    textblob \
+    markdown \
+    # Utilities
+    python-dotenv \
+    tqdm \
+    regex \
+    # Database Connectors
+    psycopg2-binary \
+    pymysql \
+    pymongo \
+    redis \
+    # API & Authentication
+    authlib \
+    pyjwt \
+    cryptography \
+    # Data Validation & Serialization
+    pydantic \
+    marshmallow \
+    jsonschema \
+    # Geospatial
+    geopy \
+    shapely \
+    # Image Processing
+    opencv-python-headless \
+    pytesseract \
+    # Financial & Business
+    yfinance \
+    fredapi \
+    # Async Utilities
+    trio \
+    # XML Processing
+    xmltodict \
+    defusedxml \
+    # Archive & Compression
+    py7zr \
+    # Email & Communications
+    email-validator \
+    phonenumbers \
+    python-magic \
+    # Caching & Performance
+    cachetools \
+    diskcache \
+    joblib \
+    # Network & Protocols
+    paramiko \
+    dnspython \
+    websockets \
+    # Time Series
+    arrow \
+    pendulum \
+    # Document Conversion
+    python-docx \
+    python-pptx \
+    ebooklib \
+    # Search & Indexing
+    whoosh \
+    # Utilities
+    faker \
+    # URL & String Utilities
+    furl \
+    unidecode \
+    ftfy \
+    chardet \
+    # HTML/CSS/JS
+    cssselect \
+    js2py \
+    tinycss2 \
+    # API Standards
+    graphql-core \
+    grpcio \
+    protobuf \
+    # Scientific Computing Extras
+    sympy \
+    networkx \
+    # Media Processing
+    mutagen \
+    pydub \
+    imageio \
+    # Logging
+    loguru \
+    structlog \
+    # Cryptography Extras
+    ecdsa \
+    # HTML to Text
+    html2text \
+    inscriptis \
+    # QR Codes & Barcodes
+    qrcode \
+    python-barcode \
+    pyzbar \
+    # PDF Generation
+    reportlab \
+    weasyprint \
+    # Fuzzy Matching
+    fuzzywuzzy \
+    python-Levenshtein \
+    # Rate Limiting
+    ratelimit \
+    # Terminal Colors
+    colorama \
+    # Video Processing
+    av \
+    # Cloud SDKs
+    boto3 \
+    # HTTP Mocking
+    responses \
+    httpretty
+
+# Download NLTK data (common corpora)
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt stopwords averaged_perceptron_tagger
+
+# Set working directory
+WORKDIR /sandbox
+
+# Run as non-root for security
+RUN useradd -m sandbox
+USER sandbox

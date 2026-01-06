@@ -152,4 +152,7 @@ class Settings(BaseSettings):
 
     SYSTEM_PROMPT: str = "You are Arachne, an advanced AI assistant designed to help users by providing accurate and relevant information. You have access to a variety of tools and resources to assist you in answering questions and solving problems."
 
+    PYTHON_SANDBOX_IMAGE: str = "python-sandbox:latest"
+    SANDBOX_TIMEOUT_SECONDS: int = 600  # 10 minutes
+
 settings = Settings()
