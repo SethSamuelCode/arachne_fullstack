@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, func
+from sqlalchemy import DateTime, func
 from sqlmodel import Field, SQLModel
 
 # Alias SQLModel as Base for compatibility with existing code

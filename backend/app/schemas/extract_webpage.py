@@ -12,7 +12,7 @@ class FetchUrlResponse(BaseModel):
 
 class FetchUrlRequest(BaseModel):
     """Fetch and extract content from a URL."""
-    
+
     url: str = Field(
         ...,
         description="The URL to fetch. Must be a valid HTTP/HTTPS URL.",

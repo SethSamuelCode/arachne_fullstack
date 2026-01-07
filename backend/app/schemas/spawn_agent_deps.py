@@ -1,6 +1,8 @@
-from app.schemas.models import GeminiModelName, DEFAULT_GEMINI_MODEL
 from dataclasses import dataclass, field
 from typing import Any
+
+from app.schemas.models import DEFAULT_GEMINI_MODEL, GeminiModelName
+
 
 @dataclass
 class SpawnAgentDeps:

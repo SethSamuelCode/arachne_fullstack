@@ -1,17 +1,17 @@
-from app.agents.tools.datetime_tool import get_current_datetime
+from typing import Any, TypeVar
+
 from pydantic_ai import Agent, RunContext
-from dataclasses import dataclass
-from app.core.config import settings
-from tavily import TavilyClient
-from typing import TypeVar
-from app.schemas.assistant import Deps
-from app.schemas.spawn_agent_deps import SpawnAgentDeps
-from app.schemas.models import GeminiModelName
-from typing import Any
 from pydantic_ai.models.google import GoogleModel
-from app.schemas import DEFAULT_GEMINI_MODEL
-from app.schemas.planning import Plan
+from tavily import TavilyClient
+
+from app.agents.tools.datetime_tool import get_current_datetime
 from app.agents.tools.extract_webpage import extract_url
+from app.core.config import settings
+from app.schemas import DEFAULT_GEMINI_MODEL
+from app.schemas.assistant import Deps
+from app.schemas.models import GeminiModelName
+from app.schemas.planning import Plan
+from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
@@ -19,16 +19,14 @@ def _stringify(output: Any) -> str:
     """Convert various output types to a string representation."""
     if isinstance(output, str):
         return output
-    elif isinstance(output, dict):
-        return str(output)
-    elif hasattr(output, "__str__"):
+    elif isinstance(output, dict) or hasattr(output, "__str__"):
         return str(output)
     else:
         return repr(output)
 
 def register_tools(agent: Agent[TDeps, str]) -> None:
     """Register tools to the given agent."""
-    
+
     @agent.tool
     async def search_web(ctx: RunContext[TDeps], query: str, max_results: int = 5) -> str:
         """
@@ -92,12 +90,11 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             The sub-agent's final text response.
             """
 
-            
+
             spawn_depth: int = getattr(ctx.deps, 'spawn_depth', 0)
             spawn_max_depth: int = getattr(ctx.deps, 'spawn_max_depth', 10)
-            if spawn_depth >0:
-                if spawn_depth >= spawn_max_depth:
-                    return f"Error: spawn depth limit reached ({spawn_max_depth})."
+            if spawn_depth > 0 and spawn_depth >= spawn_max_depth:
+                return f"Error: spawn depth limit reached ({spawn_max_depth})."
 
 
             child_deps = SpawnAgentDeps(
@@ -121,7 +118,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
             result = await sub_agent.run(user_input, deps=child_deps)
             return _stringify(result.output)
-            
+
     @agent.tool
     async def create_plan(
         ctx: RunContext[TDeps],
@@ -130,7 +127,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         """Create a new plan.
 
         Use this tool to create a structured plan with a list of tasks.
-        
+
         Args:
             plan: The plan object containing the name and list of tasks (steps).
 
@@ -161,7 +158,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         plan_service = get_plan_service()
         plan = plan_service.get_plan(plan_id)
         return plan
-    
+
     @agent.tool
     async def update_plan(
         ctx: RunContext[TDeps],
@@ -183,7 +180,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         plan_service = get_plan_service()
         result = plan_service.update_plan(plan_id, plan_data)
         return result
-    
+
     @agent.tool
     async def delete_plan(
         ctx: RunContext[TDeps],
@@ -203,7 +200,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         plan_service = get_plan_service()
         result = plan_service.delete_plan(plan_id)
         return result
-    
+
     @agent.tool
     async def get_all_plans(
         ctx: RunContext[TDeps],
@@ -337,7 +334,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         from app.services.s3 import get_s3_service
         s3 = get_s3_service()
         return s3.generate_presigned_download_url(object_name, expiration)
-    
+
     @agent.tool
     async def s3_generate_presigned_upload_post_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
         """Generate a presigned POST URL and fields for uploading a file to S3.
@@ -373,13 +370,13 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         s3 = get_s3_service()
         s3.copy_file(source_object_name, dest_object_name)
         return f"Successfully copied {source_object_name} to {dest_object_name}"
-    
+
     @agent.tool
     async def python_execute_code(ctx: RunContext[TDeps], code: str, timeout: int = 600) -> dict[str, Any]:
         """Execute Python code in an ephemeral Docker container.
-        
+
         Use this tool to run Python scripts for data analysis, scraping, or complex calculations.
-        
+
         Environment & Storage:
         - Internet access: Enabled.
         - Persistence: Ephemeral (reset after each call).
@@ -419,7 +416,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         python_executor = get_python_executor()
         result = await python_executor.execute_code(code, timeout)
         return result
-    
+
     @agent.tool
     async def extract_webpage(
         ctx: RunContext[TDeps],
@@ -443,7 +440,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         RETURNS:
             Dict containing 'content', 'title', and metadata.
         """
-        
+
         response = await extract_url(
             url=url,
             extract_text=extract_text,

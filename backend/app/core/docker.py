@@ -27,7 +27,7 @@ def get_docker_client() -> DockerClient | None:
     try:
         _docker_client = docker.from_env()
         return _docker_client
-    except:
+    except Exception:
         return None
 
 

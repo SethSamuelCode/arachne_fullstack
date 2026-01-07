@@ -1,4 +1,5 @@
 from boto3 import client
+
 from app.core.config import settings
 
 S3_ENDPOINT = settings.S3_ENDPOINT
@@ -7,7 +8,7 @@ S3_SECRET_KEY = settings.S3_SECRET_KEY
 S3_BUCKET = settings.S3_BUCKET
 
 class s3Service:
-    
+
     def __init__(self):
         self.s3_client = client(
             "s3",
@@ -19,7 +20,7 @@ class s3Service:
         existing_buckets = self.s3_client.list_buckets()
         if not any(bucket['Name'] == S3_BUCKET for bucket in existing_buckets.get('Buckets', [])):
             self.s3_client.create_bucket(Bucket=S3_BUCKET)
-    
+
     def upload_file(self, file_name: str, object_name: str) -> None:
         """Upload a file to an S3 bucket
 
@@ -33,7 +34,7 @@ class s3Service:
             print(f"Error uploading file to S3: {e}")
             raise e
 
-    
+
     def download_file(self, object_name: str, file_name: str) -> None:
         """Download a file from an S3 bucket
 
@@ -58,7 +59,7 @@ class s3Service:
         except Exception as e:
             print(f"Error uploading object to S3: {e}")
             raise e
-        
+
     def download_obj(self, object_name: str) -> bytes:
         """Download an object from an S3 bucket
 
@@ -96,7 +97,7 @@ class s3Service:
         except Exception as e:
             print(f"Error listing objects in S3: {e}")
             raise e
-        
+
     def generate_presigned_download_url(self, object_name: str, expiration: int = 3600) -> str:
         """Generate a presigned URL to share an S3 object
 
@@ -128,7 +129,7 @@ class s3Service:
             print(f"Error generating presigned POST for S3 object: {e}")
             raise e
         return response
-    
+
     def copy_file(self, source_object_name: str, dest_object_name: str) -> None:
         """Copy a file within an S3 bucket
 
@@ -161,7 +162,7 @@ class s3Service:
             print(f"Error generating presigned download URL for S3 object: {e}")
             raise e
         return response
-    
+
 s3_service = s3Service()
 def get_s3_service():
     return s3_service

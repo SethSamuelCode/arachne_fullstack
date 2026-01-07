@@ -116,6 +116,8 @@ async def agent_websocket(
     Authentication: Requires a valid JWT token passed as a query parameter or header.
 
     Persistence: Set 'conversation_id' to continue an existing conversation.
+    If provided, the last 50 messages are automatically retrieved from the
+    database to restore context.
     If not provided, a new conversation is created. The conversation_id is
     returned in the 'conversation_created' event.
     """
@@ -151,6 +153,29 @@ async def agent_websocket(
                         current_conversation_id = requested_conv_id
                         # Verify conversation exists
                         await conv_service.get_conversation(UUID(requested_conv_id))
+
+                        # Populate history from DB if missing (reconnection support)
+                        if not conversation_history:
+                            # Restoring context on reconnection:
+                            # 1. Get total message count to determine offset
+                            _, total_count = await conv_service.list_messages(
+                                UUID(requested_conv_id), limit=1
+                            )
+
+                            # 2. Fetch only the last 50 messages (context window)
+                            fetch_limit = 50
+                            skip = max(0, total_count - fetch_limit)
+                            restored_msgs, _ = await conv_service.list_messages(
+                                UUID(requested_conv_id), skip=skip, limit=fetch_limit
+                            )
+
+                            # 3. Populate history
+                            for msg in restored_msgs:
+                                conversation_history.append({
+                                    "role": msg.role,
+                                    "content": msg.content or ""
+                                })
+
                     elif not current_conversation_id:
                         # Create new conversation
                         conv_data = ConversationCreate(

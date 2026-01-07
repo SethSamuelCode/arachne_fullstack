@@ -1,11 +1,6 @@
 """Python code execution service using Docker sandbox."""
 
 import asyncio
-import os
-import shutil
-import tempfile
-import time
-import uuid
 from typing import Any
 
 from docker.errors import ContainerError
@@ -32,7 +27,7 @@ class PythonExecutor:
     def is_available(self) -> bool:
         """Check if Python execution is available (requires Docker)."""
         return self.docker_client is not None
-    
+
     async def execute_code(self, code: str, timeout: int = 10) -> dict[str, Any]:
         """Execute Python code in a Docker container.
 
@@ -41,19 +36,19 @@ class PythonExecutor:
 
         Returns:
             dict: Execution result with 'output' and 'error' keys."""
-        
+
         client = self.docker_client
         if not self.is_available or client is None:
             return {"output": "", "error": "Docker is not available."}
 
         # Create temp dir for code - Removed to avoid bind mount issues in DooD
         # Passing code via environment variable instead
-        
+
         container: Any | None = None
 
         try:
             loop = asyncio.get_running_loop()
-            
+
             env_vars = {
                 "AWS_ACCESS_KEY_ID": settings.S3_ACCESS_KEY,
                 "AWS_SECRET_ACCESS_KEY": settings.S3_SECRET_KEY,
@@ -74,10 +69,10 @@ class PythonExecutor:
                     stderr=True,
                     stdout=True,
                     environment=env_vars,
-                    # network and resource limits lifted for advanced uses 
+                    # network and resource limits lifted for advanced uses
                 )
             )
-            
+
             if container is None:
                 raise Exception("Failed to start container")
 
@@ -87,19 +82,19 @@ class PythonExecutor:
                     loop.run_in_executor(None, container.wait),
                     timeout=timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await loop.run_in_executor(None, container.kill)
                 return {"output": "", "error": "Execution timed out."}
 
             logs = await loop.run_in_executor(None, lambda: container.logs().decode("utf-8"))
-            
+
             if exit_status["StatusCode"] != 0:
                 return {"output": "", "error": logs}
             return {"output": logs, "error": ""}
         except ContainerError as e:
             return {"output": "", "error": str(e)}
         except Exception as e:
-            return {"output": "", "error": f"Execution error: {str(e)}"}
+            return {"output": "", "error": f"Execution error: {e!s}"}
         finally:
             if container:
                 try:

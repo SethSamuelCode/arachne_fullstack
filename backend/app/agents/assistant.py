@@ -4,10 +4,9 @@ The main conversational agent that can be extended with custom tools.
 """
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -16,16 +15,11 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.settings import ModelSettings
 
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
-from app.core.config import settings
-
-from app.schemas import DEFAULT_GEMINI_MODEL
-
 from app.agents.tool_register import register_tools
+from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
-
 
 logger = logging.getLogger(__name__)
 

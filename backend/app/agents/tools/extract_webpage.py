@@ -1,7 +1,8 @@
-from app.schemas.extract_webpage import FetchUrlResponse
-from app.services.python import get_python_executor
 import json
 import textwrap
+
+from app.schemas.extract_webpage import FetchUrlResponse
+from app.services.python import get_python_executor
 
 
 async def extract_url(
@@ -16,7 +17,7 @@ async def extract_url(
     from bs4 import BeautifulSoup
     import json
 
-    url = {repr(url)}
+    url = {url!r}
     extract_text = {extract_text}
     max_length = {max_length}
 
@@ -56,7 +57,7 @@ async def extract_url(
     try:
         data = json.loads(result["output"])
     except (json.JSONDecodeError, KeyError) as e:
-        raise RuntimeError(f"Failed to parse tool output: {result.get('output', 'No output')} (Error: {e})")
+        raise RuntimeError(f"Failed to parse tool output: {result.get('output', 'No output')} (Error: {e})") from e
 
     if "error" in data:
         raise RuntimeError(f"Fetch failed: {data['error']}")

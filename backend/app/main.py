@@ -108,7 +108,7 @@ def create_app() -> FastAPI:
         title=settings.PROJECT_NAME,
         summary="FastAPI application with Logfire observability",
         description="""
-redesign of the arachne chat bot to better refine capability 
+redesign of the arachne chat bot to better refine capability
 
 ## Features
 - **Authentication**: JWT-based authentication with refresh tokens
