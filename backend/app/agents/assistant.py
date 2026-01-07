@@ -142,19 +142,20 @@ class AssistantAgent:
                 yield event
 
 
-def get_agent() -> AssistantAgent:
+def get_agent(system_prompt: str | None = None) -> AssistantAgent:
     """Factory function to create an AssistantAgent.
 
     Returns:
         Configured AssistantAgent instance.
     """
-    return AssistantAgent()
+    return AssistantAgent(system_prompt=system_prompt)
 
 
 async def run_agent(
     user_input: str,
     history: list[dict[str, str]],
     deps: Deps | None = None,
+    system_prompt: str | None = None,
 ) -> tuple[str, list[Any], Deps]:
     """Run agent and return the output along with tool call events.
 
@@ -164,9 +165,10 @@ async def run_agent(
         user_input: User's message.
         history: Conversation history.
         deps: Optional dependencies.
+        system_prompt: Optional custom system prompt.
 
     Returns:
         Tuple of (output_text, tool_events, deps).
     """
-    agent = get_agent()
+    agent = get_agent(system_prompt=system_prompt)
     return await agent.run(user_input, history, deps)

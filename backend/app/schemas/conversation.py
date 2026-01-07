@@ -97,6 +97,7 @@ class ConversationBase(BaseSchema):
     """Base conversation schema."""
 
     title: str | None = Field(default=None, max_length=255, description="Conversation title")
+    system_prompt: str | None = Field(default=None, description="Custom system prompt for the conversation")
 
 
 class ConversationCreate(ConversationBase):
@@ -110,6 +111,7 @@ class ConversationUpdate(BaseSchema):
     """Schema for updating a conversation."""
 
     title: str | None = Field(default=None, max_length=255)
+    system_prompt: str | None = Field(default=None)
     is_archived: bool | None = None
 
 

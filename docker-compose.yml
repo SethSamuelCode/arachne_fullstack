@@ -14,7 +14,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./backend/cli:/app/cli:ro
-      - ./backend/alembic:/app/alembic:ro
+      - ./backend/alembic:/app/alembic:rw
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - ./backend/.env

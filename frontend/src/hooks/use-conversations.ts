@@ -152,6 +152,22 @@ export function useConversations() {
     [updateConversation, setError]
   );
 
+  const updateConversationDetails = useCallback(
+    async (id: string, updates: Partial<Conversation>) => {
+      try {
+        const response = await apiClient.patch<Conversation>(`/conversations/${id}`, updates);
+        updateConversation(id, updates);
+        return response;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update conversation";
+        setError(message);
+        throw err;
+      }
+    },
+    [updateConversation, setError]
+  );
+
   const startNewChat = useCallback(async () => {
     clearMessages();
     setCurrentMessages([]);
@@ -173,6 +189,7 @@ export function useConversations() {
     archiveConversation,
     deleteConversation,
     renameConversation,
+    updateConversationDetails,
     startNewChat,
   };
 }

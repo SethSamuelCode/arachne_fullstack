@@ -38,6 +38,7 @@ class Conversation(TimestampMixin, SQLModel, table=True):
         ),
     )
     title: str | None = Field(default=None, max_length=255)
+    system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     is_archived: bool = Field(default=False)
 
     # Relationships

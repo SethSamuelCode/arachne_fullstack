@@ -176,7 +176,7 @@ export function useChat(options: UseChatOptions = {}) {
   });
 
   const sendChatMessage = useCallback(
-    (content: string) => {
+    (content: string, systemPrompt?: string) => {
       // Add user message
       const userMessage: ChatMessage = {
         id: nanoid(),
@@ -191,6 +191,7 @@ export function useChat(options: UseChatOptions = {}) {
       sendMessage({
         message: content,
         conversation_id: conversationId || null,
+        system_prompt: systemPrompt,
       });
     },
     [addMessage, sendMessage, conversationId]

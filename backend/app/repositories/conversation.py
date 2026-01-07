@@ -76,11 +76,13 @@ async def create_conversation(
     *,
     user_id: UUID | None = None,
     title: str | None = None,
+    system_prompt: str | None = None,
 ) -> Conversation:
     """Create a new conversation."""
     conversation = Conversation(
         user_id=user_id,
         title=title,
+        system_prompt=system_prompt,
     )
     db.add(conversation)
     await db.flush()

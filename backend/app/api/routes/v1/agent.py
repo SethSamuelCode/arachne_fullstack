@@ -163,7 +163,8 @@ async def agent_websocket(
                             )
 
                             # 2. Fetch only the last 50 messages (context window)
-                            fetch_limit = 50
+                            # Expanding context window/semantic memory
+                            fetch_limit = 1000
                             skip = max(0, total_count - fetch_limit)
                             restored_msgs, _ = await conv_service.list_messages(
                                 UUID(requested_conv_id), skip=skip, limit=fetch_limit
@@ -181,6 +182,7 @@ async def agent_websocket(
                         conv_data = ConversationCreate(
                             user_id=user.id,
                             title=user_message[:50] if len(user_message) > 50 else user_message,
+                            system_prompt=data.get("system_prompt"),
                         )
                         conversation = await conv_service.create_conversation(conv_data)
                         current_conversation_id = str(conversation.id)
@@ -201,8 +203,17 @@ async def agent_websocket(
 
             await manager.send_event(websocket, "user_prompt", {"content": user_message})
 
+            # Retrieve the specific system prompt for this conversation
+            system_prompt = None
+            if current_conversation_id:
+                async with get_db_context() as db:
+                    conv_service = get_conversation_service(db)
+                    current_conv = await conv_service.get_conversation(UUID(current_conversation_id))
+                    if current_conv:
+                        system_prompt = current_conv.system_prompt
+
             try:
-                assistant = get_agent()
+                assistant = get_agent(system_prompt=system_prompt)
                 model_history = build_message_history(conversation_history)
 
                 # Use iter() on the underlying PydanticAI agent to stream all events

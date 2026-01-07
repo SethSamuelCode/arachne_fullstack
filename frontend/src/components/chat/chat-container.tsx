@@ -11,6 +11,9 @@ import { useConversations } from "@/hooks";
 import { useRouter } from "next/navigation";
 
 
+import { SystemPromptSettings } from "./system-prompt-settings";
+import { useState } from "react";
+
 export function ChatContainer() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
@@ -25,10 +28,30 @@ export function ChatContainer() {
 }
 
 function AuthenticatedChatContainer() {
-  const { currentConversationId, currentMessages } = useConversationStore();
+  const { currentConversationId, currentMessages, conversations } = useConversationStore();
   const { addMessage: addChatMessage } = useChatStore();
-  const { fetchConversations } = useConversations();
+  const { fetchConversations, updateConversationDetails } = useConversations();
   const prevConversationIdRef = useRef<string | null | undefined>(undefined);
+  
+  const [systemPrompt, setSystemPrompt] = useState("");
+
+  // Sync System Prompt
+  useEffect(() => {
+    if (currentConversationId) {
+        const conv = conversations.find(c => c.id === currentConversationId);
+        if (conv) {
+             setSystemPrompt(conv.system_prompt || "");
+        }
+    } else {
+        setSystemPrompt("");
+    }
+  }, [currentConversationId, conversations]);
+
+  const handleSystemPromptSave = async (newPrompt: string) => {
+      if (currentConversationId) {
+          await updateConversationDetails(currentConversationId, { system_prompt: newPrompt });
+      }
+  };
 
   const handleConversationCreated = useCallback((conversationId: string) => {
     fetchConversations();
@@ -111,9 +134,12 @@ function AuthenticatedChatContainer() {
       messages={messages}
       isConnected={isConnected}
       isProcessing={isProcessing}
-      sendMessage={sendMessage}
+      sendMessage={(content) => sendMessage(content, systemPrompt)}
       clearMessages={clearMessages}
       messagesEndRef={messagesEndRef}
+      systemPrompt={systemPrompt}
+      setSystemPrompt={setSystemPrompt}
+      onSystemPromptSave={handleSystemPromptSave}
     />
   );
 }
@@ -159,6 +185,9 @@ interface ChatUIProps {
   sendMessage: (content: string) => void;
   clearMessages: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  systemPrompt?: string;
+  setSystemPrompt?: (prompt: string) => void;
+  onSystemPromptSave?: (prompt: string) => Promise<void>;
 }
 
 function ChatUI({
@@ -168,6 +197,9 @@ function ChatUI({
   sendMessage,
   clearMessages,
   messagesEndRef,
+  systemPrompt,
+  setSystemPrompt,
+  onSystemPromptSave,
 }: ChatUIProps) {
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
@@ -206,15 +238,25 @@ function ChatUI({
                 {isConnected ? "Connected" : "Disconnected"}
               </span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearMessages}
-              className="text-xs h-8 px-3"
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Reset
-            </Button>
+            <div className="flex items-center gap-1">
+                {setSystemPrompt && (
+                   <SystemPromptSettings 
+                      systemPrompt={systemPrompt || ""} 
+                      setSystemPrompt={setSystemPrompt}
+                      onSave={onSystemPromptSave}
+                      isLoading={isProcessing}
+                   />
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearMessages}
+                  className="text-xs h-8 px-3"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                  Reset
+                </Button>
+            </div>
           </div>
         </div>
       </div>
