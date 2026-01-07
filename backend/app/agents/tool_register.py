@@ -11,6 +11,7 @@ from typing import Any
 from pydantic_ai.models.google import GoogleModel
 from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.planning import Plan
+from app.agents.tools.extract_webpage import extract_url
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
@@ -418,3 +419,34 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         python_executor = get_python_executor()
         result = await python_executor.execute_code(code, timeout)
         return result
+    
+    @agent.tool
+    async def extract_webpage(
+        ctx: RunContext[TDeps],
+        url: str,
+        extract_text: bool = True,
+        max_length: int = 20000,
+    ) -> dict[str, Any]:
+        """Fetch and extract content from a webpage.
+
+        Use this tool to read the content of a specific URL.
+        - Prefer `search_web` first if you don't have a specific URL.
+        - Use this to read documentation libraries, articles, or reference material found via search.
+
+        ARGS:
+            url: The full URL to fetch (e.g. "https://docs.python.org/3/").
+            extract_text:
+                - True (Default): Returns parsed, readable text. Best for reasoning and summarization.
+                - False: Returns raw HTML. Use only if layout/structure analysis is required.
+            max_length: Maximum characters to return (def: 10000). Content is truncated if longer.
+
+        RETURNS:
+            Dict containing 'content', 'title', and metadata.
+        """
+        
+        response = await extract_url(
+            url=url,
+            extract_text=extract_text,
+            max_length=max_length,
+        )
+        return response.model_dump()
