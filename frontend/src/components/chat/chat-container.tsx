@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 
 import { SystemPromptSettings } from "./system-prompt-settings";
 import { useState } from "react";
+import { Settings2 } from "lucide-react";
 
 export function ChatContainer() {
   const { isAuthenticated } = useAuthStore();
@@ -212,6 +213,21 @@ function ChatUI({
             <div className="text-center px-4">
               <p className="text-base sm:text-lg font-medium text-foreground">AI Assistant</p>
               <p className="text-sm">Start a conversation to get help</p>
+              
+              {setSystemPrompt && (
+                <div className="mt-4">
+                     <SystemPromptSettings 
+                      systemPrompt={systemPrompt || ""} 
+                      setSystemPrompt={setSystemPrompt}
+                      onSave={onSystemPromptSave}
+                   >
+                     <Button variant="outline" size="sm" className="gap-2">
+                        <Settings2 className="h-4 w-4" />
+                        Customize System Prompt
+                     </Button>
+                   </SystemPromptSettings>
+                </div>
+              )}
             </div>
           </div>
         ) : (

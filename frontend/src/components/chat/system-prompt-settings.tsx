@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription, SheetFooter } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Settings, Save } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useConversationStore } from "@/stores";
 
 interface SystemPromptSettingsProps {
@@ -12,13 +12,15 @@ interface SystemPromptSettingsProps {
   setSystemPrompt: (value: string) => void;
   onSave?: (value: string) => Promise<void>;
   isLoading?: boolean;
+  children?: React.ReactNode;
 }
 
 export function SystemPromptSettings({
   systemPrompt,
   setSystemPrompt,
   onSave,
-  isLoading
+  isLoading,
+  children
 }: SystemPromptSettingsProps) {
   const [localPrompt, setLocalPrompt] = useState(systemPrompt);
   const [isOpen, setIsOpen] = useState(false);
@@ -40,18 +42,20 @@ export function SystemPromptSettings({
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
+        {children || (
         <Button variant="ghost" size="icon" title="System Prompt & Memory Settings">
           <Settings className="h-5 w-5" />
         </Button>
+        )}
       </SheetTrigger>
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Conversation Settings</SheetTitle>
-          <SheetDescription>
+          <div className="text-sm text-muted-foreground">
             Configure the specific instructions and memory for this conversation.
-          </SheetDescription>
+          </div>
         </SheetHeader>
-        <div className="py-6 space-y-6">
+        <div className="p-4 space-y-6">
           <div className="space-y-2">
             <Label htmlFor="system-prompt">System Prompt</Label>
             <p className="text-xs text-muted-foreground">
@@ -74,11 +78,11 @@ export function SystemPromptSettings({
           </div>
         </div>
         
-        <SheetFooter>
-            <Button onClick={handleSave} disabled={isLoading}>
+        <div className="border-t p-4">
+            <Button onClick={handleSave} disabled={isLoading} className="w-full">
                 {isLoading ? "Saving..." : "Save Changes"}
             </Button>
-        </SheetFooter>
+        </div>
       </SheetContent>
     </Sheet>
   );
