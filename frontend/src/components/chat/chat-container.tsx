@@ -8,17 +8,17 @@ import { Button } from "@/components/ui";
 import { Wifi, WifiOff, RotateCcw, Bot } from "lucide-react";
 import { useConversationStore, useChatStore, useAuthStore } from "@/stores";
 import { useConversations } from "@/hooks";
-interface ChatContainerProps {
-  useLocalStorage?: boolean;
-}
+import { useRouter } from "next/navigation";
 
-export function ChatContainer({ useLocalStorage = false }: ChatContainerProps) {
+
+export function ChatContainer() {
   const { isAuthenticated } = useAuthStore();
+  const router = useRouter();
 
-  const shouldUseLocal = useLocalStorage || !isAuthenticated;
-
-  if (shouldUseLocal) {
-    return <LocalChatContainer />;
+  if (!isAuthenticated) {
+    // redirect to login page 
+    router.push("/login");
+    return null;
   }
 
   return <AuthenticatedChatContainer />;
