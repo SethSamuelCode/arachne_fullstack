@@ -67,6 +67,11 @@ async def create_conversation(
     """
     if data is None:
         data = ConversationCreate()
+
+    # Use user's default system prompt if none provided
+    if data.system_prompt is None and current_user.default_system_prompt:
+        data.system_prompt = current_user.default_system_prompt
+
     data.user_id = current_user.id
     return await conversation_service.create_conversation(data)
 

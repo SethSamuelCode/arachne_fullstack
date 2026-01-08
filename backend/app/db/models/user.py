@@ -4,7 +4,7 @@ import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -43,6 +43,7 @@ class User(TimestampMixin, SQLModel, table=True):
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
     role: str = Field(default=UserRole.USER.value, max_length=50)
+    default_system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
     # Relationship to sessions
     sessions: list["Session"] = Relationship(back_populates="user")

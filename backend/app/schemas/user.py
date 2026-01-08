@@ -40,6 +40,7 @@ class UserUpdate(BaseSchema):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     role: UserRole | None = None
+    default_system_prompt: str | None = None
 
 
 class UserRead(UserBase, TimestampSchema):
@@ -48,6 +49,7 @@ class UserRead(UserBase, TimestampSchema):
     id: UUID
     is_superuser: bool = False
     role: UserRole = UserRole.USER
+    default_system_prompt: str | None = None
 
 
 class UserInDB(UserRead):
