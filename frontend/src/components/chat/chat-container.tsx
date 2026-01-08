@@ -16,12 +16,16 @@ import { useState } from "react";
 import { Settings2 } from "lucide-react";
 
 export function ChatContainer() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isLoading } = useAuthStore();
   const router = useRouter();
 
-  if (!isAuthenticated) {
-    // redirect to login page 
-    router.push("/login");
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isLoading, isAuthenticated, router]);
+
+  if (isLoading || !isAuthenticated) {
     return null;
   }
 
