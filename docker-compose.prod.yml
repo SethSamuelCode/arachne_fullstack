@@ -25,6 +25,8 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - backend-internal
     ports:
@@ -34,6 +36,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      python_sandbox:
+        condition: service_completed_successfully
     restart: unless-stopped
     deploy:
       resources:
@@ -177,6 +181,42 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  s3:
+    image: minio/minio:latest
+    container_name: arachne_fullstack_s3
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env.prod
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports:
+      - "9055:9000"
+      - "9011:9001"
+    volumes:
+      - s3_data:/data
+    networks:
+      - backend-internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  python_sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: python-sandbox:latest
+    container_name: arachne_fullstack_python_sandbox
+    volumes:
+      - python-file-store:/filestore
+    entrypoint: ["echo", "Sandbox image built successfully"]
+    networks:
+      - backend-internal
+    restart: "no"
+
   frontend:
     build:
       context: ./frontend
@@ -207,3 +247,5 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  s3_data:
+  python-file-store:
