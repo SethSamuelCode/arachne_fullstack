@@ -28,7 +28,10 @@ from app.schemas.conversation import (
     MessageRead,
 )
 
+import logging
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=ConversationList)
@@ -92,6 +95,7 @@ async def update_conversation(
 
     Raises 404 if the conversation does not exist.
     """
+    logger.info(f"Updating conversation {conversation_id} with data: {data}")
     return await conversation_service.update_conversation(conversation_id, data)
 
 

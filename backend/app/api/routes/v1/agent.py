@@ -211,6 +211,7 @@ async def agent_websocket(
                     current_conv = await conv_service.get_conversation(UUID(current_conversation_id))
                     if current_conv:
                         system_prompt = current_conv.system_prompt
+                        logger.info(f"Using system prompt for conversation {current_conversation_id}: {system_prompt}")
 
             try:
                 assistant = get_agent(system_prompt=system_prompt)

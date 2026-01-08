@@ -87,6 +87,7 @@ class ConversationService:
             self.db,
             user_id=data.user_id,
             title=data.title,
+            system_prompt=data.system_prompt,
         )
 
     async def update_conversation(
