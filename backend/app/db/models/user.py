@@ -44,6 +44,7 @@ class User(TimestampMixin, SQLModel, table=True):
     is_superuser: bool = Field(default=False)
     role: str = Field(default=UserRole.USER.value, max_length=50)
     default_system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    default_model: str | None = Field(default=None, max_length=100)
 
     # Relationship to sessions
     sessions: list["Session"] = Relationship(back_populates="user")

@@ -8,8 +8,17 @@ import { apiClient } from "@/lib/api-client";
 import type { User as UserProfile } from "@/types";
 import { Button, Card, Input, Label, Badge } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme";
-import { User, Mail, Calendar, Shield, Settings, MessageSquare } from "lucide-react";
+import { User, Mail, Calendar, Shield, Settings, MessageSquare, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const AVAILABLE_MODELS = [
+  { value: "", label: "Default (Backend Configured)" },
+  { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Preview)" },
+  { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (Preview)" },
+];
 
 export default function ProfilePage() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -17,10 +26,12 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [defaultModel, setDefaultModel] = useState("");
 
   useEffect(() => {
     if (user) {
       setSystemPrompt(user.default_system_prompt || "");
+      setDefaultModel(user.default_model || "");
     }
   }, [user]);
 
@@ -28,9 +39,17 @@ export default function ProfilePage() {
     if (!user) return;
     setIsSaving(true);
     try {
-      const updatedUser = await apiClient.patch<UserProfile>("/users/me", {
+      const payload: any = {
         default_system_prompt: systemPrompt,
-      });
+      };
+      
+      // Handle empty string as null update if needed, but backend often treats missing fields as no-op.
+      // However, here we want to unset it if empty.
+      // The UserUpdate schema allows nulls. 
+      // If the user selects "Default", we send null.
+      payload.default_model = defaultModel || null;
+
+      const updatedUser = await apiClient.patch<UserProfile>("/users/me", payload);
       // Merge the response (which is the updated user) into the store
       setUser({ ...user, ...updatedUser }); 
       setIsEditing(false);
@@ -121,6 +140,32 @@ export default function ProfilePage() {
             )}
 
             <div className="grid gap-2 pt-2 border-t mt-2">
+              <Label htmlFor="defaultModel" className="flex items-center gap-2 text-sm">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                Default LLM Model
+              </Label>
+              <select
+                id="defaultModel"
+                value={defaultModel}
+                onChange={(e) => setDefaultModel(e.target.value)}
+                disabled={!isEditing}
+                className={cn(
+                  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+                  !isEditing && "bg-muted"
+                )}
+              >
+                {AVAILABLE_MODELS.map((model) => (
+                  <option key={model.value} value={model.value}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Select the AI model to use for new conversations.
+              </p>
+            </div>
+
+            <div className="grid gap-2 pt-2 border-t mt-2">
               <Label htmlFor="systemPrompt" className="flex items-center gap-2 text-sm">
                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
                 Default System Prompt
@@ -149,6 +194,7 @@ export default function ProfilePage() {
                 onClick={() => {
                   setIsEditing(false);
                   setSystemPrompt(user.default_system_prompt || "");
+                  setDefaultModel(user.default_model || "");
                 }}
                 className="h-10"
                 disabled={isSaving}

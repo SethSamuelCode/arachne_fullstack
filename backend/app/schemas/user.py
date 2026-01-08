@@ -41,6 +41,7 @@ class UserUpdate(BaseSchema):
     is_active: bool | None = None
     role: UserRole | None = None
     default_system_prompt: str | None = None
+    default_model: str | None = None
 
 
 class UserRead(UserBase, TimestampSchema):
@@ -50,6 +51,7 @@ class UserRead(UserBase, TimestampSchema):
     is_superuser: bool = False
     role: UserRole = UserRole.USER
     default_system_prompt: str | None = None
+    default_model: str | None = None
 
 
 class UserInDB(UserRead):

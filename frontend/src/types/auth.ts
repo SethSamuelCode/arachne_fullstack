@@ -9,6 +9,7 @@ export interface User {
   is_active: boolean;
   is_superuser?: boolean;
   default_system_prompt?: string;
+  default_model?: string;
   created_at: string;
 }
 

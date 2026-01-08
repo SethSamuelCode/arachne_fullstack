@@ -214,7 +214,8 @@ async def agent_websocket(
                         logger.info(f"Using system prompt for conversation {current_conversation_id}: {system_prompt}")
 
             try:
-                assistant = get_agent(system_prompt=system_prompt)
+                # Use user's default model preference or backend default
+                assistant = get_agent(system_prompt=system_prompt, model_name=user.default_model)
                 model_history = build_message_history(conversation_history)
 
                 # Use iter() on the underlying PydanticAI agent to stream all events

@@ -36,7 +36,7 @@ class AssistantAgent:
         model_name: str | None = None,
         system_prompt: str | None = None,
     ):
-        self.model_name = DEFAULT_GEMINI_MODEL
+        self.model_name = model_name or DEFAULT_GEMINI_MODEL
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self._agent: Agent[Deps, str] | None = None
 
@@ -142,13 +142,13 @@ class AssistantAgent:
                 yield event
 
 
-def get_agent(system_prompt: str | None = None) -> AssistantAgent:
+def get_agent(system_prompt: str | None = None, model_name: str | None = None) -> AssistantAgent:
     """Factory function to create an AssistantAgent.
 
     Returns:
         Configured AssistantAgent instance.
     """
-    return AssistantAgent(system_prompt=system_prompt)
+    return AssistantAgent(system_prompt=system_prompt, model_name=model_name)
 
 
 async def run_agent(
