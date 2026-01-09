@@ -44,10 +44,10 @@ RUN adduser --disabled-password --gecos "" appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8550
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8550/api/v1/health')" || exit 1
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+#     CMD python -c "import httpx; httpx.get('http://localhost:8550/api/v1/health')" || exit 1
 
 CMD ["python", "-m", "cli.commands", "server", "run", "--host", "0.0.0.0", "--port", "8550"]

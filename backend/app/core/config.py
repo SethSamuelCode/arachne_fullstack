@@ -110,8 +110,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_PERIOD: int = 60  # seconds
 
     # === Celery ===
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def CELERY_BROKER_URL(self) -> str:
+        return self.REDIS_URL
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def CELERY_RESULT_BACKEND(self) -> str:
+        return self.REDIS_URL
 
     # === File Storage (S3/MinIO) ===
     S3_ENDPOINT: str | None = None

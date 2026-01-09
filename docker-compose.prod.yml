@@ -22,9 +22,7 @@ services:
       - ENVIRONMENT=production
       - POSTGRES_HOST=db
       - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8550 --workers 4
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -39,14 +37,7 @@ services:
       python_sandbox:
         condition: service_completed_successfully
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
+
 
   db:
     image: postgres:18-alpine
@@ -66,11 +57,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
 
   redis:
     image: redis:7-alpine
@@ -88,10 +74,7 @@ services:
       retries: 5
     restart: unless-stopped
     deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
+
 
   celery_worker:
     build:
@@ -106,8 +89,6 @@ services:
       - DEBUG=false
       - POSTGRES_HOST=db
       - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
     networks:
       - backend-internal
     depends_on:
@@ -116,15 +97,9 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    # deploy:
+    #   replicas: 2
+
 
   celery_beat:
     build:
@@ -138,19 +113,12 @@ services:
     environment:
       - DEBUG=false
       - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
     networks:
       - backend-internal
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
 
   flower:
     build:
@@ -164,8 +132,6 @@ services:
     environment:
       - DEBUG=false
       - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:?FLOWER_PASSWORD is required}
     networks:
       - backend-internal
@@ -175,11 +141,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
+
 
   s3:
     image: minio/minio:latest
@@ -187,9 +149,6 @@ services:
     command: server /data --console-address ":9001"
     env_file:
       - .env.prod
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     ports:
       - "9055:9000"
       - "9011:9001"
@@ -233,16 +192,10 @@ services:
     depends_on:
       - app
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
 
 networks:
   backend-internal:
     driver: bridge
-    internal: true
 
 volumes:
   postgres_data:

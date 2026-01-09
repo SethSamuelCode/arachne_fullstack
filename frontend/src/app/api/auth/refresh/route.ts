@@ -23,14 +23,25 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({ message: "Token refreshed" });
 
-    // Update access token cookie
+    // Update access token cookie (matches backend ACCESS_TOKEN_EXPIRE_MINUTES)
     response.cookies.set("access_token", data.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 15, // 15 minutes
+      maxAge: 60 * 30, // 30 minutes - aligned with backend token expiry
       path: "/",
     });
+
+    // Update refresh token cookie (backend rotates tokens on each refresh)
+    if (data.refresh_token) {
+      response.cookies.set("refresh_token", data.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        path: "/",
+      });
+    }
 
     return response;
   } catch (error) {

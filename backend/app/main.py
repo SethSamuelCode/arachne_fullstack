@@ -12,8 +12,9 @@ from app.api.exception_handlers import register_exception_handlers
 from app.api.router import api_router
 from app.clients.redis import RedisClient
 from app.core.config import settings
+from app.core.csrf import CSRFMiddleware
 from app.core.logfire_setup import instrument_app, setup_logfire
-from app.core.middleware import RequestIDMiddleware
+from app.core.middleware import RequestIDMiddleware, SecurityHeadersMiddleware
 
 
 class LifespanState(TypedDict):
@@ -30,7 +31,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
     See: https://asgi.readthedocs.io/en/latest/specs/lifespan.html#lifespan-state
     """
     # === Startup ===
-    setup_logfire()
     from app.core.logfire_setup import instrument_asyncpg
 
     instrument_asyncpg()
@@ -140,11 +140,18 @@ redesign of the arachne chat bot to better refine capability
         default_response_class=ORJSONResponse,
     )
 
-    # Logfire instrumentation
+    # Logfire instrumentation (configure before instrumenting)
+    setup_logfire()
     instrument_app(app)
 
     # Request ID middleware (for request correlation/debugging)
     app.add_middleware(RequestIDMiddleware)
+
+    # Security headers middleware (CSP, X-Frame-Options, etc.)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # CSRF protection middleware
+    app.add_middleware(CSRFMiddleware)
 
     # Exception handlers
     register_exception_handlers(app)

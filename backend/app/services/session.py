@@ -1,7 +1,7 @@
 """Session service (PostgreSQL async)."""
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +62,7 @@ class SessionService:
     ) -> Session:
         """Create a new session for a user."""
         device_name, device_type = _parse_user_agent(user_agent)
-        expires_at = datetime.utcnow() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
 
         return await session_repo.create(
             self.db,
@@ -84,7 +84,7 @@ class SessionService:
         token_hash = _hash_token(refresh_token)
         session = await session_repo.get_by_refresh_token_hash(self.db, token_hash)
 
-        if session and session.expires_at > datetime.utcnow():
+        if session and session.expires_at > datetime.now(UTC):
             await session_repo.update_last_used(self.db, session.id)
             return session
 

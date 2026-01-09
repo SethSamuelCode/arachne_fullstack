@@ -25,12 +25,12 @@ export async function POST(request: NextRequest) {
       message: "Login successful",
     });
 
-    // Set access token cookie (short-lived)
+    // Set access token cookie (short-lived, matches backend ACCESS_TOKEN_EXPIRE_MINUTES)
     response.cookies.set("access_token", data.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 15, // 15 minutes
+      maxAge: 60 * 30, // 30 minutes - aligned with backend token expiry
       path: "/",
     });
 

@@ -7,14 +7,16 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import CurrentUser, SessionSvc, UserSvc
 from app.core.exceptions import AuthenticationError
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token, create_refresh_token
-from app.schemas.token import RefreshTokenRequest, Token
+from app.schemas.token import RefreshTokenRequest, Token, TokenWithUser
 from app.schemas.user import UserCreate, UserRead
 
 router = APIRouter()
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=TokenWithUser)
+@limiter.limit("5/minute")
 async def login(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -23,8 +25,9 @@ async def login(
 ):
     """OAuth2 compatible token login.
 
-    Returns access token and refresh token.
+    Returns access token, refresh token, and user data.
     Raises domain exceptions handled by exception handlers.
+    Rate limited to 5 attempts per minute to prevent brute-force attacks.
     """
     user = await user_service.authenticate(form_data.username, form_data.password)
     access_token = create_access_token(subject=str(user.id))
@@ -37,7 +40,11 @@ async def login(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("User-Agent"),
     )
-    return Token(access_token=access_token, refresh_token=refresh_token)
+    return TokenWithUser(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserRead.model_validate(user),
+    )
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
