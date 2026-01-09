@@ -17,6 +17,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Build arguments for NEXT_PUBLIC_* variables (must be set at build time)
+ARG NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build

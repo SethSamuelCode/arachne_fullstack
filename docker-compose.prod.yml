@@ -180,11 +180,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8550}
     container_name: arachne_fullstack_frontend
     environment:
       - NODE_ENV=production
       - BACKEND_URL=http://app:8550
       - BACKEND_WS_URL=ws://app:8550
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
     networks:
       - backend-internal
     ports:

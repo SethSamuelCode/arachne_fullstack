@@ -19,10 +19,13 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ message: "Logged out successfully" });
 
+  // Use secure cookies only when explicitly enabled (for HTTPS environments)
+  const secureCookies = process.env.SECURE_COOKIES === "true";
+
   // Clear auth cookies
   response.cookies.set("access_token", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies,
     sameSite: "lax",
     maxAge: 0,
     path: "/",
@@ -30,7 +33,7 @@ export async function POST(request: NextRequest) {
 
   response.cookies.set("refresh_token", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies,
     sameSite: "lax",
     maxAge: 0,
     path: "/",

@@ -25,10 +25,13 @@ export async function POST(request: NextRequest) {
       message: "Login successful",
     });
 
+    // Use secure cookies only when explicitly enabled (for HTTPS environments)
+    const secureCookies = process.env.SECURE_COOKIES === "true";
+
     // Set access token cookie (short-lived, matches backend ACCESS_TOKEN_EXPIRE_MINUTES)
     response.cookies.set("access_token", data.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: secureCookies,
       sameSite: "lax",
       maxAge: 60 * 30, // 30 minutes - aligned with backend token expiry
       path: "/",
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     // Set refresh token cookie (long-lived)
     response.cookies.set("refresh_token", data.refresh_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: secureCookies,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",

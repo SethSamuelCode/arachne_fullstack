@@ -23,10 +23,13 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({ message: "Token refreshed" });
 
+    // Use secure cookies only when explicitly enabled (for HTTPS environments)
+    const secureCookies = process.env.SECURE_COOKIES === "true";
+
     // Update access token cookie (matches backend ACCESS_TOKEN_EXPIRE_MINUTES)
     response.cookies.set("access_token", data.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: secureCookies,
       sameSite: "lax",
       maxAge: 60 * 30, // 30 minutes - aligned with backend token expiry
       path: "/",
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (data.refresh_token) {
       response.cookies.set("refresh_token", data.refresh_token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: secureCookies,
         sameSite: "lax",
         maxAge: 60 * 60 * 24 * 7, // 7 days
         path: "/",
