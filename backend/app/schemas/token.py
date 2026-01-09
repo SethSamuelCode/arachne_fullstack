@@ -1,11 +1,10 @@
 """Token schemas."""
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from app.schemas.user import UserRead
+from app.schemas.user import UserRead
 
 
 class Token(BaseModel):
@@ -19,7 +18,7 @@ class Token(BaseModel):
 class TokenWithUser(Token):
     """Token response that includes user data for login."""
 
-    user: "UserRead"
+    user: UserRead
 
 
 class TokenPayload(BaseModel):
