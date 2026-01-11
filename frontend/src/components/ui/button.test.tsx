@@ -54,9 +54,11 @@ describe("Button component", () => {
     expect(button.className).toContain("custom-class");
   });
 
+  // eslint-disable-next-line @next/next/no-html-link-for-pages
   it("should render as a link when asChild is used", () => {
     render(
       <Button asChild>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a href="/test">Link Button</a>
       </Button>
     );

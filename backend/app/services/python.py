@@ -28,11 +28,13 @@ class PythonExecutor:
         """Check if Python execution is available (requires Docker)."""
         return self.docker_client is not None
 
-    async def execute_code(self, code: str, timeout: int = 10) -> dict[str, Any]:
+    async def execute_code(self, code: str, timeout: int = 10, user_id: str | None = None) -> dict[str, Any]:
         """Execute Python code in a Docker container.
 
         Args:
             code (str): The Python code to execute.
+            timeout (int): Maximum execution time in seconds.
+            user_id (str | None): User ID for S3 storage scoping.
 
         Returns:
             dict: Execution result with 'output' and 'error' keys."""
@@ -58,6 +60,10 @@ class PythonExecutor:
             }
             if settings.S3_ENDPOINT:
                 env_vars["AWS_ENDPOINT_URL"] = settings.S3_ENDPOINT
+
+            # Add user-scoped S3 prefix
+            if user_id:
+                env_vars["S3_USER_PREFIX"] = f"users/{user_id}/"
 
             # Run container in executor to avoid blocking event loop
             container = await loop.run_in_executor(

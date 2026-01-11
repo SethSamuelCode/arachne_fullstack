@@ -38,6 +38,15 @@ from app.schemas.web_search import (
 from app.schemas.assistant import Deps
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
+from app.schemas.file import (
+    FileInfo,
+    FileListResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
+    PresignedDownloadResponse,
+    FileDeleteResponse,
+)
+
 __all__ = [
     "UserCreate",
     "UserRead",
@@ -72,4 +81,10 @@ __all__ = [
     "FetchUrlResponse",
     "Deps",
     "SpawnAgentDeps",
+    "FileInfo",
+    "FileListResponse",
+    "PresignedUploadRequest",
+    "PresignedUploadResponse",
+    "PresignedDownloadResponse",
+    "FileDeleteResponse",
 ]

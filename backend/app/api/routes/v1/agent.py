@@ -126,7 +126,7 @@ async def agent_websocket(
 
     # Conversation state per connection
     conversation_history: list[dict[str, str]] = []
-    deps = Deps()
+    deps = Deps(user_id=str(user.id), user_name=user.email)
     current_conversation_id: str | None = None
 
     try:

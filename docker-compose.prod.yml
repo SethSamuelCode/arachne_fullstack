@@ -188,6 +188,7 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8550}
+        - NEXT_PUBLIC_S3_HOST=${NEXT_PUBLIC_S3_HOST:-}
     container_name: arachne_fullstack_frontend
     environment:
       - NODE_ENV=production

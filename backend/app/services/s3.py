@@ -83,15 +83,46 @@ class s3Service:
         except Exception as e:
             print(f"Error deleting object from S3: {e}")
             raise e
-    def list_objs(self) -> list[str]:
+    def list_objs(self, prefix: str | None = None) -> list[str]:
         """List objects in an S3 bucket
 
+        :param prefix: Optional prefix to filter objects
         :return: List of object names
         """
         try:
-            response = self.s3_client.list_objects_v2(Bucket=S3_BUCKET)
+            params: dict = {"Bucket": S3_BUCKET}
+            if prefix:
+                params["Prefix"] = prefix
+            response = self.s3_client.list_objects_v2(**params)
             if 'Contents' in response:
                 return [item['Key'] for item in response['Contents']]
+            else:
+                return []
+        except Exception as e:
+            print(f"Error listing objects in S3: {e}")
+            raise e
+
+    def list_objs_with_metadata(self, prefix: str | None = None) -> list[dict]:
+        """List objects in an S3 bucket with metadata
+
+        :param prefix: Optional prefix to filter objects
+        :return: List of dicts with key, size, last_modified, content_type
+        """
+        try:
+            params: dict = {"Bucket": S3_BUCKET}
+            if prefix:
+                params["Prefix"] = prefix
+            response = self.s3_client.list_objects_v2(**params)
+            if 'Contents' in response:
+                return [
+                    {
+                        'key': item['Key'],
+                        'size': item['Size'],
+                        'last_modified': item['LastModified'],
+                        'content_type': item.get('ContentType'),
+                    }
+                    for item in response['Contents']
+                ]
             else:
                 return []
         except Exception as e:
@@ -114,12 +145,12 @@ class s3Service:
             print(f"Error generating presigned URL for S3 object: {e}")
             raise e
         return response
-    def generate_presigned_post(self, object_name: str, expiration: int = 3600) -> str:
+    def generate_presigned_post(self, object_name: str, expiration: int = 3600) -> dict:
         """Generate a presigned POST to share an S3 object
 
         :param object_name: S3 object name
         :param expiration: Time in seconds for the presigned POST to remain valid
-        :return: Presigned POST as dict. If error, returns None.
+        :return: Presigned POST as dict with 'url' and 'fields' keys.
         """
         try:
             response = self.s3_client.generate_presigned_post(Bucket=S3_BUCKET,

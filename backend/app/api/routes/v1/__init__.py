@@ -11,6 +11,7 @@ from app.api.routes.v1 import conversations
 from app.api.routes.v1 import webhooks
 from app.api.routes.v1 import ws
 from app.api.routes.v1 import agent
+from app.api.routes.v1 import files
 
 v1_router = APIRouter()
 
@@ -40,3 +41,6 @@ v1_router.include_router(ws.router, tags=["websocket"])
 
 # AI Agent routes
 v1_router.include_router(agent.router, tags=["agent"])
+
+# File storage routes
+v1_router.include_router(files.router, prefix="/files", tags=["files"])

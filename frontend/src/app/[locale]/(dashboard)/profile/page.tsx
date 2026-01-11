@@ -39,7 +39,7 @@ export default function ProfilePage() {
     if (!user) return;
     setIsSaving(true);
     try {
-      const payload: any = {
+      const payload: { default_system_prompt: string; default_model?: string | null } = {
         default_system_prompt: systemPrompt,
       };
       

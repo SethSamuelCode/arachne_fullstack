@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { SystemPromptSettings } from "./system-prompt-settings";
 import { useState } from "react";
 import { Settings2 } from "lucide-react";
+import { FileBrowser } from "@/components/files";
 
 export function ChatContainer() {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -259,6 +260,7 @@ function ChatUI({
               </span>
             </div>
             <div className="flex items-center gap-1">
+                <FileBrowser />
                 {setSystemPrompt && (
                    <SystemPromptSettings 
                       systemPrompt={systemPrompt || ""} 

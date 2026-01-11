@@ -48,7 +48,7 @@ export function SystemPromptSettings({
   return (
     <>
       {isValidElement(trigger) 
-        ? cloneElement(trigger as React.ReactElement<any>, { onClick: () => setIsOpen(true) })
+        ? cloneElement(trigger as React.ReactElement<React.HTMLAttributes<HTMLElement>>, { onClick: () => setIsOpen(true) })
         : <div onClick={() => setIsOpen(true)}>{trigger}</div>
       }
 
@@ -64,7 +64,7 @@ export function SystemPromptSettings({
             <div className="space-y-2">
                 <Label htmlFor="system-prompt">System Prompt</Label>
                 <p className="text-xs text-muted-foreground">
-                Pinned context that guides the AI's behavior.
+                Pinned context that guides the AI&apos;s behavior.
                 </p>
                 <textarea
                 id="system-prompt"
