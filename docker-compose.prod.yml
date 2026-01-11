@@ -14,6 +14,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: arachne_fullstack_backend
+    user: root
     env_file:
       - .env.prod
       - ./backend/.env

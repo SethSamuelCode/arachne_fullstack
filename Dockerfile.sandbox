@@ -8,7 +8,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gcc \
     g++ \
     libpq-dev \
-    tesseract-ocr
+    tesseract-ocr \
+    # FFmpeg libraries for PyAV (av package)
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libswscale-dev \
+    libswresample-dev \
+    pkg-config
 
 # Install comprehensive packages for research/data tasks
 RUN --mount=type=cache,target=/root/.cache/pip \
