@@ -38,6 +38,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     Protects against Cross-Site Request Forgery attacks by requiring
     a token to be present in both a cookie and a header for state-changing requests.
+
+    Trusted internal services (like Next.js frontend) can bypass CSRF by providing
+    the X-Internal-API-Key header with the configured INTERNAL_API_KEY.
     """
 
     # Methods that require CSRF protection
@@ -46,12 +49,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     # Cookie settings
     COOKIE_NAME: ClassVar[str] = "csrf_token"
     HEADER_NAME: ClassVar[str] = "X-CSRF-Token"
+    INTERNAL_API_KEY_HEADER: ClassVar[str] = "X-Internal-API-Key"
 
     # Paths to exclude from CSRF protection
     EXEMPT_PATHS: ClassVar[set[str]] = {
         "/api/v1/auth/login",
         "/api/v1/auth/register",
         "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
         "/api/v1/health",
         "/api/v1/ready",
         "/docs",
@@ -69,6 +74,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         """Handle the request and apply CSRF protection."""
         # Skip for exempt paths
         if self._is_exempt(request):
+            return await call_next(request)
+
+        # Skip for trusted internal services (server-to-server calls)
+        if self._is_trusted_internal_request(request):
             return await call_next(request)
 
         # Get or generate CSRF token
@@ -130,6 +139,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Check if endpoint has "csrf-exempt" tag
         route = request.scope.get("route")
         return bool(route and hasattr(route, "tags") and "csrf-exempt" in route.tags)
+
+    def _is_trusted_internal_request(self, request: Request) -> bool:
+        """Check if the request is from a trusted internal service.
+
+        Trusted services can bypass CSRF by providing the correct internal API key.
+        This is used for server-to-server communication (e.g., Next.js frontend).
+        """
+        if not settings.INTERNAL_API_KEY:
+            return False
+
+        internal_key = request.headers.get(self.INTERNAL_API_KEY_HEADER)
+        if not internal_key:
+            return False
+
+        return secrets.compare_digest(internal_key, settings.INTERNAL_API_KEY)
 
     @staticmethod
     def _generate_token() -> str:

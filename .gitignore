@@ -105,3 +105,8 @@ Thumbs.db
 
 # Project specific
 copilot-*
+
+postgres_data/
+redis_data/
+s3_data/
+python-file-store/

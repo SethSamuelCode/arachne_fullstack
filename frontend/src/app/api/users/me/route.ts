@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendFetch, BackendApiError } from "@/lib/server-api";
+import { backendFetch, BackendApiError, buildBackendHeaders } from "@/lib/server-api";
 import type { User as UserProfile } from "@/types";
 
 export async function PATCH(request: NextRequest) {
   try {
     const accessToken = request.cookies.get("access_token")?.value;
+    const csrfToken = request.cookies.get("csrf_token")?.value;
 
     if (!accessToken) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -14,9 +15,7 @@ export async function PATCH(request: NextRequest) {
 
     const data = await backendFetch<UserProfile>("/api/v1/users/me", {
       method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: buildBackendHeaders(accessToken, csrfToken),
       body: JSON.stringify(body),
     });
 

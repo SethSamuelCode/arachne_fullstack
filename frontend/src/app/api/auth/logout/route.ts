@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendFetch } from "@/lib/server-api";
+import { backendFetch, buildBackendHeaders } from "@/lib/server-api";
 
 export async function POST(request: NextRequest) {
   const refreshToken = request.cookies.get("refresh_token")?.value;
+  const csrfToken = request.cookies.get("csrf_token")?.value;
 
   // Invalidate session on backend (if we have a refresh token)
   if (refreshToken) {
     try {
       await backendFetch("/api/v1/auth/logout", {
         method: "POST",
+        headers: buildBackendHeaders(null, csrfToken),
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
     } catch {

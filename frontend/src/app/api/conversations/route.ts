@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { backendFetch, BackendApiError } from "@/lib/server-api";
+import { backendFetch, BackendApiError, buildBackendHeaders } from "@/lib/server-api";
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,9 +15,7 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get("limit") || "50";
 
     const data = await backendFetch(`/api/v1/conversations?skip=${skip}&limit=${limit}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: buildBackendHeaders(accessToken),
     });
 
     return NextResponse.json(data);
@@ -38,6 +36,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const accessToken = request.cookies.get("access_token")?.value;
+    const csrfToken = request.cookies.get("csrf_token")?.value;
 
     if (!accessToken) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
     const data = await backendFetch("/api/v1/conversations", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...buildBackendHeaders(accessToken, csrfToken),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),

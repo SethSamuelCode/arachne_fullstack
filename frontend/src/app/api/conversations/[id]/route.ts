@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { backendFetch, BackendApiError } from "@/lib/server-api";
+import { backendFetch, BackendApiError, buildBackendHeaders } from "@/lib/server-api";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,9 +17,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     const data = await backendFetch(`/api/v1/conversations/${id}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: buildBackendHeaders(accessToken),
     });
 
     return NextResponse.json(data);
@@ -40,6 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const accessToken = request.cookies.get("access_token")?.value;
+    const csrfToken = request.cookies.get("csrf_token")?.value;
 
     if (!accessToken) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -51,7 +50,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const data = await backendFetch(`/api/v1/conversations/${id}`, {
       method: "PATCH",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...buildBackendHeaders(accessToken, csrfToken),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -75,6 +74,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const accessToken = request.cookies.get("access_token")?.value;
+    const csrfToken = request.cookies.get("csrf_token")?.value;
 
     if (!accessToken) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -84,9 +84,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     await backendFetch(`/api/v1/conversations/${id}`, {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: buildBackendHeaders(accessToken, csrfToken),
     });
 
     return new NextResponse(null, { status: 204 });

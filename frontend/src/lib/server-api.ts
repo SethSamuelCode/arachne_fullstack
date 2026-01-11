@@ -5,6 +5,7 @@
  */
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://srv.fluffyb.net:8550";
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
 
 export class BackendApiError extends Error {
   constructor(
@@ -24,6 +25,7 @@ interface RequestOptions extends RequestInit {
 /**
  * Make a request to the FastAPI backend.
  * This should only be called from Next.js API routes or Server Components.
+ * Automatically includes X-Internal-API-Key header for server-to-server auth.
  */
 export async function backendFetch<T>(
   endpoint: string,
@@ -38,10 +40,19 @@ export async function backendFetch<T>(
     url += `?${searchParams.toString()}`;
   }
 
+  // Build headers with internal API key for CSRF bypass
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (INTERNAL_API_KEY) {
+    headers["X-Internal-API-Key"] = INTERNAL_API_KEY;
+  }
+
   const response = await fetch(url, {
     ...fetchOptions,
     headers: {
-      "Content-Type": "application/json",
+      ...headers,
       ...fetchOptions.headers,
     },
   });
@@ -75,4 +86,25 @@ export function getAuthHeaders(
     return {};
   }
   return { Authorization: authHeader };
+}
+
+/**
+ * Build headers for backend requests including auth and CSRF token.
+ * CSRF token is required for state-changing methods (POST, PUT, PATCH, DELETE).
+ */
+export function buildBackendHeaders(
+  accessToken?: string | null,
+  csrfToken?: string | null
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  if (csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
+
+  return headers;
 }

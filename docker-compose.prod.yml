@@ -38,6 +38,11 @@ services:
       python_sandbox:
         condition: service_completed_successfully
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8550/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 
   db:
@@ -48,7 +53,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-arachne_fullstack}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     # NO external ports - only accessible within backend-internal network
     networks:
       - backend-internal
@@ -65,7 +70,7 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     # NO external ports - only accessible within backend-internal network
     volumes:
-      - redis_data:/data
+      - ./redis_data:/data
     networks:
       - backend-internal
     healthcheck:
@@ -154,7 +159,7 @@ services:
       - "9055:9000"
       - "9011:9001"
     volumes:
-      - s3_data:/data
+      - ./s3_data:/data
     networks:
       - backend-internal
     healthcheck:
@@ -171,7 +176,7 @@ services:
     image: python-sandbox:latest
     container_name: arachne_fullstack_python_sandbox
     volumes:
-      - python-file-store:/filestore
+      - ./python-file-store:/filestore
     entrypoint: ["echo", "Sandbox image built successfully"]
     networks:
       - backend-internal
@@ -189,6 +194,7 @@ services:
       - BACKEND_URL=http://app:8550
       - BACKEND_WS_URL=ws://app:8550
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     networks:
       - backend-internal
     ports:

@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"
 
+    # === Internal API (for trusted server-to-server communication) ===
+    # Used by Next.js frontend to bypass CSRF for proxied requests
+    INTERNAL_API_KEY: str | None = None
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
