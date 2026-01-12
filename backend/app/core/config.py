@@ -166,6 +166,13 @@ class Settings(BaseSettings):
     # == Web Search (Tavily) ===
     TAVILY_API_KEY: str | None = None
 
+    # === Academic Search APIs ===
+    # OpenAlex: Email for "polite pool" (higher rate limits, no key required)
+    OPENALEX_EMAIL: str | None = None
+    # Semantic Scholar: Optional API key for higher rate limits (free tier available)
+    SEMANTIC_SCHOLAR_API_KEY: str | None = None
+    # arXiv: No authentication required
+
     # timezone: str = "UTC"
     TZ: str = "Pacific/Auckland"
 

@@ -6,6 +6,13 @@ from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from tavily import TavilyClient
 
+from app.agents.tools.academic_search import (
+    list_arxiv_categories_impl,
+    search_arxiv_impl,
+    search_openalex_impl,
+    search_semantic_scholar_bulk_impl,
+    search_semantic_scholar_impl,
+)
 from app.agents.tools.datetime_tool import get_current_datetime
 from app.agents.tools.extract_webpage import extract_url
 from app.agents.tools.s3_image import s3_fetch_image_impl
@@ -786,3 +793,427 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
                 "rai_reasons": rai_reasons if rai_reasons else None,
             },
         )
+
+    # ==========================================================================
+    # Academic Search Tools
+    # ==========================================================================
+
+    @agent.tool
+    async def search_openalex(
+        ctx: RunContext[TDeps],
+        query: str,
+        search_field: Literal["all", "title", "abstract", "fulltext", "title_and_abstract"] = "all",
+        year_from: int | None = None,
+        year_to: int | None = None,
+        min_citations: int | None = None,
+        open_access_only: bool = False,
+        oa_status: Literal["gold", "green", "hybrid", "bronze", "closed"] | None = None,
+        publication_type: str | None = None,
+        institution_id: str | None = None,
+        author_id: str | None = None,
+        concept_id: str | None = None,
+        language: str | None = None,
+        sort_by: Literal["relevance", "cited_by_count", "publication_date", "display_name"] = "relevance",
+        sort_order: Literal["asc", "desc"] = "desc",
+        page: int = 1,
+        per_page: int = 25,
+        include_abstract: bool = True,
+        include_authors: bool = True,
+    ) -> dict[str, Any]:
+        """Search OpenAlex academic database for scholarly works.
+
+        OpenAlex is an open catalog of 250M+ scholarly works, authors, venues, and
+        institutions. It provides comprehensive metadata including citations, open
+        access status, and institutional affiliations.
+
+        WHEN TO USE:
+        - Large-scale academic searches across all disciplines
+        - Need citation metrics and open access information
+        - Want to filter by institution, author, or concept
+        - Need structured metadata (DOIs, ORCIDs, publication dates)
+        - Looking for open access versions of papers
+        - Searching by specific journal, conference, or publisher
+
+        WHEN NOT TO USE:
+        - Need AI-generated paper summaries (use search_semantic_scholar)
+        - Looking for preprints not yet indexed (use search_arxiv)
+        - Need paper embeddings for similarity search
+
+        SEARCH FIELD OPTIONS:
+        - "all": Search title, abstract, and fulltext (default, broadest)
+        - "title": Search only paper titles (precise)
+        - "abstract": Search only abstracts
+        - "fulltext": Search full paper text (subset of works)
+        - "title_and_abstract": Search both title and abstract
+
+        OPEN ACCESS STATUS:
+        - "gold": Published in an OA journal
+        - "green": Free copy in a repository
+        - "hybrid": OA in a subscription journal
+        - "bronze": Free to read on publisher site
+        - "closed": No free version available
+
+        SORTING OPTIONS:
+        - "relevance": Best match for search terms (default)
+        - "cited_by_count": Most cited papers first
+        - "publication_date": Newest or oldest papers
+        - "display_name": Alphabetical by title
+
+        ARGS:
+            query: Search terms. Natural language queries work well.
+            search_field: Which fields to search (default: "all").
+            year_from: Minimum publication year (inclusive), e.g., 2020.
+            year_to: Maximum publication year (inclusive), e.g., 2024.
+            min_citations: Only return papers with at least this many citations.
+            open_access_only: If True, only return papers with free full text.
+            oa_status: Filter by specific OA status.
+            publication_type: Filter by type - "article", "book", "dataset", etc.
+            institution_id: Filter by institution OpenAlex ID (e.g., "I27837315" for MIT).
+            author_id: Filter by author OpenAlex ID (e.g., "A5023888391").
+            concept_id: Filter by research concept ID (e.g., "C41008148" for AI).
+            language: Filter by ISO 639-1 language code (e.g., "en", "zh", "de").
+            sort_by: How to sort results.
+            sort_order: "desc" for descending, "asc" for ascending.
+            page: Page number (1-indexed). First page = 1.
+            per_page: Results per page, 1-200 (default: 25).
+            include_abstract: Include paper abstracts in results.
+            include_authors: Include author information.
+
+        RETURNS:
+            Dictionary with total_count, page, per_page, and results list containing
+            papers with id, doi, title, publication_year, cited_by_count, is_oa,
+            oa_status, pdf_url, abstract, authors, and source_name.
+
+        ERRORS:
+            - API timeout: OpenAlex may be slow during peak times
+            - Invalid filter: Check parameter values match allowed options
+        """
+        return await search_openalex_impl(
+            query,
+            search_field=search_field,
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=min_citations,
+            open_access_only=open_access_only,
+            oa_status=oa_status,
+            publication_type=publication_type,
+            institution_id=institution_id,
+            author_id=author_id,
+            concept_id=concept_id,
+            language=language,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            per_page=per_page,
+            include_abstract=include_abstract,
+            include_authors=include_authors,
+        )
+
+    @agent.tool
+    async def search_semantic_scholar(
+        ctx: RunContext[TDeps],
+        query: str,
+        year: str | None = None,
+        venue: str | None = None,
+        fields_of_study: list[str] | None = None,
+        publication_types: list[str] | None = None,
+        open_access_only: bool = False,
+        min_citation_count: int | None = None,
+        offset: int = 0,
+        limit: int = 20,
+        include_abstract: bool = True,
+        include_tldr: bool = True,
+        include_authors: bool = True,
+        include_venue: bool = True,
+        include_embedding: bool = False,
+    ) -> dict[str, Any]:
+        """Search Semantic Scholar for academic papers with AI-enhanced features.
+
+        Semantic Scholar provides AI-powered paper search with unique features like
+        TLDR summaries (AI-generated paper summaries), influential citation tracking,
+        and paper embeddings for similarity search.
+
+        WHEN TO USE:
+        - Need AI-generated paper summaries (TLDR) for quick understanding
+        - Want to identify influential citations (not just citation count)
+        - Looking for CS/AI papers (excellent coverage)
+        - Need paper embeddings for building similarity features
+        - Want to filter by specific publication types or venues
+
+        WHEN NOT TO USE:
+        - Need boolean query syntax (use search_semantic_scholar_bulk)
+        - Want more than 1000 results (use bulk search)
+        - Need institution/affiliation filtering (use search_openalex)
+        - Looking for very recent preprints (use search_arxiv)
+
+        YEAR FILTER FORMATS:
+        - Single year: "2020"
+        - Range: "2016-2020"
+        - From year onwards: "2010-" (2010 to present)
+        - Up to year: "-2015" (papers before 2015)
+
+        FIELDS OF STUDY (common values):
+        "Computer Science", "Medicine", "Physics", "Biology", "Chemistry",
+        "Mathematics", "Engineering", "Psychology", "Economics"
+
+        PUBLICATION TYPES:
+        "JournalArticle", "Conference", "Review", "Book", "Dataset", "ClinicalTrial"
+
+        ARGS:
+            query: Plain-text search query. No special syntax supported.
+            year: Year or range. Examples: "2020", "2016-2020", "2010-", "-2015".
+            venue: Comma-separated venue names (e.g., "Nature,Science,ICML").
+            fields_of_study: List of fields like ["Computer Science", "Medicine"].
+            publication_types: List of types like ["JournalArticle", "Conference"].
+            open_access_only: If True, only return papers with free PDFs.
+            min_citation_count: Minimum number of citations required.
+            offset: Starting index (0-based) for pagination.
+            limit: Number of results (1-100, default: 20).
+            include_abstract: Include full paper abstracts.
+            include_tldr: Include AI-generated TLDR summaries (RECOMMENDED).
+            include_authors: Include author names and IDs.
+            include_venue: Include publication venue info.
+            include_embedding: Include SPECTER v2 paper embeddings.
+
+        RETURNS:
+            Dictionary with total, offset, next_offset, and data list containing
+            papers with paper_id, title, abstract, year, citation_count,
+            influential_citation_count, is_open_access, open_access_pdf, tldr,
+            authors, venue, fields_of_study, publication_types, and external_ids.
+
+        ERRORS:
+            - Rate limit (429): Wait and retry. Consider adding API key.
+            - No results: Try broader search terms or fewer filters.
+        """
+        return await search_semantic_scholar_impl(
+            query,
+            year=year,
+            venue=venue,
+            fields_of_study=fields_of_study,
+            publication_types=publication_types,
+            open_access_only=open_access_only,
+            min_citation_count=min_citation_count,
+            offset=offset,
+            limit=limit,
+            include_abstract=include_abstract,
+            include_tldr=include_tldr,
+            include_authors=include_authors,
+            include_venue=include_venue,
+            include_embedding=include_embedding,
+        )
+
+    @agent.tool
+    async def search_semantic_scholar_bulk(
+        ctx: RunContext[TDeps],
+        query: str,
+        year: str | None = None,
+        venue: str | None = None,
+        fields_of_study: list[str] | None = None,
+        publication_types: list[str] | None = None,
+        open_access_only: bool = False,
+        min_citation_count: int | None = None,
+        sort_by: Literal["paperId", "publicationDate", "citationCount"] = "paperId",
+        sort_order: Literal["asc", "desc"] = "asc",
+        token: str | None = None,
+        include_abstract: bool = True,
+        include_tldr: bool = False,
+    ) -> dict[str, Any]:
+        """Bulk search Semantic Scholar with boolean query support and pagination.
+
+        This endpoint supports boolean query syntax and can access up to 10 million
+        results through pagination tokens. Use this for systematic reviews, dataset
+        building, or when you need precise query control.
+
+        WHEN TO USE:
+        - Need boolean query operators (AND, OR, NOT)
+        - Want to retrieve more than 1000 results
+        - Building datasets or doing systematic literature reviews
+        - Need exact phrase matching or prefix search
+        - Want to sort by citation count or publication date
+
+        WHEN NOT TO USE:
+        - Simple searches (use search_semantic_scholar instead)
+        - Need quick results with TLDR summaries (bulk is slower)
+        - Need paper embeddings (not available in bulk)
+
+        BOOLEAN QUERY SYNTAX:
+        - AND: "machine AND learning" or "machine learning" (implicit)
+        - OR: "machine | learning" (either term)
+        - NOT: "-excluded_term" (prefix with minus)
+        - Phrase: '"exact phrase"' (wrap in double quotes)
+        - Prefix: "neuro*" (matches neuroscience, neural, etc.)
+        - Grouping: "(neural | deep) AND learning"
+        - Fuzzy: "word~2" (edit distance of 2)
+
+        SORTING OPTIONS:
+        - "paperId": Default, stable ordering for pagination
+        - "publicationDate": Newest or oldest first
+        - "citationCount": Most or least cited first
+
+        ARGS:
+            query: Boolean query string. Supports AND, OR, NOT, phrases, wildcards.
+            year: Year or range filter (same as relevance search).
+            venue: Comma-separated venue names.
+            fields_of_study: List of fields to filter by.
+            publication_types: List of publication types.
+            open_access_only: Only papers with free PDFs.
+            min_citation_count: Minimum citation count.
+            sort_by: Sort field - "paperId", "publicationDate", or "citationCount".
+            sort_order: "asc" or "desc".
+            token: Continuation token from previous response for pagination.
+            include_abstract: Include paper abstracts.
+            include_tldr: Include TLDR summaries (adds latency).
+
+        RETURNS:
+            Dictionary with total, token (for next page), and data list.
+            When token is None, there are no more results.
+
+        PAGINATION:
+            1. First call: Don't pass token
+            2. Check response for token field
+            3. If token is not None, call again with that token
+            4. Repeat until token is None
+        """
+        return await search_semantic_scholar_bulk_impl(
+            query,
+            year=year,
+            venue=venue,
+            fields_of_study=fields_of_study,
+            publication_types=publication_types,
+            open_access_only=open_access_only,
+            min_citation_count=min_citation_count,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            token=token,
+            include_abstract=include_abstract,
+            include_tldr=include_tldr,
+        )
+
+    @agent.tool
+    async def search_arxiv(
+        ctx: RunContext[TDeps],
+        query: str | None = None,
+        id_list: list[str] | None = None,
+        search_field: Literal["all", "title", "abstract", "author", "category", "comment", "journal_ref"] = "all",
+        categories: list[str] | None = None,
+        submitted_after: str | None = None,
+        submitted_before: str | None = None,
+        sort_by: Literal["relevance", "lastUpdatedDate", "submittedDate"] = "relevance",
+        sort_order: Literal["ascending", "descending"] = "descending",
+        start: int = 0,
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Search arXiv preprint repository for scientific papers.
+
+        arXiv is a free, open-access repository of preprints in physics, mathematics,
+        computer science, quantitative biology, quantitative finance, statistics,
+        electrical engineering, and economics. Papers are available immediately upon
+        submission, often months before peer-reviewed publication.
+
+        WHEN TO USE:
+        - Finding cutting-edge research before peer review
+        - Physics, mathematics, CS, statistics, or quantitative papers
+        - Need immediate access to full PDFs (always free)
+        - Looking for specific arXiv IDs
+        - Want to track recent submissions in a field
+        - Need papers by exact arXiv category
+
+        WHEN NOT TO USE:
+        - Need AI summaries (use search_semantic_scholar)
+        - Need citation counts (use search_openalex or search_semantic_scholar)
+        - Looking for biology, medicine, or social science (limited coverage)
+        - Need institution or author affiliation filters
+
+        SEARCH FIELD OPTIONS:
+        - "all": Search all fields (default)
+        - "title": Paper titles only
+        - "abstract": Abstracts only
+        - "author": Author names
+        - "category": Category codes
+        - "comment": Author comments
+        - "journal_ref": Journal references
+
+        COMMON CATEGORY CODES:
+        Computer Science: cs.AI, cs.CL (NLP), cs.CV, cs.LG (ML), cs.NE, cs.RO
+        Statistics: stat.ML, stat.TH, stat.ME
+        Physics: quant-ph, hep-th, cond-mat.*, astro-ph.*
+        Math: math.OC (optimization), math.PR (probability)
+
+        Use list_arxiv_categories to see all valid category codes.
+
+        DATE FORMAT:
+        Use YYYYMMDD (e.g., "20230101") for date filters.
+
+        ARGS:
+            query: Search terms. Can use inline field prefixes like "ti:quantum AND au:smith".
+            id_list: List of specific arXiv IDs (e.g., ["2301.00001", "cs/0001001"]).
+            search_field: Limit search to specific field.
+            categories: Filter by arXiv category codes (e.g., ["cs.AI", "cs.LG"]).
+            submitted_after: Only papers submitted after this date (YYYYMMDD).
+            submitted_before: Only papers submitted before this date (YYYYMMDD).
+            sort_by: Sort by "relevance", "lastUpdatedDate", or "submittedDate".
+            sort_order: "ascending" or "descending".
+            start: Starting index for pagination (0-based).
+            max_results: Number of results (max 2000 per request).
+
+        RETURNS:
+            Dictionary with total_results, start_index, items_per_page, and entries
+            list containing papers with id, title, summary, authors, published,
+            updated, categories, primary_category, pdf_url, abs_url, doi,
+            journal_ref, and comment.
+
+        RATE LIMITING:
+            arXiv requires 3-second delays between requests (automatic).
+
+        ERRORS:
+            - Query too broad: arXiv limits to 30000 results total
+            - Invalid category: Use list_arxiv_categories to check valid codes
+        """
+        return await search_arxiv_impl(
+            query,
+            id_list=id_list,
+            search_field=search_field,
+            categories=categories,
+            submitted_after=submitted_after,
+            submitted_before=submitted_before,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            start=start,
+            max_results=max_results,
+        )
+
+    @agent.tool
+    async def list_arxiv_categories(ctx: RunContext[TDeps]) -> dict[str, Any]:
+        """List all arXiv category codes with their names and groups.
+
+        Use this tool to discover valid arXiv category codes for filtering searches.
+        arXiv uses a hierarchical category system organized by research discipline.
+
+        WHEN TO USE:
+        - Need to find the correct category code for a research area
+        - Want to see all categories in a discipline (e.g., all CS categories)
+        - Unsure which category code to use in search_arxiv
+
+        RETURNS:
+            Dictionary with:
+            - categories: Dict mapping code to {"name": ..., "group": ...}
+            - by_group: Dict mapping group name to list of {"code": ..., "name": ...}
+
+        CATEGORY GROUPS:
+        - Computer Science (cs.*): 40+ categories including AI, ML, NLP, CV
+        - Statistics (stat.*): ML, methodology, theory, applications
+        - Mathematics (math.*): 30+ categories including optimization, probability
+        - Physics: Multiple archives (physics.*, quant-ph, hep-*, cond-mat.*)
+        - Quantitative Biology (q-bio.*): Genomics, neuroscience, etc.
+        - Quantitative Finance (q-fin.*): Pricing, risk management, etc.
+        - Electrical Engineering (eess.*): Signal processing, image/video, audio
+        - Economics (econ.*): Econometrics, general economics, theory
+
+        EXAMPLES:
+            # Get all categories
+            categories = list_arxiv_categories()
+
+            # Use in search
+            search_arxiv("neural network", categories=["cs.LG", "cs.NE", "stat.ML"])
+        """
+        return list_arxiv_categories_impl()

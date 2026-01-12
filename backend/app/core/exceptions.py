@@ -120,3 +120,66 @@ class InternalError(AppException):
     message = "Internal server error"
     code = "INTERNAL_ERROR"
     status_code = 500
+
+
+# === Academic Search API Errors ===
+
+
+class AcademicSearchError(AppException):
+    """Base exception for academic search API errors.
+
+    Attributes:
+        message: Human-readable error message.
+        code: Machine-readable error code.
+        status_code: HTTP status code (defaults to 503 for external service errors).
+        retry_after: Seconds to wait before retrying (for rate limit errors).
+        api_status_code: Original status code from the external API.
+    """
+
+    message = "Academic search API error"
+    code = "ACADEMIC_SEARCH_ERROR"
+    status_code = 503
+
+    def __init__(
+        self,
+        message: str | None = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
+        retry_after: int | None = None,
+        api_status_code: int | None = None,
+    ):
+        super().__init__(message, code, details)
+        self.retry_after = retry_after
+        self.api_status_code = api_status_code
+
+
+class OpenAlexError(AcademicSearchError):
+    """OpenAlex API error.
+
+    Raised when OpenAlex API returns an error response or is unreachable.
+    """
+
+    message = "OpenAlex API error"
+    code = "OPENALEX_ERROR"
+
+
+class SemanticScholarError(AcademicSearchError):
+    """Semantic Scholar API error.
+
+    Raised when Semantic Scholar API returns an error response or is unreachable.
+    Common causes: rate limiting (429), invalid query, server errors.
+    """
+
+    message = "Semantic Scholar API error"
+    code = "SEMANTIC_SCHOLAR_ERROR"
+
+
+class ArxivError(AcademicSearchError):
+    """arXiv API error.
+
+    Raised when arXiv API returns an error response or is unreachable.
+    Note: arXiv has strict rate limits (3 second delay recommended between requests).
+    """
+
+    message = "arXiv API error"
+    code = "ARXIV_ERROR"

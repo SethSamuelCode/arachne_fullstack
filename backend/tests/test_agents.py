@@ -275,3 +275,388 @@ class TestGenerateImageTool:
         assert "IMAGE" in config.response_modalities
         assert config.image_config.aspect_ratio == "4:3"
         assert len(config.safety_settings) == 1
+
+
+# =============================================================================
+# Academic Search Tools Tests
+# =============================================================================
+
+
+class TestAcademicSearchExceptions:
+    """Tests for academic search exception hierarchy."""
+
+    def test_academic_search_error_base_class(self):
+        """Test AcademicSearchError base class."""
+        from app.core.exceptions import AcademicSearchError
+
+        error = AcademicSearchError(
+            message="Test error",
+            retry_after=30,
+            api_status_code=429,
+        )
+        assert error.message == "Test error"
+        assert error.retry_after == 30
+        assert error.api_status_code == 429
+        assert error.code == "ACADEMIC_SEARCH_ERROR"
+        assert error.status_code == 503
+
+    def test_openalex_error(self):
+        """Test OpenAlexError inherits from AcademicSearchError."""
+        from app.core.exceptions import AcademicSearchError, OpenAlexError
+
+        error = OpenAlexError(message="OpenAlex API failed")
+        assert isinstance(error, AcademicSearchError)
+        assert error.code == "OPENALEX_ERROR"
+        assert error.message == "OpenAlex API failed"
+
+    def test_semantic_scholar_error(self):
+        """Test SemanticScholarError with rate limit info."""
+        from app.core.exceptions import SemanticScholarError
+
+        error = SemanticScholarError(
+            message="Rate limited",
+            api_status_code=429,
+            retry_after=60,
+        )
+        assert error.code == "SEMANTIC_SCHOLAR_ERROR"
+        assert error.retry_after == 60
+        assert error.api_status_code == 429
+
+    def test_arxiv_error(self):
+        """Test ArxivError."""
+        from app.core.exceptions import ArxivError
+
+        error = ArxivError(message="arXiv timeout")
+        assert error.code == "ARXIV_ERROR"
+        assert error.message == "arXiv timeout"
+
+
+class TestOpenAlexClient:
+    """Tests for OpenAlex client."""
+
+    def test_singleton_instance(self):
+        """Test get_openalex_client returns singleton."""
+        from app.clients.academic import get_openalex_client
+
+        client1 = get_openalex_client()
+        client2 = get_openalex_client()
+        assert client1 is client2
+
+    def test_build_filter_basic(self):
+        """Test filter string building."""
+        from app.clients.academic.openalex import OpenAlexClient
+
+        client = OpenAlexClient()
+        filter_str = client._build_filter(
+            query="machine learning",
+            search_field="title",
+        )
+        assert "title.search:machine learning" in filter_str
+
+    def test_build_filter_complex(self):
+        """Test complex filter with multiple parameters."""
+        from app.clients.academic.openalex import OpenAlexClient
+
+        client = OpenAlexClient()
+        filter_str = client._build_filter(
+            query="deep learning",
+            search_field="all",
+            year_from=2020,
+            year_to=2024,
+            min_citations=100,
+            open_access_only=True,
+        )
+        assert "default.search:deep learning" in filter_str
+        assert "from_publication_date:2020-01-01" in filter_str
+        assert "to_publication_date:2024-12-31" in filter_str
+        assert "cited_by_count:>=100" in filter_str
+        assert "is_oa:true" in filter_str
+
+    def test_build_filter_single_year(self):
+        """Test filter with single year."""
+        from app.clients.academic.openalex import OpenAlexClient
+
+        client = OpenAlexClient()
+        filter_str = client._build_filter(
+            query="test",
+            year_from=2023,
+            year_to=2023,
+        )
+        assert "publication_year:2023" in filter_str
+
+    def test_build_select_fields(self):
+        """Test select field building."""
+        from app.clients.academic.openalex import OpenAlexClient
+
+        client = OpenAlexClient()
+        select_str = client._build_select(
+            include_abstract=True,
+            include_authors=True,
+            include_citations=True,
+        )
+        assert "abstract_inverted_index" in select_str
+        assert "authorships" in select_str
+        assert "cited_by_count" in select_str
+
+
+class TestSemanticScholarClient:
+    """Tests for Semantic Scholar client."""
+
+    def test_singleton_instance(self):
+        """Test get_semantic_scholar_client returns singleton."""
+        from app.clients.academic import get_semantic_scholar_client
+
+        client1 = get_semantic_scholar_client()
+        client2 = get_semantic_scholar_client()
+        assert client1 is client2
+
+    def test_build_fields_basic(self):
+        """Test fields parameter building."""
+        from app.clients.academic.semantic_scholar import SemanticScholarClient
+
+        client = SemanticScholarClient()
+        fields = client._build_fields(
+            include_abstract=True,
+            include_tldr=True,
+            include_authors=True,
+        )
+        assert "abstract" in fields
+        assert "tldr" in fields
+        assert "authors" in fields
+        assert "paperId" in fields  # Always included
+
+    def test_build_fields_with_embedding(self):
+        """Test fields with embedding."""
+        from app.clients.academic.semantic_scholar import SemanticScholarClient
+
+        client = SemanticScholarClient()
+        fields = client._build_fields(include_embedding=True)
+        assert "embedding.specter_v2" in fields
+
+
+class TestArxivClient:
+    """Tests for arXiv client."""
+
+    def test_singleton_instance(self):
+        """Test get_arxiv_client returns singleton."""
+        from app.clients.academic import get_arxiv_client
+
+        client1 = get_arxiv_client()
+        client2 = get_arxiv_client()
+        assert client1 is client2
+
+    def test_build_query_basic(self):
+        """Test query string building."""
+        from app.clients.academic.arxiv import ArxivClient
+
+        client = ArxivClient()
+        query = client._build_query("machine learning", search_field="all")
+        assert "all:machine+learning" in query
+
+    def test_build_query_with_categories(self):
+        """Test query with category filter."""
+        from app.clients.academic.arxiv import ArxivClient
+
+        client = ArxivClient()
+        query = client._build_query(
+            "neural network",
+            categories=["cs.LG", "cs.AI"],
+        )
+        assert "cat:cs.LG" in query or "cs.LG" in query
+        assert "cat:cs.AI" in query or "cs.AI" in query
+
+    def test_build_query_with_dates(self):
+        """Test query with date range."""
+        from app.clients.academic.arxiv import ArxivClient
+
+        client = ArxivClient()
+        query = client._build_query(
+            "test",
+            submitted_after="20230101",
+            submitted_before="20231231",
+        )
+        assert "submittedDate:" in query
+
+    def test_category_validation(self):
+        """Test arXiv category codes are valid."""
+        from app.clients.academic.arxiv import ARXIV_CATEGORIES
+
+        # Check some known categories exist
+        assert "cs.AI" in ARXIV_CATEGORIES
+        assert "cs.LG" in ARXIV_CATEGORIES
+        assert "stat.ML" in ARXIV_CATEGORIES
+        assert "quant-ph" in ARXIV_CATEGORIES
+
+        # Verify structure
+        for code, info in ARXIV_CATEGORIES.items():
+            assert "name" in info
+            assert "group" in info
+
+
+class TestArxivCategories:
+    """Tests for arXiv category functions."""
+
+    def test_get_categories(self):
+        """Test get_categories returns all categories."""
+        from app.clients.academic.arxiv import get_categories
+
+        categories = get_categories()
+        assert len(categories) > 100  # Should have many categories
+        assert "cs.AI" in categories
+
+    def test_get_categories_by_group(self):
+        """Test get_categories_by_group organizes correctly."""
+        from app.clients.academic.arxiv import get_categories_by_group
+
+        by_group = get_categories_by_group()
+        assert "Computer Science" in by_group
+        assert "Physics" in by_group
+        assert "Mathematics" in by_group
+
+        # Check CS categories
+        cs_codes = [c["code"] for c in by_group["Computer Science"]]
+        assert "cs.AI" in cs_codes
+        assert "cs.LG" in cs_codes
+
+    def test_list_arxiv_categories_impl(self):
+        """Test list_arxiv_categories_impl tool."""
+        from app.agents.tools.academic_search import list_arxiv_categories_impl
+
+        result = list_arxiv_categories_impl()
+        assert "categories" in result
+        assert "by_group" in result
+        assert "cs.AI" in result["categories"]
+
+
+class TestAcademicSearchSchemas:
+    """Tests for academic search Pydantic schemas."""
+
+    def test_openalex_work_from_api_response(self):
+        """Test OpenAlexWork.from_api_response parsing."""
+        from app.schemas.academic import OpenAlexWork
+
+        api_response = {
+            "id": "https://openalex.org/W2125098916",
+            "doi": "https://doi.org/10.1038/nature12373",
+            "display_name": "Test Paper Title",
+            "publication_year": 2023,
+            "cited_by_count": 150,
+            "is_oa": True,
+            "open_access": {"is_oa": True, "oa_status": "gold"},
+            "authorships": [
+                {"author": {"id": "A1", "display_name": "Author One", "orcid": "0000-0001-2345-6789"}}
+            ],
+            "abstract_inverted_index": {"This": [0], "is": [1], "a": [2], "test": [3]},
+        }
+
+        work = OpenAlexWork.from_api_response(api_response)
+        assert work.id == "W2125098916"
+        assert work.doi == "10.1038/nature12373"
+        assert work.title == "Test Paper Title"
+        assert work.publication_year == 2023
+        assert work.cited_by_count == 150
+        assert work.is_oa is True
+        assert work.abstract == "This is a test"
+        assert len(work.authors) == 1
+        assert work.authors[0].display_name == "Author One"
+
+    def test_openalex_inverted_index_decode(self):
+        """Test OpenAlex abstract inverted index decoding."""
+        from app.schemas.academic import OpenAlexWork
+
+        inverted = {
+            "The": [0],
+            "quick": [1],
+            "brown": [2],
+            "fox": [3],
+            "jumps": [4],
+        }
+        result = OpenAlexWork._decode_inverted_index(inverted)
+        assert result == "The quick brown fox jumps"
+
+    def test_semantic_scholar_paper_from_api_response(self):
+        """Test SemanticScholarPaper.from_api_response parsing."""
+        from app.schemas.academic import SemanticScholarPaper
+
+        api_response = {
+            "paperId": "649def34f8be52c8b66281af98ae884c09aef38b",
+            "title": "Attention Is All You Need",
+            "abstract": "We propose a new architecture...",
+            "year": 2017,
+            "citationCount": 50000,
+            "influentialCitationCount": 5000,
+            "isOpenAccess": True,
+            "openAccessPdf": {"url": "https://example.com/paper.pdf", "status": "GOLD"},
+            "tldr": {"text": "This paper introduces transformers.", "model": "v2"},
+            "authors": [{"authorId": "A1", "name": "Vaswani"}],
+            "fieldsOfStudy": ["Computer Science"],
+            "externalIds": {"DOI": "10.123/test", "ArXiv": "1706.03762"},
+        }
+
+        paper = SemanticScholarPaper.from_api_response(api_response)
+        assert paper.paper_id == "649def34f8be52c8b66281af98ae884c09aef38b"
+        assert paper.title == "Attention Is All You Need"
+        assert paper.year == 2017
+        assert paper.citation_count == 50000
+        assert paper.tldr is not None
+        assert paper.tldr.text == "This paper introduces transformers."
+        assert paper.is_open_access is True
+        assert paper.open_access_pdf is not None
+        assert paper.external_ids is not None
+        assert paper.external_ids.arxiv_id == "1706.03762"
+
+    def test_arxiv_paper_from_api_response(self):
+        """Test ArxivPaper.from_api_response parsing."""
+        from app.schemas.academic import ArxivPaper
+
+        api_response = {
+            "id": "2301.00001",
+            "title": "A Test Paper on arXiv",
+            "summary": "This paper discusses important topics.",
+            "authors": [{"name": "John Doe", "affiliation": "MIT"}],
+            "published": "2023-01-01T00:00:00Z",
+            "updated": "2023-01-15T00:00:00Z",
+            "categories": ["cs.AI", "cs.LG"],
+            "primary_category": "cs.AI",
+            "pdf_url": "http://arxiv.org/pdf/2301.00001",
+            "abs_url": "http://arxiv.org/abs/2301.00001",
+            "doi": "10.1234/test",
+        }
+
+        paper = ArxivPaper.from_api_response(api_response)
+        assert paper.id == "2301.00001"
+        assert paper.title == "A Test Paper on arXiv"
+        assert paper.primary_category == "cs.AI"
+        assert "cs.LG" in paper.categories
+        assert len(paper.authors) == 1
+        assert paper.authors[0].name == "John Doe"
+        assert paper.doi == "10.1234/test"
+
+
+class TestAcademicSearchConfig:
+    """Tests for academic search configuration."""
+
+    def test_openalex_email_config(self):
+        """Test OPENALEX_EMAIL config setting exists."""
+        from app.core.config import Settings
+
+        # Check the field exists in Settings
+        assert hasattr(Settings, "model_fields")
+        field_names = list(Settings.model_fields.keys())
+        assert "OPENALEX_EMAIL" in field_names
+
+    def test_semantic_scholar_api_key_config(self):
+        """Test SEMANTIC_SCHOLAR_API_KEY config setting exists."""
+        from app.core.config import Settings
+
+        field_names = list(Settings.model_fields.keys())
+        assert "SEMANTIC_SCHOLAR_API_KEY" in field_names
+
+    def test_config_defaults_are_none(self):
+        """Test academic API keys default to None."""
+        from app.core.config import settings
+
+        # These should be None by default (unless set in .env)
+        # We just verify they exist and can be accessed
+        _ = settings.OPENALEX_EMAIL
+        _ = settings.SEMANTIC_SCHOLAR_API_KEY

@@ -38,6 +38,7 @@ dependencies = [
     "docker>=7.1.0",
     "uvloop>=0.22.1",
     "ruff>=0.14.10",
+    "feedparser>=6.0.0",
 ]
 
 [project.optional-dependencies]
