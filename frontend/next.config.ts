@@ -4,16 +4,15 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const withNextIntl = createNextIntlPlugin('./src/i18n.ts');
 
 // Additional hosts to allow in CSP connect-src (e.g., S3/MinIO endpoint)
-const additionalConnectSrc = process.env.NEXT_PUBLIC_S3_HOST 
-  ? `http://${process.env.NEXT_PUBLIC_S3_HOST}:* https://${process.env.NEXT_PUBLIC_S3_HOST}:*`
-  : '';
+// NEXT_PUBLIC_S3_HOST should include protocol, e.g., "http://example.com:9055"
+const additionalConnectSrc = process.env.NEXT_PUBLIC_S3_HOST || '';
 
 // Content Security Policy directives
 const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-eval' 'unsafe-inline';
   style-src 'self' 'unsafe-inline';
-  img-src 'self' blob: data: https:;
+  img-src 'self' blob: data: https: ${additionalConnectSrc};
   font-src 'self' data:;
   connect-src 'self' ws: wss: http://localhost:* https://localhost:* ${additionalConnectSrc};
   frame-ancestors 'none';
