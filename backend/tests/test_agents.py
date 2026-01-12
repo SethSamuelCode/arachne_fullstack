@@ -160,19 +160,21 @@ class TestGenerateImageTool:
         """Test successful image generation with Imagen4 - verify config structure."""
         from google.genai import types
 
-        # Verify the Imagen config structure with safety filters disabled
+        # Verify the Imagen config structure
+        # Note: API only supports BLOCK_LOW_AND_ABOVE for safety_filter_level
+        # and ALLOW_ADULT for person_generation (BLOCK_NONE/ALLOW_ALL rejected)
         config = types.GenerateImagesConfig(
             number_of_images=1,
             aspect_ratio="1:1",
             negative_prompt=None,
-            safety_filter_level=types.SafetyFilterLevel.BLOCK_NONE,
-            person_generation=types.PersonGeneration.ALLOW_ALL,
+            safety_filter_level=types.SafetyFilterLevel.BLOCK_LOW_AND_ABOVE,
+            person_generation=types.PersonGeneration.ALLOW_ADULT,
             include_rai_reason=True,
             include_safety_attributes=True,
             output_mime_type="image/png",
         )
-        assert config.safety_filter_level == types.SafetyFilterLevel.BLOCK_NONE
-        assert config.person_generation == types.PersonGeneration.ALLOW_ALL
+        assert config.safety_filter_level == types.SafetyFilterLevel.BLOCK_LOW_AND_ABOVE
+        assert config.person_generation == types.PersonGeneration.ALLOW_ADULT
         assert config.include_rai_reason is True
         assert config.include_safety_attributes is True
 
@@ -221,7 +223,7 @@ class TestGenerateImageTool:
         from app.core.config import settings
 
         assert settings.GEMINI_IMAGE_MODEL == "gemini-3-pro-image-preview"
-        assert settings.IMAGEN_MODEL == "imagen4"
+        assert settings.IMAGEN_MODEL == "imagen-4.0-generate-001"
         assert settings.IMAGE_GEN_DEFAULT_ASPECT_RATIO == "1:1"
         assert settings.IMAGE_GEN_DEFAULT_SIZE == "2K"
         assert settings.IMAGE_GEN_DEFAULT_COUNT == 1

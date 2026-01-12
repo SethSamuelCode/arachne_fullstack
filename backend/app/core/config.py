@@ -141,7 +141,7 @@ class Settings(BaseSettings):
     # === Image Generation (Google Gemini / Imagen) ===
     GOOGLE_API_KEY: str = ""
     GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image-preview"
-    IMAGEN_MODEL: str = "imagen4"
+    IMAGEN_MODEL: str = "imagen-4.0-generate-001"
     IMAGE_GEN_DEFAULT_ASPECT_RATIO: str = "1:1"
     IMAGE_GEN_DEFAULT_SIZE: str = "2K"
     IMAGE_GEN_DEFAULT_COUNT: int = 1

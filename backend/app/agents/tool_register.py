@@ -17,7 +17,7 @@ from app.schemas.planning import Plan
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 # Type alias for image generation model selection
-ImageModelName = Literal["gemini-3-pro-image-preview", "imagen4"]
+ImageModelName = Literal["gemini-3-pro-image-preview", "imagen-4.0-generate-001"]
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
@@ -554,7 +554,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def generate_image(
         ctx: RunContext[TDeps],
         prompt: str,
-        model: ImageModelName = "gemini-3-pro-image-preview",
+        model: ImageModelName = "imagen-4.0-generate-001",
         aspect_ratio: str = "1:1",
         image_size: str = "2K",
         number_of_images: int = 1,
@@ -570,9 +570,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         - `gemini-3-pro-image-preview`: Best for iterative refinement, conversational
           edits, and when you need 4K output. Supports back-and-forth image editing.
           Generates 1 image per call.
-        - `imagen4`: Best for photorealistic, high-quality single-shot generation.
-          Superior for product photos, portraits, and detailed scenes. Supports
-          generating 1-4 images per call.
+        - `imagen-4.0-generate-001`: Best for photorealistic, high-quality single-shot
+          generation. Superior for product photos, portraits, and detailed scenes.
+          Supports generating 1-4 images per call.
 
         ASPECT RATIOS:
         - Square: "1:1" (default, good for profile pics, icons)
@@ -588,7 +588,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         ARGS:
             prompt: Detailed description of the image to generate. Be specific about
                     subject, style, lighting, composition, colors, and mood.
-            model: "gemini-3-pro-image-preview" or "imagen4" (see selection guide above).
+            model: "gemini-3-pro-image-preview" or "imagen-4.0-generate-001" (see guide).
             aspect_ratio: Image dimensions ratio (default: "1:1").
             image_size: Resolution - "1K", "2K", or "4K" (default: "2K").
             number_of_images: How many images to generate, 1-4 (Imagen only, default: 1).
@@ -619,14 +619,16 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         generated_images: list[tuple[bytes, str]] = []  # (image_bytes, s3_key)
         rai_reasons: list[str] = []
 
-        if model == "imagen4":
-            # Imagen4 image generation with maximum permissive safety settings
+        if model == "imagen-4.0-generate-001":
+            # Imagen 4 image generation
+            # Note: API only supports BLOCK_LOW_AND_ABOVE for safety_filter_level
+            # and ALLOW_ADULT for person_generation (BLOCK_NONE/ALLOW_ALL rejected)
             config = types.GenerateImagesConfig(
                 number_of_images=min(max(number_of_images, 1), 4),  # Clamp to 1-4
                 aspect_ratio=aspect_ratio,
                 negative_prompt=negative_prompt,
-                safety_filter_level=types.SafetyFilterLevel.BLOCK_NONE,
-                person_generation=types.PersonGeneration.ALLOW_ALL,
+                safety_filter_level=types.SafetyFilterLevel.BLOCK_LOW_AND_ABOVE,
+                person_generation=types.PersonGeneration.ALLOW_ADULT,
                 include_rai_reason=True,
                 include_safety_attributes=True,
                 output_mime_type="image/png",
@@ -679,9 +681,10 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
                 ),
             ]
 
+            # Note: output_mime_type is not supported for Gemini API
+            # Images are returned as JPEG by default
             image_config = types.ImageConfig(
                 aspect_ratio=aspect_ratio,
-                output_mime_type="image/png",
             )
             # Add image_size for Gemini (supports up to 4K)
             if image_size in ("1K", "2K", "4K"):
@@ -700,11 +703,15 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             )
 
             # Process response parts for images
+            # Note: Gemini returns images as JPEG
             if response.candidates and response.candidates[0].content:
                 for part in response.candidates[0].content.parts:
                     if part.inline_data and part.inline_data.data:
                         img_filename = filename or uuid4().hex
-                        s3_key = f"{user_prefix}generated/{img_filename}.png"
+                        # Determine extension from MIME type (defaults to jpg for Gemini)
+                        mime_type = part.inline_data.mime_type or "image/jpeg"
+                        extension = "png" if mime_type == "image/png" else "jpg"
+                        s3_key = f"{user_prefix}generated/{img_filename}.{extension}"
 
                         s3.upload_obj(part.inline_data.data, s3_key)
                         generated_images.append((part.inline_data.data, s3_key))
