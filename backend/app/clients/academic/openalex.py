@@ -201,6 +201,8 @@ class OpenAlexClient:
         query: str,
         *,
         search_field: OpenAlexSearchField = "all",
+        sample: int | None = None,
+        seed: int | None = None,
         year_from: int | None = None,
         year_to: int | None = None,
         min_citations: int | None = None,
@@ -224,6 +226,8 @@ class OpenAlexClient:
         Args:
             query: Search query string.
             search_field: Which fields to search (all, title, abstract, fulltext).
+            sample: Number of random records to return. Disables pagination.
+            seed: Random seed for reproducible sampling (used with 'sample').
             year_from: Minimum publication year (inclusive).
             year_to: Maximum publication year (inclusive).
             min_citations: Minimum citation count.
@@ -283,6 +287,12 @@ class OpenAlexClient:
             "page": page,
             "per-page": per_page,
         }
+
+        # Add random sampling if requested
+        if sample is not None:
+            params["sample"] = sample
+            if seed is not None:
+                params["seed"] = seed
 
         # Add sorting (relevance requires a search filter)
         if sort_by == "relevance" and query:
