@@ -214,9 +214,11 @@ class TestGenerateImageTool:
         # These should be valid
         valid_models: list[ImageModelName] = [
             "gemini-3-pro-image-preview",
-            "imagen4",
+            "imagen-4.0-generate-001",
+            "imagen-4.0-ultra-generate-001",
+            "imagen-4.0-fast-generate-001",
         ]
-        assert len(valid_models) == 2
+        assert len(valid_models) == 4
 
     def test_config_defaults(self):
         """Test image generation config defaults are set correctly."""

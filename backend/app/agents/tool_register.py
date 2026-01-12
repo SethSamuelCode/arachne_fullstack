@@ -17,7 +17,12 @@ from app.schemas.planning import Plan
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 # Type alias for image generation model selection
-ImageModelName = Literal["gemini-3-pro-image-preview", "imagen-4.0-generate-001"]
+ImageModelName = Literal[
+    "gemini-3-pro-image-preview",
+    "imagen-4.0-generate-001",
+    "imagen-4.0-ultra-generate-001",
+    "imagen-4.0-fast-generate-001",
+]
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
@@ -570,9 +575,14 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         - `gemini-3-pro-image-preview`: Best for iterative refinement, conversational
           edits, and when you need 4K output. Supports back-and-forth image editing.
           Generates 1 image per call.
-        - `imagen-4.0-generate-001`: Best for photorealistic, high-quality single-shot
-          generation. Superior for product photos, portraits, and detailed scenes.
-          Supports generating 1-4 images per call.
+        - `imagen-4.0-generate-001`: Standard Imagen 4. Great balance of quality and
+          speed for photorealistic images. Supports 1-4 images per call.
+        - `imagen-4.0-ultra-generate-001`: Highest quality Imagen model. Best for
+          professional-grade product photos, portraits, and detailed scenes where
+          quality is paramount. Slower but superior results. Supports 1-4 images.
+        - `imagen-4.0-fast-generate-001`: Fastest Imagen 4 variant. Use for quick
+          iterations, drafts, or when speed matters more than maximum quality.
+          Supports 1-4 images per call.
 
         ASPECT RATIOS:
         - Square: "1:1" (default, good for profile pics, icons)
@@ -588,7 +598,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         ARGS:
             prompt: Detailed description of the image to generate. Be specific about
                     subject, style, lighting, composition, colors, and mood.
-            model: "gemini-3-pro-image-preview" or "imagen-4.0-generate-001" (see guide).
+            model: Model to use (see guide above). Options:
+                   "gemini-3-pro-image-preview", "imagen-4.0-generate-001",
+                   "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001"
             aspect_ratio: Image dimensions ratio (default: "1:1").
             image_size: Resolution - "1K", "2K", or "4K" (default: "2K").
             number_of_images: How many images to generate, 1-4 (Imagen only, default: 1).
@@ -619,8 +631,8 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         generated_images: list[tuple[bytes, str]] = []  # (image_bytes, s3_key)
         rai_reasons: list[str] = []
 
-        if model == "imagen-4.0-generate-001":
-            # Imagen 4 image generation
+        if model in ("imagen-4.0-generate-001", "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001"):
+            # Imagen 4 image generation (standard, ultra, or fast)
             # Note: API only supports BLOCK_LOW_AND_ABOVE for safety_filter_level
             # and ALLOW_ADULT for person_generation (BLOCK_NONE/ALLOW_ALL rejected)
             config = types.GenerateImagesConfig(
@@ -639,7 +651,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
                 config.image_size = image_size
 
             response = await client.aio.models.generate_images(
-                model=settings.IMAGEN_MODEL,
+                model=model,  # Use the selected Imagen model directly
                 prompt=prompt,
                 config=config,
             )
