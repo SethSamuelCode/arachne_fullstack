@@ -138,6 +138,14 @@ class Settings(BaseSettings):
     AI_FRAMEWORK: str = "pydantic_ai"
     LLM_PROVIDER: str = "openai"
 
+    # === Image Generation (Google Gemini / Imagen) ===
+    GOOGLE_API_KEY: str = ""
+    GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image-preview"
+    IMAGEN_MODEL: str = "imagen4"
+    IMAGE_GEN_DEFAULT_ASPECT_RATIO: str = "1:1"
+    IMAGE_GEN_DEFAULT_SIZE: str = "2K"
+    IMAGE_GEN_DEFAULT_COUNT: int = 1
+
     # === CORS ===
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
     CORS_ALLOW_CREDENTIALS: bool = True

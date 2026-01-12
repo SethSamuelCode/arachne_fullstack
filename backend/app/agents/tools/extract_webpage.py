@@ -10,9 +10,7 @@ async def extract_url(
     extract_text: bool = True,
     max_length: int = 200000,
 ) -> FetchUrlResponse:
-
-
-    fetch_code = textwrap.dedent(f'''
+    fetch_code = textwrap.dedent(f"""
     import requests
     from bs4 import BeautifulSoup
     import json
@@ -49,7 +47,7 @@ async def extract_url(
 
     except Exception as e:
         print(json.dumps({{"error": str(e)}}))
-    ''')
+    """)
     executor = get_python_executor()
 
     result = await executor.execute_code(fetch_code, timeout=120)
@@ -57,11 +55,12 @@ async def extract_url(
     try:
         data = json.loads(result["output"])
     except (json.JSONDecodeError, KeyError) as e:
-        raise RuntimeError(f"Failed to parse tool output: {result.get('output', 'No output')} (Error: {e})") from e
+        raise RuntimeError(
+            f"Failed to parse tool output: {result.get('output', 'No output')} (Error: {e})"
+        ) from e
 
     if "error" in data:
         raise RuntimeError(f"Fetch failed: {data['error']}")
-
 
     return FetchUrlResponse(
         url=url,

@@ -4,8 +4,10 @@ The main conversational agent that can be extended with custom tools.
 """
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
+from google.genai.types import HarmBlockThreshold, HarmCategory
 from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.messages import (
     ModelRequest,
@@ -14,7 +16,7 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
-from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tool_register import register_tools
@@ -27,6 +29,14 @@ logger = logging.getLogger(__name__)
 UserContent = str | BinaryContent
 MultimodalInput = str | Sequence[UserContent]
 
+# Safety settings with all filters disabled for maximum permissiveness
+PERMISSIVE_SAFETY_SETTINGS: list[dict[str, Any]] = [
+    {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, "threshold": HarmBlockThreshold.OFF},
+]
 
 
 class AssistantAgent:
@@ -46,7 +56,12 @@ class AssistantAgent:
 
     def _create_agent(self) -> Agent[Deps, str]:
         """Create and configure the PydanticAI agent."""
-        model = GoogleModel(model_name=self.model_name)
+        # Model settings with safety filters disabled
+        model_settings = GoogleModelSettings(
+            google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
+        )
+
+        model = GoogleModel(model_name=self.model_name, settings=model_settings)
 
         agent = Agent[Deps, str](
             model=model,
@@ -57,8 +72,6 @@ class AssistantAgent:
         register_tools(agent)
 
         return agent
-
-
 
     @property
     def agent(self) -> Agent[Deps, str]:

@@ -30,7 +30,6 @@ class PlanStore:
 
         return f"plan {plan_id} updated"
 
-
     def create_plan(self, plan_data: Plan) -> str:
         plan_id = plan_data.id
         self.plans[plan_id] = plan_data
@@ -54,7 +53,9 @@ class PlanStore:
             export_list.append((plan.id, plan.name, plan.plan_description))
         return export_list
 
+
 plan_service = PlanStore()
+
 
 def get_plan_service():
     return plan_service

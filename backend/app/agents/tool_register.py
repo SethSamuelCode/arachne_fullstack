@@ -1,7 +1,9 @@
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
+from uuid import uuid4
 
-from pydantic_ai import Agent, RunContext, ToolReturn
-from pydantic_ai.models.google import GoogleModel
+from google.genai.types import HarmBlockThreshold, HarmCategory
+from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from tavily import TavilyClient
 
 from app.agents.tools.datetime_tool import get_current_datetime
@@ -14,7 +16,22 @@ from app.schemas.models import GeminiModelName
 from app.schemas.planning import Plan
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
+# Type alias for image generation model selection
+ImageModelName = Literal["gemini-3-pro-image-preview", "imagen4"]
+
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
+
+# Safety settings with all filters disabled for maximum permissiveness
+PERMISSIVE_SAFETY_SETTINGS: list[dict[str, Any]] = [
+    {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.OFF},
+    {"category": HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, "threshold": HarmBlockThreshold.OFF},
+]
+
+TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
+
 
 def _stringify(output: Any) -> str:
     """Convert various output types to a string representation."""
@@ -24,6 +41,7 @@ def _stringify(output: Any) -> str:
         return str(output)
     else:
         return repr(output)
+
 
 def register_tools(agent: Agent[TDeps, str]) -> None:
     """Register tools to the given agent."""
@@ -50,7 +68,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         for r in response.get("results", []):
             title = r.get("title", "")
             url = r.get("url", "")
-            snippet = (r.get("content", "") or "")
+            snippet = r.get("content", "") or ""
             results.append(f"**{title}**\nURL: {url}\nContent: {snippet}\n")
         return "\n---\n".join(results) if results else "No search results found."
 
@@ -62,69 +80,70 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         """
         return get_current_datetime()
 
-
     @agent.tool
     async def spawn_agent(
-            ctx: RunContext[TDeps],
-            user_input: str,
-            system_prompt: str | None = None,
-            model_name: GeminiModelName | None = None,
-        ) -> str:
-            """Delegate a sub-task to a new agent with a fresh context window the new agent has the same tools available as you do.
+        ctx: RunContext[TDeps],
+        user_input: str,
+        system_prompt: str | None = None,
+        model_name: GeminiModelName | None = None,
+    ) -> str:
+        """Delegate a sub-task to a new agent with a fresh context window the new agent has the same tools available as you do.
 
-            Use this tool to:
-            1. Isolate complex reasoning steps to prevent context pollution.
-            2. Overcome context window limits by offloading work.
-            3. Switch to a stronger model for difficult tasks.
+        Use this tool to:
+        1. Isolate complex reasoning steps to prevent context pollution.
+        2. Overcome context window limits by offloading work.
+        3. Switch to a stronger model for difficult tasks.
 
-            ARGS:
-            - user_input: The specific instructions or question for the sub-agent. Be explicit and self-contained.
-            - system_prompt: Define the sub-agent's role (e.g., "You are a Python expert"). Defaults to "You are a helpful AI assistant."
-            - model_name: Select based on task difficulty:
-                * 'gemini-2.5-flash-lite': Simple lookups, formatting, low latency.
-                * 'gemini-2.5-flash': Standard tasks, summarization.
-                * 'gemini-2.5-pro': Complex reasoning, coding, creative writing.
-                * 'gemini-3-flash-preview': High speed, moderate reasoning.
-                * 'gemini-3-pro-preview': MAX REASONING. Use for architecture, security analysis, or very hard problems.
+        ARGS:
+        - user_input: The specific instructions or question for the sub-agent. Be explicit and self-contained.
+        - system_prompt: Define the sub-agent's role (e.g., "You are a Python expert"). Defaults to "You are a helpful AI assistant."
+        - model_name: Select based on task difficulty:
+            * 'gemini-2.5-flash-lite': Simple lookups, formatting, low latency.
+            * 'gemini-2.5-flash': Standard tasks, summarization.
+            * 'gemini-2.5-pro': Complex reasoning, coding, creative writing.
+            * 'gemini-3-flash-preview': High speed, moderate reasoning.
+            * 'gemini-3-pro-preview': MAX REASONING. Use for architecture, security analysis, or very hard problems.
 
-            RETURNS:
-            The sub-agent's final text response.
-            """
+        RETURNS:
+        The sub-agent's final text response.
+        """
 
+        spawn_depth: int = getattr(ctx.deps, "spawn_depth", 0)
+        spawn_max_depth: int = getattr(ctx.deps, "spawn_max_depth", 10)
+        if spawn_depth > 0 and spawn_depth >= spawn_max_depth:
+            return f"Error: spawn depth limit reached ({spawn_max_depth})."
 
-            spawn_depth: int = getattr(ctx.deps, 'spawn_depth', 0)
-            spawn_max_depth: int = getattr(ctx.deps, 'spawn_max_depth', 10)
-            if spawn_depth > 0 and spawn_depth >= spawn_max_depth:
-                return f"Error: spawn depth limit reached ({spawn_max_depth})."
+        child_deps = SpawnAgentDeps(
+            user_id=ctx.deps.user_id if hasattr(ctx.deps, "user_id") else None,
+            user_name=ctx.deps.user_name if hasattr(ctx.deps, "user_name") else None,
+            metadata=ctx.deps.metadata if hasattr(ctx.deps, "metadata") else {},
+            system_prompt=system_prompt
+            if system_prompt is not None
+            else "you are a helpful AI assistant.",
+            model_name=model_name if model_name is not None else DEFAULT_GEMINI_MODEL,
+            spawn_depth=spawn_depth + 1,
+            spawn_max_depth=spawn_max_depth,
+        )
 
+        # Model settings with safety filters disabled
+        model_settings = GoogleModelSettings(
+            google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
+        )
 
-            child_deps = SpawnAgentDeps(
-                user_id=ctx.deps.user_id if hasattr(ctx.deps, 'user_id') else None,
-                user_name=ctx.deps.user_name if hasattr(ctx.deps, 'user_name') else None,
-                metadata=ctx.deps.metadata if hasattr(ctx.deps, 'metadata') else {},
-                system_prompt=system_prompt if system_prompt is not None else "you are a helpful AI assistant.",
-                model_name=model_name if model_name is not None else DEFAULT_GEMINI_MODEL,
-                spawn_depth=spawn_depth + 1,
-                spawn_max_depth=spawn_max_depth,
-            )
+        sub_model = GoogleModel(child_deps.model_name.value, settings=model_settings)
+        sub_agent = Agent(
+            deps_type=SpawnAgentDeps,
+            model=sub_model,
+            system_prompt=child_deps.system_prompt or "You are a helpful AI assistant.",
+        )
 
-            sub_model = GoogleModel(child_deps.model_name.value)
-            sub_agent = Agent(
-                deps_type=SpawnAgentDeps,
-                model=sub_model,
-                system_prompt=child_deps.system_prompt or "You are a helpful AI assistant.",
-            )
+        register_tools(sub_agent)
 
-            register_tools(sub_agent)
-
-            result = await sub_agent.run(user_input, deps=child_deps)
-            return _stringify(result.output)
+        result = await sub_agent.run(user_input, deps=child_deps)
+        return _stringify(result.output)
 
     @agent.tool
-    async def create_plan(
-        ctx: RunContext[TDeps],
-        plan: Plan
-    ) -> str:
+    async def create_plan(ctx: RunContext[TDeps], plan: Plan) -> str:
         """Create a new plan.
 
         Use this tool to create a structured plan with a list of tasks.
@@ -136,15 +155,13 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             The ID of the created plan.
         """
         from app.agents.tools.plan_service import get_plan_service
+
         plan_service = get_plan_service()
         plan_id = plan_service.create_plan(plan)
         return plan_id
 
     @agent.tool
-    async def get_plan(
-        ctx: RunContext[TDeps],
-        plan_id: str
-    ) -> Plan | str:
+    async def get_plan(ctx: RunContext[TDeps], plan_id: str) -> Plan | str:
         """Retrieve a plan by its ID.
 
         Use this tool to fetch the details of an existing plan, including its tasks and status.
@@ -156,16 +173,13 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             The Plan object if found, or an error message.
         """
         from app.agents.tools.plan_service import get_plan_service
+
         plan_service = get_plan_service()
         plan = plan_service.get_plan(plan_id)
         return plan
 
     @agent.tool
-    async def update_plan(
-        ctx: RunContext[TDeps],
-        plan_id: str,
-        plan_data: Plan
-    ) -> str:
+    async def update_plan(ctx: RunContext[TDeps], plan_id: str, plan_data: Plan) -> str:
         """Update an existing plan.
 
         Use this tool to modify a plan's details, such as marking tasks as completed, adding new tasks, or changing the plan name.
@@ -178,15 +192,13 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message indicating the result of the update.
         """
         from app.agents.tools.plan_service import get_plan_service
+
         plan_service = get_plan_service()
         result = plan_service.update_plan(plan_id, plan_data)
         return result
 
     @agent.tool
-    async def delete_plan(
-        ctx: RunContext[TDeps],
-        plan_id: str
-    ) -> str:
+    async def delete_plan(ctx: RunContext[TDeps], plan_id: str) -> str:
         """Delete a plan.
 
         Use this tool to remove a plan when it is no longer needed.
@@ -198,6 +210,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message indicating the result of the deletion.
         """
         from app.agents.tools.plan_service import get_plan_service
+
         plan_service = get_plan_service()
         result = plan_service.delete_plan(plan_id)
         return result
@@ -214,6 +227,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A list of tuples containing plan ID, name, and description.
         """
         from app.agents.tools.plan_service import get_plan_service
+
         plan_service = get_plan_service()
         result = plan_service.get_all_plans()
         return result
@@ -229,11 +243,14 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             Note: File paths are relative to your storage space.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         all_objects = s3.list_objs(prefix=user_prefix) if user_prefix else s3.list_objs()
         # Strip user prefix from results
-        return [obj[len(user_prefix):] if obj.startswith(user_prefix) else obj for obj in all_objects]
+        return [
+            obj[len(user_prefix) :] if obj.startswith(user_prefix) else obj for obj in all_objects
+        ]
 
     @agent.tool
     async def s3_upload_file(ctx: RunContext[TDeps], file_name: str, object_name: str) -> str:
@@ -249,6 +266,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A success message string.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
@@ -269,6 +287,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A success message string.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
@@ -276,7 +295,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return f"Successfully downloaded {object_name} to {file_name}"
 
     @agent.tool
-    async def s3_upload_string_content(ctx: RunContext[TDeps], content: str, object_name: str) -> str:
+    async def s3_upload_string_content(
+        ctx: RunContext[TDeps], content: str, object_name: str
+    ) -> str:
         """Upload a string directly as a file to your S3 storage, without creating a local file first.
 
         Use this tool to save text data, reports, or logs directly to S3.
@@ -289,10 +310,11 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A success message string.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
-        s3.upload_obj(content.encode('utf-8'), full_key)
+        s3.upload_obj(content.encode("utf-8"), full_key)
         return f"Successfully uploaded content to {object_name}"
 
     @agent.tool
@@ -308,11 +330,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             The UTF-8 decoded content of the file.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
         content = s3.download_obj(full_key)
-        return content.decode('utf-8')
+        return content.decode("utf-8")
 
     @agent.tool
     async def s3_delete_object(ctx: RunContext[TDeps], object_name: str) -> str:
@@ -327,6 +350,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A success message string.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
@@ -334,7 +358,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return f"Successfully deleted object {object_name}"
 
     @agent.tool
-    async def s3_generate_presigned_download_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
+    async def s3_generate_presigned_download_url(
+        ctx: RunContext[TDeps], object_name: str, expiration: int = 3600
+    ) -> str:
         """Generate a temporary public URL to access a private S3 object.
 
         Use this tool when you need to share a file link with a user or an external system.
@@ -347,13 +373,16 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A string containing the presigned URL.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
         return s3.generate_presigned_download_url(full_key, expiration)
 
     @agent.tool
-    async def s3_generate_presigned_upload_post_url(ctx: RunContext[TDeps], object_name: str, expiration: int = 3600) -> str:
+    async def s3_generate_presigned_upload_post_url(
+        ctx: RunContext[TDeps], object_name: str, expiration: int = 3600
+    ) -> str:
         """Generate a presigned POST URL and fields for uploading a file to your S3 storage.
 
         Use this tool when you need to enable a client/user to upload a file directly to S3 via a POST request.
@@ -367,13 +396,16 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A dictionary (as a string) with keys 'url' (the upload endpoint) and 'fields' (a dictionary of form fields required for authentication).
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         full_key = f"{user_prefix}{object_name}"
         return s3.generate_presigned_post(full_key, expiration)
 
     @agent.tool
-    async def s3_copy_file(ctx: RunContext[TDeps], source_object_name: str, dest_object_name: str) -> str:
+    async def s3_copy_file(
+        ctx: RunContext[TDeps], source_object_name: str, dest_object_name: str
+    ) -> str:
         """Copy a file from one location to another within your S3 storage.
 
         Use this tool to duplicate files, rename them (copy + delete), or create backups.
@@ -386,6 +418,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A success message string.
         """
         from app.services.s3 import get_s3_service
+
         s3 = get_s3_service()
         user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
         source_key = f"{user_prefix}{source_object_name}"
@@ -394,7 +427,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return f"Successfully copied {source_object_name} to {dest_object_name}"
 
     @agent.tool
-    async def python_execute_code(ctx: RunContext[TDeps], code: str, timeout: int = 600) -> dict[str, Any]:
+    async def python_execute_code(
+        ctx: RunContext[TDeps], code: str, timeout: int = 600
+    ) -> dict[str, Any]:
         """Execute Python code in an ephemeral Docker container.
 
         Use this tool to run Python scripts for data analysis, scraping, or complex calculations.
@@ -437,6 +472,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             * Utilities: tqdm, cachetools, diskcache, joblib, faker, loguru, colorama
         """
         from app.services.python import get_python_executor
+
         python_executor = get_python_executor()
         user_id = ctx.deps.user_id if ctx.deps.user_id else None
         result = await python_executor.execute_code(code, timeout, user_id=user_id)
@@ -514,3 +550,220 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         """
         return await s3_fetch_image_impl(ctx, object_name)
 
+    @agent.tool
+    async def generate_image(
+        ctx: RunContext[TDeps],
+        prompt: str,
+        model: ImageModelName = "gemini-3-pro-image-preview",
+        aspect_ratio: str = "1:1",
+        image_size: str = "2K",
+        number_of_images: int = 1,
+        negative_prompt: str | None = None,
+        filename: str | None = None,
+    ) -> ToolReturn:
+        """Generate images using Google's Gemini or Imagen models.
+
+        Use this tool to create images from text descriptions. You have full control
+        over model selection and generation parameters.
+
+        MODEL SELECTION GUIDE:
+        - `gemini-3-pro-image-preview`: Best for iterative refinement, conversational
+          edits, and when you need 4K output. Supports back-and-forth image editing.
+          Generates 1 image per call.
+        - `imagen4`: Best for photorealistic, high-quality single-shot generation.
+          Superior for product photos, portraits, and detailed scenes. Supports
+          generating 1-4 images per call.
+
+        ASPECT RATIOS:
+        - Square: "1:1" (default, good for profile pics, icons)
+        - Landscape: "16:9" (widescreen), "4:3" (standard), "3:2" (photo)
+        - Portrait: "9:16" (mobile/stories), "3:4", "2:3"
+        - Ultra-wide: "21:9" (cinematic, Gemini only)
+
+        IMAGE SIZES:
+        - "1K": Fastest generation, smaller file size
+        - "2K": Good balance of quality and speed (default)
+        - "4K": Highest quality (Gemini only, slower)
+
+        ARGS:
+            prompt: Detailed description of the image to generate. Be specific about
+                    subject, style, lighting, composition, colors, and mood.
+            model: "gemini-3-pro-image-preview" or "imagen4" (see selection guide above).
+            aspect_ratio: Image dimensions ratio (default: "1:1").
+            image_size: Resolution - "1K", "2K", or "4K" (default: "2K").
+            number_of_images: How many images to generate, 1-4 (Imagen only, default: 1).
+            negative_prompt: What to avoid in the image (Imagen only).
+                             Example: "blurry, low quality, distorted, watermark"
+            filename: Custom filename without extension (default: auto-generated UUID).
+                      Images are saved as PNG.
+
+        RETURNS:
+            Generated image(s) saved to S3 with presigned download URLs. The images
+            are also loaded into your context for immediate visual inspection.
+
+        ERRORS:
+            If generation is blocked by safety filters, returns the rejection reason
+            so you can modify your prompt and retry.
+        """
+        from google import genai
+        from google.genai import types
+
+        from app.services.s3 import get_s3_service
+
+        # Initialize Google GenAI client
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+
+        user_prefix = f"users/{ctx.deps.user_id}/" if ctx.deps.user_id else ""
+        s3 = get_s3_service()
+
+        generated_images: list[tuple[bytes, str]] = []  # (image_bytes, s3_key)
+        rai_reasons: list[str] = []
+
+        if model == "imagen4":
+            # Imagen4 image generation with maximum permissive safety settings
+            config = types.GenerateImagesConfig(
+                number_of_images=min(max(number_of_images, 1), 4),  # Clamp to 1-4
+                aspect_ratio=aspect_ratio,
+                negative_prompt=negative_prompt,
+                safety_filter_level=types.SafetyFilterLevel.BLOCK_NONE,
+                person_generation=types.PersonGeneration.ALLOW_ALL,
+                include_rai_reason=True,
+                include_safety_attributes=True,
+                output_mime_type="image/png",
+            )
+
+            # Add image_size if supported (not all aspect ratios support all sizes)
+            if image_size in ("1K", "2K"):
+                config.image_size = image_size
+
+            response = await client.aio.models.generate_images(
+                model=settings.IMAGEN_MODEL,
+                prompt=prompt,
+                config=config,
+            )
+
+            # Process generated images
+            if response.generated_images:
+                for i, gen_img in enumerate(response.generated_images):
+                    if gen_img.image and gen_img.image.image_bytes:
+                        img_filename = filename or uuid4().hex
+                        if number_of_images > 1:
+                            img_filename = f"{img_filename}_{i + 1}"
+                        s3_key = f"{user_prefix}generated/{img_filename}.png"
+
+                        s3.upload_obj(gen_img.image.image_bytes, s3_key)
+                        generated_images.append((gen_img.image.image_bytes, s3_key))
+
+                    # Collect any RAI reasons
+                    if hasattr(gen_img, "rai_filtered_reason") and gen_img.rai_filtered_reason:
+                        rai_reasons.append(gen_img.rai_filtered_reason)
+
+        else:
+            # Gemini image generation with disabled safety filters
+            safety_settings = [
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.OFF,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.OFF,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.OFF,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.OFF,
+                ),
+            ]
+
+            image_config = types.ImageConfig(
+                aspect_ratio=aspect_ratio,
+                output_mime_type="image/png",
+            )
+            # Add image_size for Gemini (supports up to 4K)
+            if image_size in ("1K", "2K", "4K"):
+                image_config.image_size = image_size
+
+            config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=image_config,
+                safety_settings=safety_settings,
+            )
+
+            response = await client.aio.models.generate_content(
+                model=settings.GEMINI_IMAGE_MODEL,
+                contents=[prompt],
+                config=config,
+            )
+
+            # Process response parts for images
+            if response.candidates and response.candidates[0].content:
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data and part.inline_data.data:
+                        img_filename = filename or uuid4().hex
+                        s3_key = f"{user_prefix}generated/{img_filename}.png"
+
+                        s3.upload_obj(part.inline_data.data, s3_key)
+                        generated_images.append((part.inline_data.data, s3_key))
+
+            # Check for block reasons
+            if response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, "finish_reason") and candidate.finish_reason:
+                        finish_reason = str(candidate.finish_reason)
+                        if "SAFETY" in finish_reason or "BLOCK" in finish_reason:
+                            rai_reasons.append(f"Generation blocked: {finish_reason}")
+
+        # Handle case where no images were generated
+        if not generated_images:
+            error_msg = "No images were generated."
+            if rai_reasons:
+                error_msg += f" Rejection reasons: {'; '.join(rai_reasons)}. Consider rephrasing your prompt."
+            return ToolReturn(
+                return_value=error_msg,
+                content=[error_msg],
+                metadata={"success": False, "rai_reasons": rai_reasons},
+            )
+
+        # Build response with presigned URLs and inline images
+        urls = []
+        content_parts: list[str | BinaryContent] = [
+            f"Generated {len(generated_images)} image(s) for prompt: '{prompt[:100]}{'...' if len(prompt) > 100 else ''}'"
+        ]
+
+        for img_bytes, s3_key in generated_images:
+            presigned_url = s3.generate_presigned_download_url(s3_key, expiration=3600)
+            urls.append(presigned_url)
+            # Add binary content for LLM to see the image
+            content_parts.append(BinaryContent(data=img_bytes, media_type="image/png"))
+
+        # Strip user prefix from display keys
+        display_keys = [
+            key[len(user_prefix) :] if key.startswith(user_prefix) else key
+            for _, key in generated_images
+        ]
+
+        return_msg = f"Successfully generated {len(generated_images)} image(s). "
+        return_msg += f"Saved to: {', '.join(display_keys)}. "
+        return_msg += f"Download URLs (valid 1 hour): {', '.join(urls)}"
+
+        if rai_reasons:
+            return_msg += f" Note - some images may have been filtered: {'; '.join(rai_reasons)}"
+
+        return ToolReturn(
+            return_value=return_msg,
+            content=content_parts,
+            metadata={
+                "success": True,
+                "model": model,
+                "prompt": prompt,
+                "s3_keys": display_keys,
+                "urls": urls,
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+                "rai_reasons": rai_reasons if rai_reasons else None,
+            },
+        )
