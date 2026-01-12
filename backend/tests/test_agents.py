@@ -660,3 +660,186 @@ class TestAcademicSearchConfig:
         # We just verify they exist and can be accessed
         _ = settings.OPENALEX_EMAIL
         _ = settings.SEMANTIC_SCHOLAR_API_KEY
+
+
+class TestContextOptimizer:
+    """Tests for context window optimization."""
+
+    def test_model_context_limits_exist(self):
+        """Test MODEL_CONTEXT_LIMITS has all Gemini models."""
+        from app.agents.context_optimizer import MODEL_CONTEXT_LIMITS
+
+        expected_models = [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+        ]
+        for model in expected_models:
+            assert model in MODEL_CONTEXT_LIMITS
+            # All budgets should be at 85% of max
+            assert MODEL_CONTEXT_LIMITS[model] > 0
+
+    def test_gemini_3_pro_budget_is_1_7m(self):
+        """Test Gemini 3 Pro has 1.7M token budget (85% of 2M)."""
+        from app.agents.context_optimizer import MODEL_CONTEXT_LIMITS
+
+        assert MODEL_CONTEXT_LIMITS["gemini-3-pro-preview"] == 1_700_000
+
+    def test_get_token_budget_returns_correct_budget(self):
+        """Test get_token_budget returns correct values."""
+        from app.agents.context_optimizer import get_token_budget
+
+        assert get_token_budget("gemini-3-pro-preview") == 1_700_000
+        assert get_token_budget("gemini-2.5-flash") == 891_289
+
+    def test_get_token_budget_returns_default_for_unknown_model(self):
+        """Test get_token_budget returns default for unknown models."""
+        from app.agents.context_optimizer import DEFAULT_TOKEN_BUDGET, get_token_budget
+
+        assert get_token_budget("unknown-model") == DEFAULT_TOKEN_BUDGET
+
+    @pytest.mark.anyio
+    async def test_optimize_empty_history(self):
+        """Test optimize_context_window with empty history."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        result = await optimize_context_window(
+            history=[],
+            model_name="gemini-3-pro-preview",
+        )
+        assert result == []
+
+    @pytest.mark.anyio
+    async def test_optimize_single_message(self):
+        """Test optimize_context_window with single message."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        history = [{"role": "user", "content": "Hello"}]
+        result = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+        )
+        assert len(result) == 1
+        assert result[0].parts[0].content == "Hello"
+
+    @pytest.mark.anyio
+    async def test_optimize_preserves_latest_message(self):
+        """Test that the latest message is always preserved."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        history = [
+            {"role": "user", "content": "First message"},
+            {"role": "assistant", "content": "First response"},
+            {"role": "user", "content": "Latest message"},
+        ]
+        result = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+        )
+        # Latest message must be present
+        assert any(
+            hasattr(msg, "parts") and 
+            hasattr(msg.parts[0], "content") and 
+            msg.parts[0].content == "Latest message"
+            for msg in result
+        )
+
+    @pytest.mark.anyio
+    async def test_optimize_trims_old_messages_when_over_budget(self):
+        """Test that old messages are trimmed when budget exceeded."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        # Create a history with messages that exceed a small budget
+        history = [
+            {"role": "user", "content": "x" * 10000}  # ~2500 tokens
+            for _ in range(100)
+        ]
+        history.append({"role": "user", "content": "Latest"})
+
+        # Use a small budget to force trimming
+        result = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+            max_context_tokens=50000,  # Small budget
+        )
+        # Should have fewer messages than original
+        assert len(result) < len(history)
+        # Latest message must be present
+        assert result[-1].parts[0].content == "Latest"
+
+    @pytest.mark.anyio
+    async def test_optimize_with_system_prompt_reserves_space(self):
+        """Test that system prompt token count is reserved."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        history = [
+            {"role": "user", "content": "x" * 10000}
+            for _ in range(50)
+        ]
+        history.append({"role": "user", "content": "Latest"})
+
+        long_system_prompt = "System: " + "y" * 20000  # ~5000 tokens
+
+        result_with_prompt = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+            system_prompt=long_system_prompt,
+            max_context_tokens=100000,
+        )
+
+        result_without_prompt = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+            system_prompt=None,
+            max_context_tokens=100000,
+        )
+
+        # With system prompt, less history should fit
+        assert len(result_with_prompt) <= len(result_without_prompt)
+
+    def test_estimate_tokens_heuristic(self):
+        """Test _estimate_tokens uses char/4 heuristic."""
+        from app.agents.context_optimizer import _estimate_tokens
+
+        text = "x" * 400  # 400 chars
+        assert _estimate_tokens(text) == 100  # 400 / 4 = 100
+
+    def test_hash_prompt_is_deterministic(self):
+        """Test _hash_prompt produces consistent hashes."""
+        from app.agents.context_optimizer import _hash_prompt
+
+        prompt = "Test system prompt"
+        hash1 = _hash_prompt(prompt)
+        hash2 = _hash_prompt(prompt)
+        assert hash1 == hash2
+        assert len(hash1) == 16  # Truncated to 16 chars
+
+    def test_hash_prompt_different_inputs(self):
+        """Test _hash_prompt produces different hashes for different inputs."""
+        from app.agents.context_optimizer import _hash_prompt
+
+        hash1 = _hash_prompt("Prompt A")
+        hash2 = _hash_prompt("Prompt B")
+        assert hash1 != hash2
+
+    @pytest.mark.anyio
+    async def test_to_pydantic_messages_format(self):
+        """Test _to_pydantic_messages produces correct format."""
+        from pydantic_ai.messages import ModelRequest, ModelResponse
+
+        from app.agents.context_optimizer import _to_pydantic_messages
+
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"},
+        ]
+        result = _to_pydantic_messages(messages)
+
+        assert len(result) == 2
+        assert isinstance(result[0], ModelRequest)
+        assert isinstance(result[1], ModelResponse)
+        assert result[0].parts[0].content == "Hello"
+        assert result[1].parts[0].content == "Hi there"
+
