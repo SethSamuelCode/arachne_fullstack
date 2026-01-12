@@ -4,9 +4,9 @@ The main conversational agent that can be extended with custom tools.
 """
 
 import logging
-from typing import Any
+from typing import Any, Sequence
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -22,6 +22,10 @@ from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
 
 logger = logging.getLogger(__name__)
+
+# Type alias for multimodal user input (text + images)
+UserContent = str | BinaryContent
+MultimodalInput = str | Sequence[UserContent]
 
 
 
@@ -65,14 +69,15 @@ class AssistantAgent:
 
     async def run(
         self,
-        user_input: str,
+        user_input: MultimodalInput,
         history: list[dict[str, str]] | None = None,
         deps: Deps | None = None,
     ) -> tuple[str, list[Any], Deps]:
         """Run agent and return the output along with tool call events.
 
         Args:
-            user_input: User's message.
+            user_input: User's message. Can be a string or a list containing
+                text and BinaryContent (for images).
             history: Conversation history as list of {"role": "...", "content": "..."}.
             deps: Optional dependencies. If not provided, a new Deps will be created.
 
@@ -91,7 +96,17 @@ class AssistantAgent:
 
         agent_deps = deps if deps is not None else Deps()
 
-        logger.info(f"Running agent with user input: {user_input[:100]}...")
+        # Log input (truncate if it's a string, otherwise note it's multimodal)
+        if isinstance(user_input, str):
+            logger.info(f"Running agent with user input: {user_input[:100]}...")
+        else:
+            text_parts = [p for p in user_input if isinstance(p, str)]
+            image_count = sum(1 for p in user_input if isinstance(p, BinaryContent))
+            logger.info(
+                f"Running agent with multimodal input: {text_parts[0][:50] if text_parts else '(no text)'}... "
+                f"({image_count} image(s))"
+            )
+
         result = await self.agent.run(user_input, deps=agent_deps, message_history=model_history)
 
         tool_events: list[Any] = []
@@ -107,14 +122,15 @@ class AssistantAgent:
 
     async def iter(
         self,
-        user_input: str,
+        user_input: MultimodalInput,
         history: list[dict[str, str]] | None = None,
         deps: Deps | None = None,
     ):
         """Stream agent execution with full event access.
 
         Args:
-            user_input: User's message.
+            user_input: User's message. Can be a string or a list containing
+                text and BinaryContent (for images).
             history: Conversation history.
             deps: Optional dependencies.
 

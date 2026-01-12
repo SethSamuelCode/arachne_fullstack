@@ -89,6 +89,10 @@ class Message(TimestampMixin, SQLModel, table=True):
         back_populates="message",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "ToolCall.started_at"},
     )
+    attachments: list["MessageAttachment"] = Relationship(  # noqa: F821
+        back_populates="message",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
     def __repr__(self) -> str:
         return f"<Message(id={self.id}, role={self.role})>"

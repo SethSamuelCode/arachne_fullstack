@@ -47,6 +47,15 @@ from app.schemas.file import (
     FileDeleteResponse,
 )
 
+from app.schemas.attachment import (
+    ALLOWED_IMAGE_MIME_TYPES,
+    MAX_TOTAL_ATTACHMENT_SIZE_BYTES,
+    AttachmentCreate,
+    AttachmentRead,
+    AttachmentInMessage,
+    validate_attachments_total_size,
+)
+
 __all__ = [
     "UserCreate",
     "UserRead",
@@ -87,4 +96,10 @@ __all__ = [
     "PresignedUploadResponse",
     "PresignedDownloadResponse",
     "FileDeleteResponse",
+    "ALLOWED_IMAGE_MIME_TYPES",
+    "MAX_TOTAL_ATTACHMENT_SIZE_BYTES",
+    "AttachmentCreate",
+    "AttachmentRead",
+    "AttachmentInMessage",
+    "validate_attachments_total_size",
 ]

@@ -4,12 +4,24 @@ import { useCallback, useState, useEffect } from "react";
 import { nanoid } from "nanoid";
 import { useWebSocket } from "./use-websocket";
 import { useChatStore } from "@/stores";
-import type { ChatMessage, ToolCall, WSEvent } from "@/types";
+import type { ChatMessage, ChatAttachment, ToolCall, WSEvent } from "@/types";
 import { WS_URL } from "@/lib/constants";
 import { useConversationStore } from "@/stores";
+
 interface UseChatOptions {
   conversationId?: string | null;
   onConversationCreated?: (conversationId: string) => void;
+}
+
+/**
+ * Attachment payload format sent to WebSocket.
+ * Matches backend AttachmentInMessage schema.
+ */
+interface AttachmentPayload {
+  s3_key: string;
+  mime_type: string;
+  size_bytes: number;
+  filename?: string;
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -176,15 +188,27 @@ export function useChat(options: UseChatOptions = {}) {
   });
 
   const sendChatMessage = useCallback(
-    (content: string, systemPrompt?: string) => {
-      // Add user message
+    (content: string, attachments?: ChatAttachment[], systemPrompt?: string) => {
+      // Only include uploaded attachments
+      const uploadedAttachments = attachments?.filter(a => a.status === "uploaded") || [];
+
+      // Add user message with attachments
       const userMessage: ChatMessage = {
         id: nanoid(),
         role: "user",
         content,
         timestamp: new Date(),
+        attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
       };
       addMessage(userMessage);
+
+      // Build attachment payload for WebSocket (convert to snake_case)
+      const attachmentPayloads: AttachmentPayload[] = uploadedAttachments.map(a => ({
+        s3_key: a.s3Key,
+        mime_type: a.mimeType,
+        size_bytes: a.sizeBytes,
+        filename: a.filename,
+      }));
 
       // Send to WebSocket
       setIsProcessing(true);
@@ -192,6 +216,7 @@ export function useChat(options: UseChatOptions = {}) {
         message: content,
         conversation_id: conversationId || null,
         system_prompt: systemPrompt,
+        attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
       });
     },
     [addMessage, sendMessage, conversationId]

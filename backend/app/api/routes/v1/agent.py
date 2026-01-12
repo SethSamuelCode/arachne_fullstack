@@ -5,8 +5,10 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from pydantic_ai import (
     Agent,
+    BinaryContent,
     FinalResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -27,10 +29,12 @@ from app.agents.assistant import Deps, get_agent
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.db.models.user import User
 from app.db.session import get_db_context
+from app.schemas.attachment import AttachmentInMessage, validate_attachments_total_size
 from app.schemas.conversation import (
     ConversationCreate,
     MessageCreate,
 )
+from app.services.s3 import get_s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +92,48 @@ def build_message_history(history: list[dict[str, str]]) -> list[ModelRequest | 
     return model_history
 
 
+async def build_multimodal_input(
+    user_message: str,
+    attachments: list[AttachmentInMessage],
+    user_id: str | None,
+) -> str | list[str | BinaryContent]:
+    """Build multimodal input from user message and attachments.
+
+    Downloads images from S3 and creates BinaryContent objects.
+
+    Args:
+        user_message: The text message from the user.
+        attachments: List of validated attachments with S3 keys.
+        user_id: User ID for S3 path prefix.
+
+    Returns:
+        Either a plain string (no attachments) or a list of text + BinaryContent.
+    """
+    if not attachments:
+        return user_message
+
+    s3 = get_s3_service()
+    user_prefix = f"users/{user_id}/" if user_id else ""
+
+    # Start with the text message
+    content: list[str | BinaryContent] = [user_message]
+
+    # Download and add each image
+    for attachment in attachments:
+        full_key = f"{user_prefix}{attachment.s3_key}"
+        try:
+            image_data = s3.download_obj(full_key)
+            content.append(
+                BinaryContent(data=image_data, media_type=attachment.mime_type)
+            )
+            logger.debug(f"Added image attachment: {attachment.s3_key} ({len(image_data)} bytes)")
+        except Exception as e:
+            logger.error(f"Failed to download attachment {attachment.s3_key}: {e}")
+            raise ValueError(f"Failed to load image '{attachment.s3_key}': {e}")
+
+    return content
+
+
 @router.websocket("/ws/agent")
 async def agent_websocket(
     websocket: WebSocket,
@@ -110,8 +156,19 @@ async def agent_websocket(
     {
         "message": "user message here",
         "history": [{"role": "user|assistant|system", "content": "..."}],
-        "conversation_id": "optional-uuid-to-continue-existing-conversation"
+        "conversation_id": "optional-uuid-to-continue-existing-conversation",
+        "attachments": [
+            {
+                "s3_key": "path/to/image.png",
+                "mime_type": "image/png",
+                "size_bytes": 12345,
+                "filename": "optional-original-filename.png"
+            }
+        ]
     }
+
+    Supported image formats: PNG, JPEG, WebP, HEIC, HEIF
+    Maximum total attachment size: 20MB
 
     Authentication: Requires a valid JWT token passed as a query parameter or header.
 
@@ -141,6 +198,28 @@ async def agent_websocket(
             if not user_message:
                 await manager.send_event(websocket, "error", {"message": "Empty message"})
                 continue
+
+            # Parse and validate attachments
+            attachments: list[AttachmentInMessage] = []
+            raw_attachments = data.get("attachments", [])
+            if raw_attachments:
+                try:
+                    attachments = [AttachmentInMessage(**a) for a in raw_attachments]
+                    validate_attachments_total_size(attachments)
+                    logger.info(
+                        f"Message includes {len(attachments)} attachment(s), "
+                        f"total size: {sum(a.size_bytes for a in attachments)} bytes"
+                    )
+                except ValidationError as e:
+                    await manager.send_event(
+                        websocket,
+                        "error",
+                        {"message": f"Invalid attachment: {e.errors()[0]['msg']}"},
+                    )
+                    continue
+                except ValueError as e:
+                    await manager.send_event(websocket, "error", {"message": str(e)})
+                    continue
 
             # Handle conversation persistence
             try:
@@ -218,9 +297,18 @@ async def agent_websocket(
                 assistant = get_agent(system_prompt=system_prompt, model_name=user.default_model)
                 model_history = build_message_history(conversation_history)
 
+                # Build multimodal input if attachments are present
+                try:
+                    agent_input = await build_multimodal_input(
+                        user_message, attachments, str(user.id)
+                    )
+                except ValueError as e:
+                    await manager.send_event(websocket, "error", {"message": str(e)})
+                    continue
+
                 # Use iter() on the underlying PydanticAI agent to stream all events
                 async with assistant.agent.iter(
-                    user_message,
+                    agent_input,
                     deps=deps,
                     message_history=model_history,
                 ) as agent_run:

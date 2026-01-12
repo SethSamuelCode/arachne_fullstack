@@ -5,6 +5,7 @@ from app.db.models.user import User
 from app.db.models.session import Session
 from app.db.models.item import Item
 from app.db.models.conversation import Conversation, Message, ToolCall
+from app.db.models.attachment import MessageAttachment
 from app.db.models.webhook import Webhook, WebhookDelivery
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "Conversation",
     "Message",
     "ToolCall",
+    "MessageAttachment",
     "Webhook",
     "WebhookDelivery",
 ]

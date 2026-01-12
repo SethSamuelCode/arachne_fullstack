@@ -1,11 +1,12 @@
 from typing import Any, TypeVar
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.models.google import GoogleModel
 from tavily import TavilyClient
 
 from app.agents.tools.datetime_tool import get_current_datetime
 from app.agents.tools.extract_webpage import extract_url
+from app.agents.tools.s3_image import s3_fetch_image_impl
 from app.core.config import settings
 from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
@@ -471,3 +472,45 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             max_length=max_length,
         )
         return response.model_dump()
+
+    @agent.tool
+    async def s3_fetch_image(ctx: RunContext[TDeps], object_name: str) -> ToolReturn:
+        """Fetch an image from S3 storage and load it for visual analysis.
+
+        Use this tool when the user asks you to look at, analyze, describe, read,
+        extract information from, or understand an image stored in their S3 storage.
+
+        WHEN TO USE:
+        - User says "look at", "analyze", "describe", "read", "extract from",
+          "what's in", "explain", or "understand" an image/photo/screenshot/picture
+        - User references a file with image extension (.png, .jpg, .jpeg, .webp,
+          .heic, .heif) and wants visual analysis
+        - User asks about contents of an image file they've uploaded
+
+        WHEN NOT TO USE:
+        - For non-image files (text, CSV, JSON, etc.) — use s3_read_string_content instead
+        - When the user has already attached images to the current message (they're
+          already in your context)
+        - For listing files — use s3_list_objects first if you don't know the exact filename
+
+        WORKFLOW:
+        1. If user doesn't provide exact filename, call s3_list_objects first to find it
+        2. Call this tool with the image filename
+        3. Analyze the returned image and respond to user's question
+
+        SUPPORTED FORMATS:
+        PNG (.png), JPEG (.jpg, .jpeg), WebP (.webp), HEIC (.heic), HEIF (.heif)
+
+        SIZE LIMIT: Maximum 20MB per image
+
+        ARGS:
+            object_name: The key (name) of the image in the user's storage
+                         (e.g., 'photos/receipt.png', 'screenshots/error.jpg').
+                         Do NOT include 'users/<id>/' prefix — it's added automatically.
+
+        RETURNS:
+            The image loaded into your context for visual analysis. You can then
+            describe, analyze, or extract information from the image.
+        """
+        return await s3_fetch_image_impl(ctx, object_name)
+
