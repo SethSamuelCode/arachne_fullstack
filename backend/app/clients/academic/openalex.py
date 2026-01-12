@@ -60,6 +60,21 @@ class OpenAlexClient:
             await self._client.aclose()
             self._client = None
 
+    def _build_auth_params(self) -> dict[str, str]:
+        """Build authentication parameters for API requests.
+
+        API key takes precedence over email for premium rate limits.
+        Falls back to email-based "polite pool" if no API key configured.
+
+        Returns:
+            Dict with 'api_key' or 'mailto' param, or empty dict.
+        """
+        if settings.OPENALEX_API_KEY:
+            return {"api_key": settings.OPENALEX_API_KEY}
+        if settings.OPENALEX_EMAIL:
+            return {"mailto": settings.OPENALEX_EMAIL}
+        return {}
+
     def _build_filter(
         self,
         *,
@@ -275,9 +290,8 @@ class OpenAlexClient:
         elif sort_by != "relevance":
             params["sort"] = f"{sort_by}:{sort_order}"
 
-        # Add polite pool email parameter
-        if settings.OPENALEX_EMAIL:
-            params["mailto"] = settings.OPENALEX_EMAIL
+        # Add authentication (API key or polite pool email)
+        params.update(self._build_auth_params())
 
         try:
             response = await client.get("/works", params=params)
@@ -324,9 +338,8 @@ class OpenAlexClient:
         elif not work_id.startswith("W") and not work_id.startswith("https://"):
             work_id = f"W{work_id}"
 
-        params = {}
-        if settings.OPENALEX_EMAIL:
-            params["mailto"] = settings.OPENALEX_EMAIL
+        # Add authentication (API key or polite pool email)
+        params = self._build_auth_params()
 
         try:
             response = await client.get(f"/works/{work_id}", params=params)

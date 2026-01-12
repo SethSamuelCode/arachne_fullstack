@@ -30,6 +30,13 @@ class TestSettings:
         """Test CORS origins is a list."""
         assert isinstance(settings.CORS_ORIGINS, list)
 
+    def test_openalex_api_key_setting_exists(self):
+        """Test OPENALEX_API_KEY setting is defined (optional, can be None)."""
+        assert hasattr(settings, "OPENALEX_API_KEY")
+        assert settings.OPENALEX_API_KEY is None or isinstance(
+            settings.OPENALEX_API_KEY, str
+        )
+
 
 class TestExceptions:
     """Tests for custom exceptions."""

@@ -167,6 +167,8 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str | None = None
 
     # === Academic Search APIs ===
+    # OpenAlex: API key for premium rate limits (takes precedence over email)
+    OPENALEX_API_KEY: str | None = None
     # OpenAlex: Email for "polite pool" (higher rate limits, no key required)
     OPENALEX_EMAIL: str | None = None
     # Semantic Scholar: Optional API key for higher rate limits (free tier available)

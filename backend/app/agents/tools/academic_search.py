@@ -60,22 +60,56 @@ async def search_openalex_impl(
 ) -> dict[str, Any]:
     """Search OpenAlex academic database for scholarly works.
 
-    OpenAlex is an open catalog of 250M+ scholarly works, authors, venues, and
-    institutions. It provides comprehensive metadata including citations, open
-    access status, and institutional affiliations.
+    OpenAlex is a fully open catalog of 240M+ scholarly works, authors, sources,
+    institutions, topics, publishers, and funders. Base URL: https://api.openalex.org
+    No authentication required. 100,000 requests/day limit.
 
     WHEN TO USE:
     - Large-scale academic searches across all disciplines
     - Need citation metrics and open access information
-    - Want to filter by institution, author, or concept
+    - Want to filter by institution, author, or topic
     - Need structured metadata (DOIs, ORCIDs, publication dates)
     - Looking for open access versions of papers
     - Searching by specific journal, conference, or publisher
+    - Aggregate/group data analysis (one dimension at a time)
 
     WHEN NOT TO USE:
     - Need AI-generated paper summaries (use Semantic Scholar instead)
     - Looking for preprints not yet indexed (use arXiv instead)
     - Need paper embeddings for similarity search
+
+    CRITICAL GOTCHAS - READ FIRST:
+    1. ❌ DON'T filter by entity names directly (e.g., author_name:"Einstein")
+       ✅ DO use two-step pattern: First get entity ID, then filter by ID.
+       Names are ambiguous; IDs are unique.
+
+    2. ❌ DON'T use random page numbers for sampling (page=5, page=17).
+       ✅ DO use the sample parameter for random sampling.
+
+    3. ❌ DON'T use default page size (25) for bulk extraction.
+       ✅ DO use per_page=200 (max) to reduce API calls by 8x.
+
+    4. ❌ DON'T make sequential API calls for lists of known IDs.
+       ✅ DO use OR filter (pipe |) to batch up to 50 IDs per request.
+
+    5. ❌ DON'T try to group_by multiple dimensions in one query.
+       ✅ DO make multiple queries and combine results client-side.
+
+    6. ❌ DON'T retry immediately on API errors.
+       ✅ DO implement exponential backoff (1s, 2s, 4s, 8s, etc.).
+
+    TWO-STEP LOOKUP PATTERN (IMPORTANT):
+    To find works by author/institution/source:
+    1. First search for the entity to get its OpenAlex ID
+    2. Then use that ID to filter works
+
+    Example - Find works by author:
+    - Step 1: Search authors endpoint -> Get ID like "A5023888391"
+    - Step 2: Filter works with author_id="A5023888391"
+
+    Alternative: Use external IDs directly (ORCID, ROR, ISSN, DOI):
+    - author_id: Can use ORCID like "https://orcid.org/0000-0003-1613-5981"
+    - institution_id: Can use ROR like "https://ror.org/042nb2s44"
 
     SEARCH FIELD OPTIONS:
     - "all": Search title, abstract, and fulltext (default, broadest)
@@ -97,8 +131,15 @@ async def search_openalex_impl(
     - "publication_date": Newest or oldest papers
     - "display_name": Alphabetical by title
 
+    YEAR FILTER:
+    - Single year: year_from=2020, year_to=2020
+    - Range: year_from=2018, year_to=2022
+    - After: year_from=2020 (2020 to present)
+    - Before: year_to=2019
+
     ARGS:
         query: Search terms. Natural language queries work well.
+            Supports boolean operators: "climate AND change", "neural OR deep".
         search_field: Which fields to search (default: "all").
         year_from: Minimum publication year (inclusive), e.g., 2020.
         year_to: Maximum publication year (inclusive), e.g., 2024.
@@ -107,24 +148,26 @@ async def search_openalex_impl(
         oa_status: Filter by specific OA status (gold, green, hybrid, bronze, closed).
         publication_type: Filter by type - "article", "book", "dataset",
             "book-chapter", "dissertation", "preprint", etc.
-        institution_id: Filter by institution OpenAlex ID (e.g., "I27837315" for MIT).
-        author_id: Filter by author OpenAlex ID (e.g., "A5023888391").
-        concept_id: Filter by research concept ID (e.g., "C41008148" for AI).
+        institution_id: Filter by institution OpenAlex ID (e.g., "I136199984" for MIT)
+            or ROR ID (e.g., "https://ror.org/042nb2s44").
+        author_id: Filter by author OpenAlex ID (e.g., "A5023888391") or ORCID
+            (e.g., "https://orcid.org/0000-0003-1613-5981").
+        concept_id: Filter by topic/concept ID (e.g., "T10001" for Artificial Intelligence).
         language: Filter by ISO 639-1 language code (e.g., "en", "zh", "de").
         sort_by: How to sort results (relevance, cited_by_count, publication_date).
         sort_order: "desc" for descending, "asc" for ascending.
         page: Page number (1-indexed). First page = 1.
-        per_page: Results per page, 1-200 (default: 25).
+        per_page: Results per page, 1-200 (default: 25). USE 200 FOR BULK EXTRACTION.
         include_abstract: Include paper abstracts in results (default: True).
         include_authors: Include author information (default: True).
 
     RETURNS:
         Dictionary with:
-        - total_count: Total matching papers
+        - total_count: Total matching papers (use to calculate pages needed)
         - page: Current page number
         - per_page: Results per page
         - results: List of papers with:
-            - id: OpenAlex ID
+            - id: OpenAlex ID (e.g., "W2741809807")
             - doi: DOI if available
             - title: Paper title
             - publication_year: Year published
@@ -136,10 +179,19 @@ async def search_openalex_impl(
             - authors: List of author names and IDs
             - source_name: Journal/venue name
 
+    PAGINATION FOR LARGE RESULTS:
+        pages_needed = ceil(total_count / per_page)
+        Use per_page=200 and iterate through pages.
+
     ERRORS:
-        - API timeout: OpenAlex may be slow during peak times
-        - Invalid filter: Check parameter values match allowed options
-        - Rate limit: Very rare, but slow down if you hit it
+        - 400 Bad Request: Invalid parameter (check filter syntax)
+        - 403 Forbidden: Rate limit exceeded (implement backoff)
+        - 404 Not Found: Entity doesn't exist
+        - 500 Server Error: Temporary issue (retry with backoff)
+
+    RATE LIMITS:
+        - Default: 1 request/second, 100k requests/day
+        - Use exponential backoff on errors (wait 1s, 2s, 4s, 8s...)
 
     EXAMPLES:
         # Basic search
@@ -151,8 +203,14 @@ async def search_openalex_impl(
         # Open access papers only
         search_openalex("climate change", open_access_only=True)
 
-        # Papers from a specific institution
-        search_openalex("quantum computing", institution_id="I27837315")
+        # Papers from a specific institution (use ID, not name!)
+        search_openalex("quantum computing", institution_id="I136199984")
+
+        # Highly cited recent papers
+        search_openalex("", year_from=2020, sort_by="cited_by_count", per_page=200)
+
+        # Open access papers by OA status
+        search_openalex("CRISPR", oa_status="gold")
     """
     client = get_openalex_client()
 
