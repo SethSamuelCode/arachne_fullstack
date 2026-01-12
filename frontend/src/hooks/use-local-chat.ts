@@ -5,7 +5,6 @@ import { nanoid } from "nanoid";
 import { useWebSocket } from "./use-websocket";
 import { useLocalChatStore } from "@/stores/local-chat-store";
 import type { ChatMessage, ToolCall, WSEvent } from "@/types";
-import { WS_URL } from "@/lib/constants";
 
 export function useLocalChat() {
   const {
@@ -157,7 +156,7 @@ export function useLocalChat() {
         setIsProcessing(false);
       }, 1000);
     },
-    [addMessage, sendMessage, currentConversationId, createConversation]
+    [addMessage, currentConversationId, createConversation]
   );
 
   const startNewChat = useCallback(() => {

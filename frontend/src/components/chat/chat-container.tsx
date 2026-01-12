@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useChat, useLocalChat } from "@/hooks";
+import { useChat } from "@/hooks";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { Button } from "@/components/ui";
@@ -59,7 +59,7 @@ function AuthenticatedChatContainer() {
       }
   };
 
-  const handleConversationCreated = useCallback((conversationId: string) => {
+  const handleConversationCreated = useCallback(() => {
     fetchConversations();
   }, [fetchConversations]);
 
@@ -140,7 +140,7 @@ function AuthenticatedChatContainer() {
       messages={messages}
       isConnected={isConnected}
       isProcessing={isProcessing}
-      sendMessage={(content) => sendMessage(content, systemPrompt)}
+      sendMessage={(content, attachments) => sendMessage(content, attachments, systemPrompt)}
       clearMessages={clearMessages}
       messagesEndRef={messagesEndRef}
       systemPrompt={systemPrompt}
@@ -150,45 +150,11 @@ function AuthenticatedChatContainer() {
   );
 }
 
-function LocalChatContainer() {
-  const {
-    messages,
-    isConnected,
-    isProcessing,
-    connect,
-    disconnect,
-    sendMessage,
-    clearMessages,
-  } = useLocalChat();
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  return (
-    <ChatUI
-      messages={messages}
-      isConnected={isConnected}
-      isProcessing={isProcessing}
-      sendMessage={sendMessage}
-      clearMessages={clearMessages}
-      messagesEndRef={messagesEndRef}
-    />
-  );
-}
-
 interface ChatUIProps {
   messages: import("@/types").ChatMessage[];
   isConnected: boolean;
   isProcessing: boolean;
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, attachments?: import("@/types").ChatAttachment[]) => void;
   clearMessages: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   systemPrompt?: string;

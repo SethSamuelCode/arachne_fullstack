@@ -5,7 +5,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Settings } from "lucide-react";
-import { useConversationStore } from "@/stores";
 
 interface SystemPromptSettingsProps {
   systemPrompt: string;
@@ -24,7 +23,6 @@ export function SystemPromptSettings({
 }: SystemPromptSettingsProps) {
   const [localPrompt, setLocalPrompt] = useState(systemPrompt);
   const [isOpen, setIsOpen] = useState(false);
-  const { currentConversationId } = useConversationStore();
 
   // Sync local prompt when prop changes (e.g. switching conversations)
   useEffect(() => {

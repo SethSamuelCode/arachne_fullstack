@@ -39,8 +39,8 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild: _asChild, ...props }, ref) => {
-    // Note: asChild is extracted but not used - this component doesn't support Slot rendering
+  ({ className, variant, size, asChild: _asChild = false, ...props }, ref) => {
+    void _asChild; // Extracted but not used - this component doesn't support Slot rendering
     // If you need asChild support, install @radix-ui/react-slot and use Slot component
     return (
       <button

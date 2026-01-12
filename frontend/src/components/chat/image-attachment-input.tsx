@@ -190,6 +190,7 @@ export function ImageAttachmentInput({
             >
               {/* Preview Image */}
               {attachment.previewUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={attachment.previewUrl}
                   alt={attachment.filename || "Attachment"}

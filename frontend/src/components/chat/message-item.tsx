@@ -35,6 +35,7 @@ function ImageLightbox({
       >
         <X className="h-6 w-6" />
       </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt={alt}
@@ -92,6 +93,7 @@ export function MessageItem({ message }: MessageItemProps) {
                   className="block rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   {attachment.previewUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={attachment.previewUrl}
                       alt={attachment.filename || `Attachment ${index + 1}`}
