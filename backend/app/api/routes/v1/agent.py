@@ -1,5 +1,6 @@
 """AI Agent WebSocket routes with streaming support (PydanticAI)."""
 
+import base64
 import logging
 from typing import Any
 from uuid import UUID
@@ -39,6 +40,38 @@ from app.services.s3 import get_s3_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def serialize_tool_content(content: Any) -> list[dict[str, Any]]:
+    """Serialize tool result content, handling BinaryContent for images.
+
+    Args:
+        content: The content from ToolReturn, can be list with strings and BinaryContent
+
+    Returns:
+        List of serialized content parts with type indicators
+    """
+    if content is None:
+        return []
+
+    if not isinstance(content, list):
+        return [{"type": "text", "text": str(content)}]
+
+    parts: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, BinaryContent):
+            # Encode binary data as base64 for JSON transport
+            parts.append({
+                "type": "image",
+                "media_type": item.media_type,
+                "data": base64.b64encode(item.data).decode("utf-8"),
+            })
+        elif isinstance(item, str):
+            parts.append({"type": "text", "text": item})
+        else:
+            parts.append({"type": "text", "text": str(item)})
+
+    return parts
 
 
 class AgentConnectionManager:
@@ -389,12 +422,16 @@ async def agent_websocket(
                                         )
 
                                     elif isinstance(event, FunctionToolResultEvent):
+                                        # Serialize content, handling BinaryContent for images
+                                        content_parts = serialize_tool_content(
+                                            event.result.content
+                                        )
                                         await manager.send_event(
                                             websocket,
                                             "tool_result",
                                             {
                                                 "tool_call_id": event.tool_call_id,
-                                                "content": str(event.result.content),
+                                                "content": content_parts,
                                             },
                                         )
 

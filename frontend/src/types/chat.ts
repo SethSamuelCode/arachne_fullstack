@@ -55,11 +55,25 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
 }
 
+// Tool result content parts - can be text or images
+export interface ToolContentText {
+  type: "text";
+  text: string;
+}
+
+export interface ToolContentImage {
+  type: "image";
+  media_type: string;
+  data: string; // base64 encoded
+}
+
+export type ToolContentPart = ToolContentText | ToolContentImage;
+
 export interface ToolCall {
   id: string;
   name: string;
   args: Record<string, unknown>;
-  result?: unknown;
+  result?: ToolContentPart[] | string | unknown;
   status: "pending" | "running" | "completed" | "error";
 }
 
