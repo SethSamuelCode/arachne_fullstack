@@ -42,6 +42,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def serialize_content(content: Any) -> Any:
+    """Serialize content that may contain BinaryContent for JSON transport.
+
+    Handles strings, lists with BinaryContent/strings, and nested structures.
+    Used for both tool results and user prompts with images.
+
+    Args:
+        content: Content that may contain BinaryContent objects
+
+    Returns:
+        JSON-serializable version of the content
+    """
+    if content is None:
+        return None
+
+    if isinstance(content, BinaryContent):
+        # Single BinaryContent object
+        return {
+            "type": "image",
+            "media_type": content.media_type,
+            "data": base64.b64encode(content.data).decode("utf-8"),
+        }
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        return [serialize_content(item) for item in content]
+
+    if isinstance(content, dict):
+        return {k: serialize_content(v) for k, v in content.items()}
+
+    # For other types, convert to string
+    return str(content)
+
+
 def serialize_tool_content(content: Any) -> list[dict[str, Any]]:
     """Serialize tool result content, handling BinaryContent for images.
 
@@ -347,10 +383,11 @@ async def agent_websocket(
                 ) as agent_run:
                     async for node in agent_run:
                         if Agent.is_user_prompt_node(node):
+                            # Serialize user_prompt which may contain BinaryContent from images
                             await manager.send_event(
                                 websocket,
                                 "user_prompt_processed",
-                                {"prompt": node.user_prompt},
+                                {"prompt": serialize_content(node.user_prompt)},
                             )
 
                         elif Agent.is_model_request_node(node):
