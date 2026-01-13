@@ -175,7 +175,6 @@ class OpenAlexClient:
             "publication_year",
             "publication_date",
             "type",
-            "is_oa",
             "open_access",
             "primary_location",
             "language",
