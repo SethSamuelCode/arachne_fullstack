@@ -15,7 +15,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           
           <Card>
             <CardHeader>
