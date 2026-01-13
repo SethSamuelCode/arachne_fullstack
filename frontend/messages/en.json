@@ -75,6 +75,13 @@
     "serverError": "Server error. Please try again later.",
     "networkError": "Network error. Please check your connection."
   },
+  "admin": {
+    "resetPassword": "Reset Password",
+    "newPassword": "New Password",
+    "resetting": "Resetting...",
+    "passwordMinLength": "Minimum 8 characters",
+    "resetPasswordFailed": "Failed to reset password"
+  },
   "footer": {
     "copyright": "All rights reserved"
   }

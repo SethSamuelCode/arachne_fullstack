@@ -28,6 +28,9 @@ import {
   Plus,
   X,
   Pencil,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface PaginatedUsers {
@@ -81,6 +84,14 @@ export default function AdminUsersPage() {
   // Edit role
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<UserRole>("user");
+
+  // Reset password modal
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
+  const [resetPasswordEmail, setResetPasswordEmail] = useState<string>("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin" || user?.is_superuser;
 
@@ -204,6 +215,45 @@ export default function AdminUsersPage() {
     setEditRole((u.role as UserRole) || "user");
   };
 
+  const openResetPasswordModal = (u: User) => {
+    setResetPasswordUserId(u.id);
+    setResetPasswordEmail(u.email);
+    setNewPassword("");
+    setShowPassword(false);
+    setResetError(null);
+  };
+
+  const closeResetPasswordModal = () => {
+    setResetPasswordUserId(null);
+    setResetPasswordEmail("");
+    setNewPassword("");
+    setShowPassword(false);
+    setResetError(null);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPasswordUserId) return;
+
+    setResetLoading(true);
+    setResetError(null);
+
+    try {
+      await apiClient.patch(`/admin/users/${resetPasswordUserId}`, {
+        password: newPassword,
+      });
+      closeResetPasswordModal();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setResetError(err.message);
+      } else {
+        setResetError("Failed to reset password");
+      }
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   if (!isAuthenticated || !isAdmin) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -320,6 +370,85 @@ export default function AdminUsersPage() {
                       </>
                     ) : (
                       "Create User"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetPasswordUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Reset Password</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeResetPasswordModal}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>User</Label>
+                  <p className="text-sm text-muted-foreground">{resetPasswordEmail}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new_password">New Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="new_password"
+                      type={showPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      disabled={resetLoading}
+                      placeholder="Minimum 8 characters"
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowPassword(!showPassword)}
+                      disabled={resetLoading}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                {resetError && (
+                  <p className="text-sm text-destructive">{resetError}</p>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeResetPasswordModal}
+                    disabled={resetLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={resetLoading}>
+                    {resetLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Resetting...
+                      </>
+                    ) : (
+                      "Reset Password"
                     )}
                   </Button>
                 </div>
@@ -491,22 +620,32 @@ export default function AdminUsersPage() {
                         {u.id !== user?.id && (
                           <div className="flex justify-end gap-2">
                             {u.is_active ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(u.id)}
-                                disabled={actionLoading === u.id}
-                                className={confirmDelete === u.id ? "text-destructive" : ""}
-                              >
-                                {actionLoading === u.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Trash2 className="h-4 w-4" />
-                                    {confirmDelete === u.id ? "Confirm?" : ""}
-                                  </>
-                                )}
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openResetPasswordModal(u)}
+                                  title="Reset Password"
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(u.id)}
+                                  disabled={actionLoading === u.id}
+                                  className={confirmDelete === u.id ? "text-destructive" : ""}
+                                >
+                                  {actionLoading === u.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Trash2 className="h-4 w-4" />
+                                      {confirmDelete === u.id ? "Confirm?" : ""}
+                                    </>
+                                  )}
+                                </Button>
+                              </>
                             ) : (
                               <Button
                                 variant="ghost"

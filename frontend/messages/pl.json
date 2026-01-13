@@ -75,6 +75,13 @@
     "serverError": "Błąd serwera. Spróbuj ponownie później.",
     "networkError": "Błąd sieci. Sprawdź połączenie."
   },
+  "admin": {
+    "resetPassword": "Zresetuj hasło",
+    "newPassword": "Nowe hasło",
+    "resetting": "Resetowanie...",
+    "passwordMinLength": "Minimum 8 znaków",
+    "resetPasswordFailed": "Nie udało się zresetować hasła"
+  },
   "footer": {
     "copyright": "Wszelkie prawa zastrzeżone"
   }
