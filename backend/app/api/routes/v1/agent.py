@@ -299,12 +299,21 @@ async def agent_websocket(
                     # Get or create conversation
                     requested_conv_id = data.get("conversation_id")
                     if requested_conv_id:
+                        # Check if switching to a different conversation
+                        is_conversation_switch = (
+                            current_conversation_id is not None
+                            and current_conversation_id != requested_conv_id
+                        )
+
                         current_conversation_id = requested_conv_id
                         # Verify conversation exists
                         await conv_service.get_conversation(UUID(requested_conv_id))
 
-                        # Populate history from DB if missing (reconnection support)
-                        if not conversation_history:
+                        # Populate history from DB if missing OR if switching conversations
+                        if not conversation_history or is_conversation_switch:
+                            # Clear any existing history from previous conversation
+                            conversation_history.clear()
+
                             # Restoring context on reconnection:
                             # 1. Get total message count to determine offset
                             _, total_count = await conv_service.list_messages(
