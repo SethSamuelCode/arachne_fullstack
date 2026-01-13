@@ -6,6 +6,105 @@ import pytest
 
 from app.agents.assistant import AssistantAgent, Deps, get_agent
 from app.agents.tools.datetime_tool import get_current_datetime
+from app.agents.tools.decorators import safe_tool
+
+
+class TestSafeTool:
+    """Tests for the @safe_tool decorator."""
+
+    @pytest.mark.anyio
+    async def test_safe_tool_passes_through_on_success(self):
+        """Test that @safe_tool returns normal result when no exception."""
+
+        @safe_tool
+        async def successful_tool(arg: str) -> str:
+            return f"Success: {arg}"
+
+        result = await successful_tool("test")
+        assert result == "Success: test"
+
+    @pytest.mark.anyio
+    async def test_safe_tool_catches_exception_returns_error_dict(self):
+        """Test that @safe_tool catches exceptions and returns error dict."""
+
+        @safe_tool
+        async def failing_tool(arg: str) -> str:
+            raise ValueError("Something went wrong")
+
+        result = await failing_tool("test")
+
+        assert isinstance(result, dict)
+        assert result["error"] is True
+        assert result["message"] == "Something went wrong"
+        assert result["code"] == "ValueError"
+        assert "details" in result
+
+    @pytest.mark.anyio
+    async def test_safe_tool_handles_empty_error_message(self):
+        """Test that @safe_tool handles exceptions with empty messages."""
+
+        @safe_tool
+        async def empty_error_tool() -> str:
+            raise RuntimeError()
+
+        result = await empty_error_tool()
+
+        assert result["error"] is True
+        assert result["message"] == "An unexpected error occurred"
+        assert result["code"] == "RuntimeError"
+
+    @pytest.mark.anyio
+    async def test_safe_tool_extracts_boto_error_details(self):
+        """Test that @safe_tool extracts details from boto ClientError."""
+
+        class MockBotoError(Exception):
+            def __init__(self):
+                super().__init__("NoSuchKey error")
+                self.response = {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}}
+
+        @safe_tool
+        async def boto_failing_tool() -> str:
+            raise MockBotoError()
+
+        result = await boto_failing_tool()
+
+        assert result["error"] is True
+        assert result["code"] == "MockBotoError"
+        assert result["details"] == {"Code": "NoSuchKey", "Message": "Key not found"}
+
+    @pytest.mark.anyio
+    async def test_safe_tool_preserves_function_metadata(self):
+        """Test that @safe_tool preserves function name and docstring."""
+
+        @safe_tool
+        async def documented_tool() -> str:
+            """This is the docstring."""
+            return "result"
+
+        assert documented_tool.__name__ == "documented_tool"
+        assert documented_tool.__doc__ == "This is the docstring."
+
+    @pytest.mark.anyio
+    async def test_safe_tool_reraises_keyboard_interrupt(self):
+        """Test that @safe_tool re-raises KeyboardInterrupt for proper shutdown."""
+
+        @safe_tool
+        async def interrupted_tool() -> str:
+            raise KeyboardInterrupt("User cancelled")
+
+        with pytest.raises(KeyboardInterrupt):
+            await interrupted_tool()
+
+    @pytest.mark.anyio
+    async def test_safe_tool_reraises_system_exit(self):
+        """Test that @safe_tool re-raises SystemExit for proper shutdown."""
+
+        @safe_tool
+        async def exit_tool() -> str:
+            raise SystemExit(1)
+
+        with pytest.raises(SystemExit):
+            await exit_tool()
 
 
 class TestDeps:
@@ -740,8 +839,8 @@ class TestContextOptimizer:
         )
         # Latest message must be present
         assert any(
-            hasattr(msg, "parts") and 
-            hasattr(msg.parts[0], "content") and 
+            hasattr(msg, "parts") and
+            hasattr(msg.parts[0], "content") and
             msg.parts[0].content == "Latest message"
             for msg in result
         )
