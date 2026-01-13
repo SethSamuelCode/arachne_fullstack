@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "arachne_fullstack",
+  title: "Arachne",
   description: "redesign of the arachne chat bot to better refine capability ",
 };
 

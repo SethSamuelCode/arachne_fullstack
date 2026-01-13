@@ -88,7 +88,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           className="flex items-center gap-2 font-semibold"
           onClick={onNavigate}
         >
-          <span>{"arachne_fullstack"}</span>
+          <span>{"Arachne"}</span>
         </Link>
       </div>
       <NavLinks onNavigate={onNavigate} />

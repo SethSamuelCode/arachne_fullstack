@@ -2,8 +2,8 @@
  * Application constants.
  */
 
-export const APP_NAME = "arachne_fullstack";
-export const APP_DESCRIPTION = "redesign of the arachne chat bot to better refine capability ";
+export const APP_NAME = "Arachne";
+export const APP_DESCRIPTION = "Arachne research assistant";
 
 // API Routes (Next.js internal routes)
 export const API_ROUTES = {
