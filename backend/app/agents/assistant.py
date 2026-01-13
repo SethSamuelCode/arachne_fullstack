@@ -67,6 +67,7 @@ class AssistantAgent:
             model=model,
             deps_type=Deps,
             system_prompt=self.system_prompt,
+            retries=3,  # Allow more retries for tool calls and output validation
         )
 
         register_tools(agent)
