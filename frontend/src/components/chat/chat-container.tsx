@@ -232,7 +232,7 @@ function ChatUI({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="px-2 pb-2 sm:px-4 sm:pb-4">
+      <div className="px-2 pb-2 sm:px-4 sm:pb-0">
         <div className="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
           <ChatInput
             onSend={sendMessage}
