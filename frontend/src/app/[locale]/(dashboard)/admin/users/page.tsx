@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import type { User } from "@/types";
+import type { User, UserRole } from "@/types";
 import {
   Card,
   CardHeader,
@@ -13,6 +13,7 @@ import {
   CardContent,
   Button,
   Input,
+  Label,
   Badge,
 } from "@/components/ui";
 import {
@@ -24,6 +25,9 @@ import {
   ChevronRight,
   Loader2,
   AlertTriangle,
+  Plus,
+  X,
+  Pencil,
 } from "lucide-react";
 
 interface PaginatedUsers {
@@ -32,6 +36,13 @@ interface PaginatedUsers {
   page: number;
   size: number;
   pages: number;
+}
+
+interface CreateUserForm {
+  email: string;
+  password: string;
+  full_name: string;
+  role: UserRole;
 }
 
 export default function AdminUsersPage() {
@@ -55,6 +66,21 @@ export default function AdminUsersPage() {
   // Action states
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  
+  // Create user modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateUserForm>({
+    email: "",
+    password: "",
+    full_name: "",
+    role: "user",
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  
+  // Edit role
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState<UserRole>("user");
 
   const isAdmin = user?.role === "admin" || user?.is_superuser;
 
@@ -139,6 +165,45 @@ export default function AdminUsersPage() {
     fetchUsers();
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateLoading(true);
+    setCreateError(null);
+    
+    try {
+      await apiClient.post("/admin/users", createForm);
+      setShowCreateModal(false);
+      setCreateForm({ email: "", password: "", full_name: "", role: "user" });
+      await fetchUsers();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setCreateError(err.message);
+      } else {
+        setCreateError("Failed to create user");
+      }
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleEditRole = async (userId: string) => {
+    setActionLoading(userId);
+    try {
+      await apiClient.patch(`/admin/users/${userId}`, { role: editRole });
+      setEditingUserId(null);
+      await fetchUsers();
+    } catch (err) {
+      console.error("Failed to update user role:", err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const startEditRole = (u: User) => {
+    setEditingUserId(u.id);
+    setEditRole((u.role as UserRole) || "user");
+  };
+
   if (!isAuthenticated || !isAdmin) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -154,12 +219,115 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">User Management</h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
-          Manage user accounts and permissions
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">User Management</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
+            Manage user accounts and permissions
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateModal(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add User
+        </Button>
       </div>
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Create New User</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateError(null);
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={createForm.email}
+                    onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                    required
+                    disabled={createLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="full_name">Full Name</Label>
+                  <Input
+                    id="full_name"
+                    type="text"
+                    value={createForm.full_name}
+                    onChange={(e) => setCreateForm({ ...createForm, full_name: e.target.value })}
+                    disabled={createLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={createForm.password}
+                    onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                    required
+                    minLength={8}
+                    disabled={createLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <select
+                    id="role"
+                    value={createForm.role}
+                    onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as UserRole })}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    disabled={createLoading}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                {createError && (
+                  <p className="text-sm text-destructive">{createError}</p>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setCreateError(null);
+                    }}
+                    disabled={createLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createLoading}>
+                    {createLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      "Create User"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Filters */}
       <Card className="p-4">
@@ -254,13 +422,57 @@ export default function AdminUsersPage() {
                         {u.full_name || u.name || "-"}
                       </td>
                       <td className="py-3 px-2">
-                        {u.role === "admin" || u.is_superuser ? (
-                          <Badge variant="secondary">
-                            <Shield className="mr-1 h-3 w-3" />
-                            Admin
-                          </Badge>
+                        {editingUserId === u.id ? (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={editRole}
+                              onChange={(e) => setEditRole(e.target.value as UserRole)}
+                              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            >
+                              <option value="user">User</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditRole(u.id)}
+                              disabled={actionLoading === u.id}
+                            >
+                              {actionLoading === u.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Save"
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingUserId(null)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
                         ) : (
-                          <Badge variant="outline">User</Badge>
+                          <div className="flex items-center gap-2">
+                            {u.role === "admin" || u.is_superuser ? (
+                              <Badge variant="secondary">
+                                <Shield className="mr-1 h-3 w-3" />
+                                Admin
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">User</Badge>
+                            )}
+                            {u.id !== user?.id && u.is_active && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => startEditRole(u)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-2">

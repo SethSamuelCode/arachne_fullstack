@@ -17,7 +17,7 @@ from app.api.deps import (
     get_current_user,
 )
 from app.db.models.user import User, UserRole
-from app.schemas.user import UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 router = APIRouter()
 
@@ -115,6 +115,23 @@ async def read_users(
     query = query.order_by(User.created_at.desc())
 
     return await paginate(db, query)
+
+
+@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_in: UserCreate,
+    user_service: UserSvc,
+    current_user: Annotated[User, Depends(RoleChecker(UserRole.ADMIN))],
+):
+    """Create a new user (admin only).
+
+    Allows administrators to create user accounts directly,
+    bypassing the public registration flow.
+
+    Raises AlreadyExistsError if email is already registered.
+    """
+    user = await user_service.create_by_admin(user_in)
+    return user
 
 
 @router.get("/{user_id}", response_model=UserRead)

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
 from app.core.security import get_password_hash, verify_password
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 from app.repositories import session_repo, user_repo
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -76,6 +76,33 @@ class UserService:
             is_superuser=is_first_user,
         )
 
+    async def create_by_admin(self, user_in: UserCreate) -> User:
+        """Create a new user by admin.
+
+        Unlike register(), this respects the role specified in user_in
+        and can set is_superuser for admin users.
+
+        Raises:
+            AlreadyExistsError: If email is already registered.
+        """
+        existing = await user_repo.get_by_email(self.db, user_in.email)
+        if existing:
+            raise AlreadyExistsError(
+                message="Email already registered",
+                details={"email": user_in.email},
+            )
+
+        hashed_password = get_password_hash(user_in.password)
+        is_admin = user_in.role.value == "admin"
+        return await user_repo.create(
+            self.db,
+            email=user_in.email,
+            hashed_password=hashed_password,
+            full_name=user_in.full_name,
+            role=user_in.role.value,
+            is_superuser=is_admin,
+        )
+
     async def authenticate(self, email: str, password: str) -> User:
         """Authenticate user by email and password.
 
@@ -100,6 +127,10 @@ class UserService:
         update_data = user_in.model_dump(exclude_unset=True)
         if "password" in update_data:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+
+        # Sync is_superuser with role
+        if "role" in update_data:
+            update_data["is_superuser"] = update_data["role"] == UserRole.ADMIN
 
         return await user_repo.update(self.db, db_user=user, update_data=update_data)
 

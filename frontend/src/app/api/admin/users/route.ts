@@ -58,3 +58,36 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const accessToken = request.cookies.get("access_token")?.value;
+    const csrfToken = request.cookies.get("csrf_token")?.value;
+
+    if (!accessToken) {
+      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const body = await request.json();
+
+    const data = await backendFetch<User>("/api/v1/users", {
+      method: "POST",
+      headers: buildBackendHeaders(accessToken, csrfToken),
+      body: JSON.stringify(body),
+    });
+
+    return NextResponse.json(data, { status: 201 });
+  } catch (error) {
+    if (error instanceof BackendApiError) {
+      return NextResponse.json(
+        { detail: error.data || "Failed to create user" },
+        { status: error.status }
+      );
+    }
+    console.error("Admin user create error:", error);
+    return NextResponse.json(
+      { detail: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
