@@ -50,6 +50,8 @@ class UserService:
     async def register(self, user_in: UserCreate) -> User:
         """Register a new user.
 
+        The first user registered will automatically be made an admin.
+
         Raises:
             AlreadyExistsError: If email is already registered.
         """
@@ -60,13 +62,18 @@ class UserService:
                 details={"email": user_in.email},
             )
 
+        # Check if this is the first user - make them admin
+        user_count = await user_repo.count(self.db)
+        is_first_user = user_count == 0
+
         hashed_password = get_password_hash(user_in.password)
         return await user_repo.create(
             self.db,
             email=user_in.email,
             hashed_password=hashed_password,
             full_name=user_in.full_name,
-            role=user_in.role.value,
+            role="admin" if is_first_user else user_in.role.value,
+            is_superuser=is_first_user,
         )
 
     async def authenticate(self, email: str, password: str) -> User:

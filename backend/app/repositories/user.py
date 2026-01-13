@@ -34,6 +34,14 @@ async def get_multi(
     return list(result.scalars().all())
 
 
+async def count(db: AsyncSession) -> int:
+    """Get total count of users."""
+    from sqlalchemy import func
+
+    result = await db.execute(select(func.count()).select_from(User))
+    return result.scalar_one()
+
+
 async def create(
     db: AsyncSession,
     *,
