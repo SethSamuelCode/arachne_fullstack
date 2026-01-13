@@ -2,7 +2,10 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { CopyButton } from "./copy-button";
 
 interface MarkdownContentProps {
@@ -12,8 +15,8 @@ interface MarkdownContentProps {
 export function MarkdownContent({ content }: MarkdownContentProps) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeHighlight, rehypeKatex]}
       components={{
         pre({ children, ...props }) {
           const codeElement = children as React.ReactElement<{
