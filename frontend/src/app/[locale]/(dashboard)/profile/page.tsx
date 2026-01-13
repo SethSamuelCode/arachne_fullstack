@@ -2,13 +2,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks";
 import { useAuthStore } from "@/stores";
 import { apiClient } from "@/lib/api-client";
+import { ROUTES } from "@/lib/constants";
 import type { User as UserProfile } from "@/types";
 import { Button, Card, Input, Label, Badge } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme";
-import { User, Mail, Calendar, Shield, Settings, MessageSquare, Brain } from "lucide-react";
+import { User, Mail, Calendar, Shield, Settings, MessageSquare, Brain, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AVAILABLE_MODELS = [
@@ -23,10 +25,14 @@ const AVAILABLE_MODELS = [
 export default function ProfilePage() {
   const { user, isAuthenticated, logout } = useAuth();
   const setUser = useAuthStore((state) => state.setUser);
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -57,6 +63,21 @@ export default function ProfilePage() {
       console.error("Failed to update profile", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    
+    try {
+      await apiClient.delete("/users/me");
+      logout();
+      router.push(ROUTES.LOGIN);
+    } catch (error) {
+      console.error("Failed to delete account", error);
+      setDeleteError("Failed to delete account. Please try again.");
+      setIsDeleting(false);
     }
   };
 
@@ -225,16 +246,72 @@ export default function ProfilePage() {
           <h3 className="mb-4 text-base sm:text-lg font-semibold text-destructive">
             Danger Zone
           </h3>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="font-medium text-sm sm:text-base">Sign out</p>
-              <p className="text-xs sm:text-sm text-muted-foreground">
-                Sign out from your account on this device
-              </p>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="font-medium text-sm sm:text-base">Sign out</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Sign out from your account on this device
+                </p>
+              </div>
+              <Button variant="destructive" onClick={logout} className="h-10 self-start sm:self-auto">
+                Sign Out
+              </Button>
             </div>
-            <Button variant="destructive" onClick={logout} className="h-10 self-start sm:self-auto">
-              Sign Out
-            </Button>
+
+            <div className="border-t pt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="font-medium text-sm sm:text-base">Delete Account</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    Permanently delete your account and all associated data
+                  </p>
+                </div>
+                {!showDeleteConfirm ? (
+                  <Button
+                    variant="outline"
+                    className="h-10 self-start sm:self-auto border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Account
+                  </Button>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {deleteError && (
+                      <p className="text-xs text-destructive">{deleteError}</p>
+                    )}
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/30">
+                      <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+                      <p className="text-xs text-destructive">
+                        This action cannot be undone. Are you sure?
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeleteError(null);
+                        }}
+                        disabled={isDeleting}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleDeleteAccount}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? "Deleting..." : "Yes, Delete My Account"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </Card>
       </div>

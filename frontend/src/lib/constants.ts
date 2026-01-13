@@ -33,6 +33,8 @@ export const ROUTES = {
   CHAT: "/chat",
   PROFILE: "/profile",
   SETTINGS: "/settings",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_SETTINGS: "/admin/settings",
 } as const;
 
 // WebSocket URL (for chat - this needs to be direct to backend for WS)

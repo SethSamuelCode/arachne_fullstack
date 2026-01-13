@@ -2,10 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.api.deps import CurrentUser, SessionSvc, UserSvc
+from app.api.deps import CurrentUser, RuntimeSettingsSvc, SessionSvc, UserSvc
 from app.core.exceptions import AuthenticationError
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, create_refresh_token
@@ -13,6 +13,19 @@ from app.schemas.token import RefreshTokenRequest, Token, TokenWithUser
 from app.schemas.user import UserCreate, UserRead
 
 router = APIRouter()
+
+
+@router.get("/registration-status")
+async def get_registration_status(
+    settings_service: RuntimeSettingsSvc,
+):
+    """Check if public registration is enabled.
+
+    This endpoint is public (no auth required) so the frontend
+    can check before showing the registration form.
+    """
+    enabled = await settings_service.is_registration_enabled()
+    return {"registration_enabled": enabled}
 
 
 @router.post("/login", response_model=TokenWithUser)
@@ -51,11 +64,21 @@ async def login(
 async def register(
     user_in: UserCreate,
     user_service: UserSvc,
+    settings_service: RuntimeSettingsSvc,
 ):
     """Register a new user.
 
-    Raises AlreadyExistsError if email is already registered.
+    Raises:
+        HTTPException 403: If registration is disabled by admin.
+        AlreadyExistsError: If email is already registered.
     """
+    # Check if registration is enabled
+    if not await settings_service.is_registration_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is currently disabled",
+        )
+
     user = await user_service.register(user_in)
     return user
 

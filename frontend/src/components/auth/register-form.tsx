@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks";
 import { Button, Input, Label, Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui";
-import { ApiError } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
+import { UserX, Loader2 } from "lucide-react";
+
+interface RegistrationStatus {
+  registration_enabled: boolean;
+}
 
 export function RegisterForm() {
   const router = useRouter();
@@ -17,6 +22,24 @@ export function RegisterForm() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(true);
+
+  useEffect(() => {
+    const checkRegistrationStatus = async () => {
+      try {
+        const status = await apiClient.get<RegistrationStatus>("/auth/registration-status");
+        setRegistrationEnabled(status.registration_enabled);
+      } catch {
+        // If we can't check status, assume registration is enabled
+        setRegistrationEnabled(true);
+      } finally {
+        setCheckingStatus(false);
+      }
+    };
+
+    checkRegistrationStatus();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +65,49 @@ export function RegisterForm() {
       setIsLoading(false);
     }
   };
+
+  // Loading state while checking registration status
+  if (checkingStatus) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Registration disabled state
+  if (registrationEnabled === false) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle className="text-2xl text-center">Registration Unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-4">
+          <div className="flex justify-center">
+            <div className="rounded-full bg-muted p-4">
+              <UserX className="h-12 w-12 text-muted-foreground" />
+            </div>
+          </div>
+          <p className="text-muted-foreground">
+            New user registration is currently disabled by the administrator.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Please contact the administrator if you need an account.
+          </p>
+        </CardContent>
+        <CardFooter className="justify-center">
+          <p className="text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link href={ROUTES.LOGIN} className="text-primary hover:underline">
+              Login
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-md mx-auto">

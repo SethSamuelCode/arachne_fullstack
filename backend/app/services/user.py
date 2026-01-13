@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
 from app.core.security import get_password_hash, verify_password
 from app.db.models.user import User
-from app.repositories import user_repo
+from app.repositories import session_repo, user_repo
 from app.schemas.user import UserCreate, UserUpdate
 
 
@@ -97,15 +97,34 @@ class UserService:
         return await user_repo.update(self.db, db_user=user, update_data=update_data)
 
     async def delete(self, user_id: UUID) -> User:
-        """Delete user.
+        """Soft delete user and invalidate all their sessions.
+
+        This performs a soft delete (sets is_active=False) and logs out
+        all active sessions for the user.
 
         Raises:
             NotFoundError: If user does not exist.
         """
-        user = await user_repo.delete(self.db, user_id)
+        user = await user_repo.soft_delete(self.db, user_id)
         if not user:
             raise NotFoundError(
                 message="User not found",
                 details={"user_id": str(user_id)},
             )
+        # Invalidate all user sessions to force logout
+        await session_repo.deactivate_all_user_sessions(self.db, user_id)
         return user
+
+    async def restore(self, user_id: UUID) -> User:
+        """Restore a soft-deleted user by setting is_active=True.
+
+        Raises:
+            NotFoundError: If user does not exist.
+        """
+        user = await user_repo.get_by_id(self.db, user_id)
+        if not user:
+            raise NotFoundError(
+                message="User not found",
+                details={"user_id": str(user_id)},
+            )
+        return await user_repo.update(self.db, db_user=user, update_data={"is_active": True})

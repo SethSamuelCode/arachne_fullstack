@@ -12,6 +12,7 @@ from app.api.routes.v1 import webhooks
 from app.api.routes.v1 import ws
 from app.api.routes.v1 import agent
 from app.api.routes.v1 import files
+from app.api.routes.v1 import admin_settings
 
 v1_router = APIRouter()
 
@@ -44,3 +45,6 @@ v1_router.include_router(agent.router, tags=["agent"])
 
 # File storage routes
 v1_router.include_router(files.router, prefix="/files", tags=["files"])
+
+# Admin settings routes
+v1_router.include_router(admin_settings.router, prefix="/admin/settings", tags=["admin"])

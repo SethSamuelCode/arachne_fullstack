@@ -34,6 +34,7 @@ from app.services.session import SessionService
 from app.services.webhook import WebhookService
 from app.services.item import ItemService
 from app.services.conversation import ConversationService
+from app.services.settings import RuntimeSettingsService
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -72,6 +73,14 @@ def get_conversation_service(db: DBSession) -> ConversationService:
 
 
 ConversationSvc = Annotated[ConversationService, Depends(get_conversation_service)]
+
+
+def get_runtime_settings_service(redis: Redis) -> RuntimeSettingsService:
+    """Create RuntimeSettingsService instance with Redis client."""
+    return RuntimeSettingsService(redis)
+
+
+RuntimeSettingsSvc = Annotated[RuntimeSettingsService, Depends(get_runtime_settings_service)]
 
 # === Authentication Dependencies ===
 
@@ -206,23 +215,27 @@ async def get_current_user_ws(
         # But raising AuthenticationError triggers the exception handler which tries to return JSON.
         # We should just close and return/raise something that stops the dependency.
         from fastapi import WebSocketDisconnect
+
         await websocket.close(code=4001, reason="Missing authentication token")
         raise WebSocketDisconnect(code=4001, reason="Missing authentication token")
 
     payload = verify_token(auth_token)
     if payload is None:
         from fastapi import WebSocketDisconnect
+
         await websocket.close(code=4001, reason="Invalid or expired token")
         raise WebSocketDisconnect(code=4001, reason="Invalid or expired token")
 
     if payload.get("type") != "access":
         from fastapi import WebSocketDisconnect
+
         await websocket.close(code=4001, reason="Invalid token type")
         raise WebSocketDisconnect(code=4001, reason="Invalid token type")
 
     user_id = payload.get("sub")
     if user_id is None:
         from fastapi import WebSocketDisconnect
+
         await websocket.close(code=4001, reason="Invalid token payload")
         raise WebSocketDisconnect(code=4001, reason="Invalid token payload")
 
@@ -234,6 +247,7 @@ async def get_current_user_ws(
 
     if not user.is_active:
         from fastapi import WebSocketDisconnect
+
         await websocket.close(code=4001, reason="User account is disabled")
         raise WebSocketDisconnect(code=4001, reason="User account is disabled")
 

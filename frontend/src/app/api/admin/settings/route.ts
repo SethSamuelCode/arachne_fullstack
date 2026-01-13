@@ -1,6 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { backendFetch, BackendApiError, buildBackendHeaders } from "@/lib/server-api";
-import type { User as UserProfile } from "@/types";
+
+interface RuntimeSettings {
+  registration_enabled: boolean;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const accessToken = request.cookies.get("access_token")?.value;
+
+    if (!accessToken) {
+      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const data = await backendFetch<RuntimeSettings>("/api/v1/admin/settings", {
+      method: "GET",
+      headers: buildBackendHeaders(accessToken),
+    });
+
+    return NextResponse.json(data);
+  } catch (error) {
+    if (error instanceof BackendApiError) {
+      return NextResponse.json(
+        { detail: error.data || "Failed to fetch settings" },
+        { status: error.status }
+      );
+    }
+    console.error("Admin settings fetch error:", error);
+    return NextResponse.json(
+      { detail: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -13,7 +45,7 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
 
-    const data = await backendFetch<UserProfile>("/api/v1/users/me", {
+    const data = await backendFetch<RuntimeSettings>("/api/v1/admin/settings", {
       method: "PATCH",
       headers: buildBackendHeaders(accessToken, csrfToken),
       body: JSON.stringify(body),
@@ -23,47 +55,11 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     if (error instanceof BackendApiError) {
       return NextResponse.json(
-        { detail: error.message || "Failed to update profile" },
+        { detail: error.data || "Failed to update settings" },
         { status: error.status }
       );
     }
-    console.error("Profile update error:", error);
-    return NextResponse.json(
-      { detail: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    const accessToken = request.cookies.get("access_token")?.value;
-    const csrfToken = request.cookies.get("csrf_token")?.value;
-
-    if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
-    }
-
-    await backendFetch("/api/v1/users/me", {
-      method: "DELETE",
-      headers: buildBackendHeaders(accessToken, csrfToken),
-    });
-
-    // Clear auth cookies on successful deletion
-    const response = new NextResponse(null, { status: 204 });
-    response.cookies.delete("access_token");
-    response.cookies.delete("refresh_token");
-    response.cookies.delete("csrf_token");
-    
-    return response;
-  } catch (error) {
-    if (error instanceof BackendApiError) {
-      return NextResponse.json(
-        { detail: error.message || "Failed to delete account" },
-        { status: error.status }
-      );
-    }
-    console.error("Account deletion error:", error);
+    console.error("Admin settings update error:", error);
     return NextResponse.json(
       { detail: "Internal server error" },
       { status: 500 }

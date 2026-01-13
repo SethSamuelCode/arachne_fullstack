@@ -81,10 +81,38 @@ async def update(
     return db_user
 
 
-async def delete(db: AsyncSession, user_id: UUID) -> User | None:
-    """Delete a user."""
+async def soft_delete(db: AsyncSession, user_id: UUID) -> User | None:
+    """Soft delete a user by setting is_active=False.
+
+    This is the preferred method for user deletion as it:
+    - Preserves referential integrity
+    - Allows for potential account recovery
+    - Maintains audit trail
+    """
+    user = await get_by_id(db, user_id)
+    if user:
+        user.is_active = False
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+    return user
+
+
+async def hard_delete(db: AsyncSession, user_id: UUID) -> User | None:
+    """Permanently delete a user from the database.
+
+    WARNING: This is irreversible. Use soft_delete() for normal deletion.
+    """
     user = await get_by_id(db, user_id)
     if user:
         await db.delete(user)
         await db.flush()
     return user
+
+
+async def delete(db: AsyncSession, user_id: UUID) -> User | None:
+    """Delete a user (soft delete).
+
+    Alias for soft_delete() for backward compatibility.
+    """
+    return await soft_delete(db, user_id)
