@@ -281,12 +281,26 @@ class ArxivClient:
             "journal_ref": "jr",
         }
 
+        # Known arXiv field prefixes (to detect if query already has one)
+        known_prefixes = {"all:", "ti:", "abs:", "au:", "cat:", "co:", "jr:"}
+
         # Add main query
         if query:
-            prefix = field_map.get(search_field, "all")
             # URL-encode spaces as + for arXiv
             encoded_query = query.replace(" ", "+")
-            parts.append(f"{prefix}:{encoded_query}")
+
+            # Check if query already contains field prefixes (e.g., "ti:black hole")
+            # If so, use the query as-is without adding another prefix
+            query_lower = query.lower()
+            has_prefix = any(query_lower.startswith(p) for p in known_prefixes)
+
+            if has_prefix or search_field == "all":
+                # Query already has prefix or using "all" field - use as-is
+                parts.append(encoded_query)
+            else:
+                # Add field prefix
+                prefix = field_map.get(search_field, "all")
+                parts.append(f"{prefix}:{encoded_query}")
 
         # Add category filter
         if categories:
