@@ -77,6 +77,18 @@ function AuthenticatedChatContainer() {
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isUserNearBottomRef = useRef(true);
+
+  // Track if user is near the bottom of the scroll container
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    
+    const threshold = 100; // pixels from bottom to consider "at bottom"
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    isUserNearBottomRef.current = distanceFromBottom <= threshold;
+  }, []);
 
   // Clear messages when conversation changes, but NOT when going from null to a new ID
   // (that happens when a new chat is saved - we want to keep the messages)
@@ -131,8 +143,11 @@ function AuthenticatedChatContainer() {
     return () => disconnect();
   }, [connect, disconnect]);
 
+  // Auto-scroll to bottom only if user is near the bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isUserNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   return (
@@ -143,6 +158,8 @@ function AuthenticatedChatContainer() {
       sendMessage={(content, attachments) => sendMessage(content, attachments, systemPrompt)}
       clearMessages={clearMessages}
       messagesEndRef={messagesEndRef}
+      scrollContainerRef={scrollContainerRef}
+      onScroll={handleScroll}
       systemPrompt={systemPrompt}
       setSystemPrompt={setSystemPrompt}
       onSystemPromptSave={handleSystemPromptSave}
@@ -157,6 +174,8 @@ interface ChatUIProps {
   sendMessage: (content: string, attachments?: import("@/types").ChatAttachment[]) => void;
   clearMessages: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
   systemPrompt?: string;
   setSystemPrompt?: (prompt: string) => void;
   onSystemPromptSave?: (prompt: string) => Promise<void>;
@@ -169,13 +188,19 @@ function ChatUI({
   sendMessage,
   clearMessages,
   messagesEndRef,
+  scrollContainerRef,
+  onScroll,
   systemPrompt,
   setSystemPrompt,
   onSystemPromptSave,
 }: ChatUIProps) {
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
-      <div className="flex-1 overflow-y-auto px-2 py-4 sm:px-4 sm:py-6 scrollbar-thin">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-y-auto px-2 py-4 sm:px-4 sm:py-6 scrollbar-thin"
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
             <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-secondary flex items-center justify-center">
