@@ -206,7 +206,7 @@ class ArxivClient:
     Parses Atom XML responses using feedparser.
     """
 
-    BASE_URL = "http://export.arxiv.org/api"
+    BASE_URL = "https://export.arxiv.org/api"
     DEFAULT_TIMEOUT = 60.0  # arXiv can be slow
     DEFAULT_MAX_RESULTS = 20
     MAX_RESULTS_PER_REQUEST = 2000

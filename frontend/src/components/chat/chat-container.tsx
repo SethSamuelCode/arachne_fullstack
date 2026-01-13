@@ -195,7 +195,7 @@ function ChatUI({
   onSystemPromptSave,
 }: ChatUIProps) {
   return (
-    <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
+    <div className="flex flex-col h-full mx-auto w-full">
       <div 
         ref={scrollContainerRef}
         onScroll={onScroll}
