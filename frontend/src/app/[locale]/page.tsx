@@ -45,7 +45,7 @@ export default function HomePage() {
                 After completing some study to get back into the IT space i found the wonders of AI. It has shown me many things and surprised me at almost every turn. Some research argues that ai is not sentient but i have to disagree. The way it speaks, understand and behaves is like it understands even if its just numbers at the end. There is nothing to prove humans do not operate the same way with chemical signals driving them. 
               </p>
               <p>
-                This is my gift to myself and the world to help people do research better and faster and to prove if you want to you can do anything you want. 
+                This is my gift to myself and the world to help people do research better and faster and to prove if you want it bad enough you can do anything. 
               </p>
             </CardContent>
           </Card>
