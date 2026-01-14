@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores";
 import { apiClient, ApiError } from "@/lib/api-client";
 import type { User, LoginRequest, RegisterRequest } from "@/types";
@@ -13,8 +13,12 @@ const REFRESH_BUFFER_SECONDS = 5 * 60;
 /** Minimum interval between refresh attempts (30 seconds) */
 const MIN_REFRESH_INTERVAL_MS = 30 * 1000;
 
+/** Routes where we should NOT redirect to login on auth failure */
+const AUTH_PAGES = [ROUTES.LOGIN, ROUTES.REGISTER, "/login", "/register"];
+
 export function useAuth() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, isAuthenticated, isLoading, setUser, setLoading, logout } =
     useAuthStore();
@@ -22,6 +26,7 @@ export function useAuth() {
   // Refs for proactive refresh timer
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastRefreshRef = useRef<number>(0);
+  const hasCheckedAuthRef = useRef(false);
 
   /**
    * Clear the proactive refresh timer.
@@ -56,11 +61,15 @@ export function useAuth() {
       if (error instanceof ApiError && error.status === 401) {
         clearRefreshTimer();
         logout();
-        router.push(ROUTES.LOGIN);
+        // Only redirect to login if not already on an auth page
+        const isOnAuthPage = AUTH_PAGES.some((page) => pathname?.endsWith(page));
+        if (!isOnAuthPage) {
+          router.push(ROUTES.LOGIN);
+        }
       }
       return false;
     }
-  }, [clearRefreshTimer, logout, router, setUser]);
+  }, [clearRefreshTimer, logout, pathname, router, setUser]);
 
   /**
    * Schedule a proactive token refresh.
@@ -83,9 +92,15 @@ export function useAuth() {
     }, refreshInMs);
   }, [clearRefreshTimer, refreshToken]);
 
-  // Check auth status on mount and validate persisted state
+  // Check auth status on mount (runs once)
   useEffect(() => {
+    // Only check once per mount
+    if (hasCheckedAuthRef.current) {
+      return;
+    }
+
     const checkAuth = async () => {
+      hasCheckedAuthRef.current = true;
       try {
         const userData = await apiClient.get<User>("/auth/me");
         setUser(userData);
