@@ -59,18 +59,11 @@ export default function AdminSettingsPage() {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push(ROUTES.LOGIN);
-      return;
+    // Middleware handles auth/admin redirects - just fetch data
+    if (isAdmin) {
+      fetchSettings();
     }
-    
-    if (user && !isAdmin) {
-      router.push(ROUTES.DASHBOARD);
-      return;
-    }
-    
-    fetchSettings();
-  }, [isAuthenticated, user, isAdmin, router, fetchSettings]);
+  }, [isAdmin, fetchSettings]);
 
   const handleToggleRegistration = async () => {
     if (!settings) return;

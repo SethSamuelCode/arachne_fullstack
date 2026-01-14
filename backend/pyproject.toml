@@ -19,6 +19,7 @@ dependencies = [
     "alembic>=1.14.0",
     "greenlet>=3.0.0",
     "pyjwt>=2.9.0",
+    "cryptography>=42.0.0",
     "bcrypt>=4.0.0",
     "python-multipart>=0.0.12",
     "redis>=5.2.0",

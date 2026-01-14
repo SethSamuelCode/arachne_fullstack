@@ -10,12 +10,41 @@ from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.api.deps import get_redis
 from app.clients.redis import RedisClient
 from app.api.deps import get_db_session
+
+
+# Generate test Ed25519 keys once at module load
+_test_private_key = Ed25519PrivateKey.generate()
+_TEST_PRIVATE_KEY_PEM = _test_private_key.private_bytes(
+    encoding=Encoding.PEM,
+    format=PrivateFormat.PKCS8,
+    encryption_algorithm=NoEncryption(),
+).decode("utf-8")
+_TEST_PUBLIC_KEY_PEM = _test_private_key.public_key().public_bytes(
+    encoding=Encoding.PEM,
+    format=PublicFormat.SubjectPublicKeyInfo,
+).decode("utf-8")
+
+
+@pytest.fixture(autouse=True)
+def setup_test_jwt_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auto-configure test Ed25519 keys for all tests requiring JWT operations."""
+    from app.core import config
+
+    monkeypatch.setattr(config.settings, "JWT_PRIVATE_KEY", _TEST_PRIVATE_KEY_PEM)
+    monkeypatch.setattr(config.settings, "JWT_PUBLIC_KEY", _TEST_PUBLIC_KEY_PEM)
 
 
 @pytest.fixture

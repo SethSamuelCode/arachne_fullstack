@@ -1,7 +1,13 @@
 /**
- * Client-side API client.
+ * Client-side API client with automatic token refresh.
+ *
  * All requests go through Next.js API routes (/api/*), never directly to the backend.
  * This keeps the backend URL hidden from the browser.
+ *
+ * Features:
+ * - Automatic 401 handling with token refresh and retry
+ * - Prevents refresh loops with retry tracking
+ * - Redirects to login on refresh failure
  */
 
 export class ApiError extends Error {
@@ -18,14 +24,68 @@ export class ApiError extends Error {
 interface RequestOptions extends Omit<RequestInit, "body"> {
   params?: Record<string, string>;
   body?: unknown;
+  /** Skip 401 retry (used internally to prevent loops) */
+  _skipRetry?: boolean;
 }
 
 class ApiClient {
+  /** Track if a refresh is in progress to prevent concurrent refreshes */
+  private refreshPromise: Promise<boolean> | null = null;
+
+  /**
+   * Attempt to refresh the access token.
+   * Returns true if refresh succeeded, false otherwise.
+   */
+  private async refreshToken(): Promise<boolean> {
+    // If refresh is already in progress, wait for it
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (response.ok) {
+          return true;
+        }
+
+        // Refresh failed - clear auth state
+        return false;
+      } catch {
+        return false;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  /**
+   * Handle authentication failure by redirecting to login.
+   */
+  private handleAuthFailure(): void {
+    // Clear any stored auth state (if using localStorage)
+    if (typeof window !== "undefined") {
+      // Clear zustand persisted state
+      localStorage.removeItem("auth-storage");
+
+      // Get current path for callback
+      const currentPath = window.location.pathname;
+      const loginUrl = `/login?callbackUrl=${encodeURIComponent(currentPath)}`;
+      window.location.href = loginUrl;
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { params, body, ...fetchOptions } = options;
+    const { params, body, _skipRetry, ...fetchOptions } = options;
 
     let url = `/api${endpoint}`;
 
@@ -42,6 +102,20 @@ class ApiClient {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+
+    // Handle 401 Unauthorized - attempt token refresh and retry
+    if (response.status === 401 && !_skipRetry) {
+      const refreshed = await this.refreshToken();
+
+      if (refreshed) {
+        // Retry the original request with skip flag to prevent infinite loop
+        return this.request<T>(endpoint, { ...options, _skipRetry: true });
+      }
+
+      // Refresh failed - redirect to login
+      this.handleAuthFailure();
+      throw new ApiError(401, "Session expired. Please log in again.");
+    }
 
     if (!response.ok) {
       let errorData;

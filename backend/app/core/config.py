@@ -9,6 +9,32 @@ from pydantic import computed_field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _sanitize_env_string(value: str) -> str:
+    """Sanitize an environment variable string value.
+
+    Removes whitespace, quotes, and control characters to prevent issues with:
+    - Trailing carriage returns (\\r) or newlines (\\n) from Windows line endings
+    - Accidental quotes around values in env files or Azure Portal
+    - Leading/trailing whitespace from copy-paste errors
+
+    Args:
+        value: The raw string value from environment variable.
+
+    Returns:
+        Cleaned string with quotes, whitespace, and control characters removed.
+    """
+    # Strip whitespace first
+    value = value.strip()
+    # Remove surrounding quotes (both single and double)
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        value = value[1:-1].strip()
+    # Remove any remaining control characters (CR, LF, TAB)
+    value = value.replace("\r", "").replace("\n", "").replace("\t", "")
+    return value
+
+
 def find_env_file() -> Path | None:
     """Find .env file in current or parent directories."""
     current = Path.cwd()
@@ -70,11 +96,13 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30
 
-    # === Auth (JWT) ===
+    # === Auth (JWT with EdDSA/Ed25519) ===
+    # Algorithm is auto-determined: EdDSA if keys present, HS256 fallback otherwise
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes
+    JWT_PRIVATE_KEY: str | None = None  # Ed25519 private key for signing tokens
+    JWT_PUBLIC_KEY: str | None = None  # Ed25519 public key for verifying tokens
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 60 minutes
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    ALGORITHM: str = "HS256"
 
     # === Internal API (for trusted server-to-server communication) ===
     # Used by Next.js frontend to bypass CSRF for proxied requests
@@ -83,7 +111,9 @@ class Settings(BaseSettings):
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
-        """Validate SECRET_KEY is secure in production."""
+        """Validate and sanitize SECRET_KEY, ensuring it's secure in production."""
+        # Sanitize first to handle copy-paste issues
+        v = _sanitize_env_string(v)
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
         # Get environment from values if available
@@ -94,6 +124,30 @@ class Settings(BaseSettings):
                 "Generate a secure key with: openssl rand -hex 32"
             )
         return v
+
+    @field_validator("INTERNAL_API_KEY")
+    @classmethod
+    def validate_internal_api_key(cls, v: str | None) -> str | None:
+        """Sanitize INTERNAL_API_KEY if provided."""
+        if v is None:
+            return None
+        return _sanitize_env_string(v)
+
+    @field_validator("JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY")
+    @classmethod
+    def validate_jwt_keys(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Validate and sanitize JWT keys, ensuring they're set in production for EdDSA."""
+        if v is None:
+            env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
+            if env == "production":
+                raise ValueError(
+                    f"{info.field_name} must be set in production for EdDSA! "
+                    "Generate Ed25519 keys with: openssl genpkey -algorithm Ed25519 -out private_key.pem && "
+                    "openssl pkey -in private_key.pem -pubout -out public_key.pem"
+                )
+            return None
+        # Sanitize the key value to handle copy-paste issues
+        return _sanitize_env_string(v)
 
     # === Redis ===
     REDIS_HOST: str = "localhost"
@@ -145,6 +199,24 @@ class Settings(BaseSettings):
     IMAGE_GEN_DEFAULT_ASPECT_RATIO: str = "1:1"
     IMAGE_GEN_DEFAULT_SIZE: str = "2K"
     IMAGE_GEN_DEFAULT_COUNT: int = 1
+
+    @field_validator(
+        "S3_ACCESS_KEY",
+        "S3_SECRET_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "REDIS_PASSWORD",
+        "TAVILY_API_KEY",
+        "OPENALEX_API_KEY",
+        "SEMANTIC_SCHOLAR_API_KEY",
+        mode="before",
+    )
+    @classmethod
+    def sanitize_sensitive_strings(cls, v: str | None) -> str | None:
+        """Sanitize sensitive string fields to handle copy-paste issues."""
+        if v is None or v == "":
+            return v
+        return _sanitize_env_string(v)
 
     # === CORS ===
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]

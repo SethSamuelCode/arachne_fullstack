@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: secureCookies,
       sameSite: "lax",
-      maxAge: 60 * 30, // 30 minutes - aligned with backend token expiry
+      maxAge: 60 * 60, // 60 minutes - aligned with backend token expiry
       path: "/",
     });
 

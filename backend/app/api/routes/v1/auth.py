@@ -43,7 +43,11 @@ async def login(
     Rate limited to 5 attempts per minute to prevent brute-force attacks.
     """
     user = await user_service.authenticate(form_data.username, form_data.password)
-    access_token = create_access_token(subject=str(user.id))
+    access_token = create_access_token(
+        subject=str(user.id),
+        role=user.role.value,
+        is_superuser=user.is_superuser,
+    )
     refresh_token = create_refresh_token(subject=str(user.id))
 
     # Create session to track this login
@@ -104,7 +108,11 @@ async def refresh_token(
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
 
-    access_token = create_access_token(subject=str(user.id))
+    access_token = create_access_token(
+        subject=str(user.id),
+        role=user.role.value,
+        is_superuser=user.is_superuser,
+    )
     new_refresh_token = create_refresh_token(subject=str(user.id))
 
     # Invalidate old session and create new one

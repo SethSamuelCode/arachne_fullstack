@@ -127,18 +127,11 @@ export default function AdminUsersPage() {
   }, [isAdmin, page, includeDeleted, search, roleFilter]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push(ROUTES.LOGIN);
-      return;
+    // Middleware handles auth/admin redirects - just fetch data
+    if (isAdmin) {
+      fetchUsers();
     }
-    
-    if (user && !isAdmin) {
-      router.push(ROUTES.DASHBOARD);
-      return;
-    }
-    
-    fetchUsers();
-  }, [isAuthenticated, user, isAdmin, router, fetchUsers]);
+  }, [isAdmin, fetchUsers]);
 
   const handleDelete = async (userId: string) => {
     if (confirmDelete !== userId) {

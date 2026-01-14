@@ -119,6 +119,9 @@ class UserService:
     async def update(self, user_id: UUID, user_in: UserUpdate) -> User:
         """Update user.
 
+        If role or is_superuser changes, all user sessions are invalidated
+        to force re-login with fresh token claims.
+
         Raises:
             NotFoundError: If user does not exist.
         """
@@ -128,11 +131,22 @@ class UserService:
         if "password" in update_data:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 
-        # Sync is_superuser with role
+        # Track if role-related fields are changing
+        role_changed = False
         if "role" in update_data:
             update_data["is_superuser"] = update_data["role"] == UserRole.ADMIN
+            if update_data["role"] != user.role:
+                role_changed = True
+        if "is_superuser" in update_data and update_data["is_superuser"] != user.is_superuser:
+            role_changed = True
 
-        return await user_repo.update(self.db, db_user=user, update_data=update_data)
+        updated_user = await user_repo.update(self.db, db_user=user, update_data=update_data)
+
+        # Invalidate all sessions if role changed to force re-login with fresh claims
+        if role_changed:
+            await session_repo.deactivate_all_user_sessions(self.db, user_id)
+
+        return updated_user
 
     async def delete(self, user_id: UUID) -> User:
         """Soft delete user and invalidate all their sessions.
