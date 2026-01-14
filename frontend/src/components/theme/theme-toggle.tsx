@@ -53,14 +53,16 @@ export function ThemeToggle({ variant = "icon", className }: ThemeToggleProps) {
         aria-label={`Switch theme (current: ${theme})`}
         title={`Theme: ${theme}`}
       >
-        {resolvedTheme === "dark" ? (
-          <Moon className="h-5 w-5" />
-        ) : (
-          <Sun className="h-5 w-5" />
-        )}
-        {theme === "system" && (
-          <span className="sr-only">(following system)</span>
-        )}
+        {(() => {
+          switch (theme) {
+            case "dark":
+              return <Moon className="h-5 w-5" />;
+            case "light":
+              return <Sun className="h-5 w-5" />;
+            default:
+              return <Monitor className="h-5 w-5" />;
+          }
+        })()}
       </Button>
     );
   }

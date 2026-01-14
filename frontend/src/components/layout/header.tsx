@@ -29,7 +29,7 @@ export function Header() {
         <div className="hidden md:block" />
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <LanguageSwitcherCompact />
+          {/* <LanguageSwitcherCompact /> */}
           <ThemeToggle />
           {isAuthenticated ? (
             <>

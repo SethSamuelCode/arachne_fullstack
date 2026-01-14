@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@/hooks";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ROUTES } from "@/lib/constants";
@@ -14,6 +15,8 @@ import {
 } from "lucide-react";
 import { useSidebarStore, useAuthStore } from "@/stores";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose, Button } from "@/components/ui";
+import { ThemeToggle } from "@/components/theme";
+import { LogOut, User } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
@@ -32,12 +35,13 @@ function NavLinks({
   onNavigate?: () => void;
   isCollapsed?: boolean;
 }) {
+  const { user, isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
-  const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === "admin" || user?.is_superuser;
 
   return (
-    <nav className={cn("flex-1 space-y-1", isCollapsed ? "p-2" : "p-4")}>
+    <nav className={cn("flex flex-1 flex-col", isCollapsed ? "p-2" : "p-4")}>
+      <div className="space-y-1">
       {navigation.map((item) => {
         const isActive = pathname === item.href;
         return (
@@ -95,6 +99,76 @@ function NavLinks({
           })}
         </>
       )}
+      </div>
+
+      {/* Spacer to push user section to bottom */}
+      <div className="flex-1" />
+
+      {/* User section */}
+      <div className={cn("border-t mt-2 pt-2 space-y-1", isCollapsed ? "px-2" : "")}>
+        <div
+          className={cn(
+            "flex items-center rounded-lg text-sm font-medium",
+            "min-h-[44px]",
+            isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-1"
+          )}
+        >
+          <ThemeToggle />
+        </div>
+        {isAuthenticated ? (
+          <>
+            <Link
+              href={ROUTES.PROFILE}
+              onClick={onNavigate}
+              title={isCollapsed ? user?.email : undefined}
+              className={cn(
+                "flex items-center rounded-lg text-sm font-medium transition-colors",
+                "min-h-[44px]",
+                isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-3",
+                "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground"
+              )}
+            >
+              <User className="h-5 w-5 shrink-0" />
+              {!isCollapsed && (
+                <span className="whitespace-nowrap truncate max-w-32">{user?.email}</span>
+              )}
+            </Link>
+            <button
+              onClick={() => {
+                logout();
+                onNavigate?.();
+              }}
+              title={isCollapsed ? "Logout" : undefined}
+              className={cn(
+                "flex w-full items-center rounded-lg text-sm font-medium transition-colors",
+                "min-h-[44px]",
+                isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-3",
+                "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground"
+              )}
+            >
+              <LogOut className="h-5 w-5 shrink-0" />
+              {!isCollapsed && <span className="whitespace-nowrap">Logout</span>}
+            </button>
+          </>
+        ) : (
+          <>
+            <Link
+              href={ROUTES.LOGIN}
+              onClick={onNavigate}
+              title={isCollapsed ? "Login" : undefined}
+              className={cn(
+                "flex items-center rounded-lg text-sm font-medium transition-colors",
+                "min-h-[44px]",
+                isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-3",
+                "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground"
+              )}
+            >
+              <User className="h-5 w-5 shrink-0" />
+              {!isCollapsed && <span className="whitespace-nowrap">Login</span>}
+            </Link>
+          </>
+        )}
+      </div>
     </nav>
   );
 }
@@ -147,20 +221,26 @@ function DesktopSidebar() {
 
       <NavLinks isCollapsed={isCollapsed} />
 
-      <div className={cn("border-t p-2", isCollapsed ? "flex justify-center" : "")}>
-        <Button
-          variant="ghost"
-          size="icon"
+      <div className={cn("border-t p-2", isCollapsed ? "px-2" : "")}>
+        <button
           onClick={toggleCollapsed}
           title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="h-9 w-9"
+          className={cn(
+            "flex w-full items-center rounded-lg text-sm font-medium transition-colors",
+            "min-h-[44px]",
+            isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-3",
+            "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground"
+          )}
         >
           {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-5 w-5 shrink-0" />
           ) : (
-            <ChevronLeft className="h-4 w-4" />
+            <>
+              <ChevronLeft className="h-5 w-5 shrink-0" />
+              {/* <span className="whitespace-nowrap">Collapse</span> */}
+            </>
           )}
-        </Button>
+        </button>
       </div>
     </aside>
   );

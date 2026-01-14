@@ -60,14 +60,9 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Environment variables available on the server side only
-  serverRuntimeConfig: {
-    apiUrl: process.env.BACKEND_URL || "http://localhost:8000",
-  },
-
-  // Environment variables available on both server and client
-  publicRuntimeConfig: {
-    appName: "arachne_fullstack",
-  },
+  // Note: serverRuntimeConfig and publicRuntimeConfig are deprecated in Next.js 15
+  // and will be removed in Next.js 16. Use environment variables instead:
+  // - Server-side: process.env.BACKEND_URL (set in docker-compose)
+  // - Client-side: process.env.NEXT_PUBLIC_* variables
 };
 export default withNextIntl(nextConfig);
