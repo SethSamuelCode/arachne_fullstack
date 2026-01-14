@@ -28,6 +28,9 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
   _skipRetry?: boolean;
 }
 
+/** Routes where we should NOT redirect to login on auth failure */
+const AUTH_PAGES = ["/login", "/register"];
+
 class ApiClient {
   /** Track if a refresh is in progress to prevent concurrent refreshes */
   private refreshPromise: Promise<boolean> | null = null;
@@ -66,19 +69,36 @@ class ApiClient {
   }
 
   /**
+   * Check if we're currently on an auth page (login, register).
+   */
+  private isOnAuthPage(): boolean {
+    if (typeof window === "undefined") return false;
+    const pathname = window.location.pathname;
+    // Check if pathname ends with any auth page (handles locale prefixes like /en/login)
+    return AUTH_PAGES.some((page) => pathname === page || pathname.endsWith(page));
+  }
+
+  /**
    * Handle authentication failure by redirecting to login.
+   * Does nothing if already on an auth page to prevent redirect loops.
    */
   private handleAuthFailure(): void {
-    // Clear any stored auth state (if using localStorage)
-    if (typeof window !== "undefined") {
-      // Clear zustand persisted state
-      localStorage.removeItem("auth-storage");
+    if (typeof window === "undefined") return;
 
-      // Get current path for callback
-      const currentPath = window.location.pathname;
-      const loginUrl = `/login?callbackUrl=${encodeURIComponent(currentPath)}`;
-      window.location.href = loginUrl;
+    // Don't redirect if already on login/register page
+    if (this.isOnAuthPage()) {
+      // Just clear stored state, no redirect
+      localStorage.removeItem("auth-storage");
+      return;
     }
+
+    // Clear zustand persisted state
+    localStorage.removeItem("auth-storage");
+
+    // Get current path for callback
+    const currentPath = window.location.pathname;
+    const loginUrl = `/login?callbackUrl=${encodeURIComponent(currentPath)}`;
+    window.location.href = loginUrl;
   }
 
   private async request<T>(
