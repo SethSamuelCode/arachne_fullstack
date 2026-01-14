@@ -99,6 +99,14 @@ export function useAuth() {
       return;
     }
 
+    // Skip auth check if on auth pages (login/register)
+    const isOnAuthPage = AUTH_PAGES.some((page) => pathname?.endsWith(page));
+    if (isOnAuthPage) {
+      hasCheckedAuthRef.current = true;
+      setLoading(false);
+      return;
+    }
+
     const checkAuth = async () => {
       hasCheckedAuthRef.current = true;
       try {
@@ -110,6 +118,8 @@ export function useAuth() {
         // Clear persisted state if auth check fails
         setUser(null);
         useAuthStore.persist.clearStorage();
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -121,7 +131,7 @@ export function useAuth() {
     return () => {
       clearRefreshTimer();
     };
-  }, [isLoading, setUser, scheduleRefresh, clearRefreshTimer]);
+  }, [isLoading, pathname, setUser, setLoading, scheduleRefresh, clearRefreshTimer]);
 
   // Restart refresh timer when user changes (e.g., after login)
   useEffect(() => {
