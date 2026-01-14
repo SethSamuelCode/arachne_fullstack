@@ -10,7 +10,17 @@ from sqlmodel import SQLModel
 from app.core.config import settings
 
 # Import all models here to ensure they are registered with metadata
-from app.db.models.user import User  # noqa: F401
+from app.db.models import (  # noqa: F401
+    Conversation,
+    Item,
+    Message,
+    MessageAttachment,
+    Session,
+    ToolCall,
+    User,
+    Webhook,
+    WebhookDelivery,
+)
 
 config = context.config
 

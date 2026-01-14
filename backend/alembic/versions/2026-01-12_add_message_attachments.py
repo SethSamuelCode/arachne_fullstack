@@ -1,7 +1,7 @@
 """add message_attachments table
 
 Revision ID: a1b2c3d4e5f6
-Revises: e513c3dd47a1
+Revises: f624d4ee58b2
 Create Date: 2026-01-12 12:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, None] = "e513c3dd47a1"
+down_revision: Union[str, None] = "f624d4ee58b2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
