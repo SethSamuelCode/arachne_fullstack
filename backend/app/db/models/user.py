@@ -42,26 +42,21 @@ class User(TimestampMixin, SQLModel, table=True):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
-    role: str = Field(default=UserRole.USER.value, max_length=50)
+    role: UserRole = Field(default=UserRole.USER)
     default_system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     default_model: str | None = Field(default=None, max_length=100)
 
     # Relationship to sessions
     sessions: list["Session"] = Relationship(back_populates="user")
 
-    @property
-    def user_role(self) -> UserRole:
-        """Get role as enum."""
-        return UserRole(self.role)
-
     def has_role(self, required_role: UserRole) -> bool:
         """Check if user has the required role or higher.
 
         Admin role has access to everything.
         """
-        if self.role == UserRole.ADMIN.value:
+        if self.role == UserRole.ADMIN:
             return True
-        return self.role == required_role.value
+        return self.role == required_role
 
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, email={self.email}, role={self.role})>"
+        return f"<User(id={self.id}, email={self.email}, role={self.role.value})>"
