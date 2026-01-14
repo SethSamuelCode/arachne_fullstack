@@ -106,15 +106,7 @@ function NavLinks({
 
       {/* User section */}
       <div className={cn("border-t mt-2 pt-2 space-y-1", isCollapsed ? "px-2" : "")}>
-        <div
-          className={cn(
-            "flex items-center rounded-lg text-sm font-medium",
-            "min-h-[44px]",
-            isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-1"
-          )}
-        >
-          <ThemeToggle />
-        </div>
+        <ThemeToggle variant="sidebar" isCollapsed={isCollapsed} />
         {isAuthenticated ? (
           <>
             <Link
