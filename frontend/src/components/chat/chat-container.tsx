@@ -207,7 +207,7 @@ function ChatUI({
               <Bot className="h-7 w-7 sm:h-8 sm:w-8" />
             </div>
             <div className="text-center px-4">
-              <p className="text-base sm:text-lg font-medium text-foreground">AI Assistant</p>
+              <p className="text-base sm:text-lg font-medium text-foreground">Arachne Chat</p>
               <p className="text-sm">Start a conversation to get help</p>
               
               {setSystemPrompt && (

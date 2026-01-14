@@ -17,7 +17,7 @@ export default function HomePage() {
 
         <div className="max-w-5xl mx-auto">
           
-          <Card>
+          <Card className="flex flex-col items-center">
             <CardHeader>
               <CardTitle>Authentication</CardTitle>
             </CardHeader>
