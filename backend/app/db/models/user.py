@@ -20,10 +20,12 @@ class UserRole(str, Enum):
     Roles hierarchy (higher includes lower permissions):
     - ADMIN: Full system access, can manage users and settings
     - USER: Standard user access
+
+    Note: Database stores enum NAMES (ADMIN, USER).
     """
 
-    ADMIN = "admin"
-    USER = "user"
+    ADMIN = "ADMIN"
+    USER = "USER"
 
 
 class User(TimestampMixin, SQLModel, table=True):

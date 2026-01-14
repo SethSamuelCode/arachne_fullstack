@@ -11,8 +11,8 @@ from app.schemas.base import BaseSchema, TimestampSchema
 class UserRole(str, Enum):
     """User role enumeration for API schemas."""
 
-    ADMIN = "admin"
-    USER = "user"
+    ADMIN = "ADMIN"
+    USER = "USER"
 
 
 class UserBase(BaseSchema):

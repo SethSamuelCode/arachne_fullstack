@@ -72,7 +72,7 @@ class UserService:
             email=user_in.email,
             hashed_password=hashed_password,
             full_name=user_in.full_name,
-            role="admin" if is_first_user else user_in.role.value,
+            role=UserRole.ADMIN.value if is_first_user else user_in.role.value,
             is_superuser=is_first_user,
         )
 
@@ -93,7 +93,7 @@ class UserService:
             )
 
         hashed_password = get_password_hash(user_in.password)
-        is_admin = user_in.role.value == "admin"
+        is_admin = user_in.role == UserRole.ADMIN
         return await user_repo.create(
             self.db,
             email=user_in.email,

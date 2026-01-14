@@ -35,6 +35,35 @@ def _sanitize_env_string(value: str) -> str:
     return value
 
 
+def _sanitize_pem_key(value: str) -> str:
+    """Sanitize a PEM key environment variable.
+
+    PEM keys require actual newlines between header, content, and footer.
+    This function handles:
+    - Escaped \\n literals (from .env files) → real newlines
+    - Surrounding quotes from copy-paste
+    - Trailing whitespace
+
+    Args:
+        value: The raw PEM key string from environment variable.
+
+    Returns:
+        Properly formatted PEM key with real newlines.
+    """
+    # Strip whitespace first
+    value = value.strip()
+    # Remove surrounding quotes (both single and double)
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        value = value[1:-1].strip()
+    # Convert escaped \n to actual newlines (common in .env files)
+    value = value.replace("\\n", "\n")
+    # Remove carriage returns (Windows line endings)
+    value = value.replace("\r", "")
+    return value
+
+
 def find_env_file() -> Path | None:
     """Find .env file in current or parent directories."""
     current = Path.cwd()
@@ -146,8 +175,8 @@ class Settings(BaseSettings):
                     "openssl pkey -in private_key.pem -pubout -out public_key.pem"
                 )
             return None
-        # Sanitize the key value to handle copy-paste issues
-        return _sanitize_env_string(v)
+        # Use PEM-specific sanitizer that preserves/converts newlines
+        return _sanitize_pem_key(v)
 
     # === Redis ===
     REDIS_HOST: str = "localhost"
