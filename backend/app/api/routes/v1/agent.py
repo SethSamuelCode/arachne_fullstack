@@ -194,11 +194,18 @@ async def enrich_history_with_tool_calls(
                         # Get tool calls for this message
                         tool_calls = await conv_service.list_tool_calls(message_id)
 
-                        # Add tool call records to history
+                        # Add tool call records to history with content field for optimizer
                         for tc in tool_calls:
+                            tool_content = (
+                                f"Tool: {tc.tool_name}\n"
+                                f"Status: {tc.status}\n"
+                                f"Args: {tc.args}\n"
+                                f"Result: {tc.result or ''}"
+                            )
                             enriched_history.append(
                                 {
                                     "role": "tool",
+                                    "content": tool_content,
                                     "tool_name": tc.tool_name,
                                     "args": tc.args,
                                     "result": tc.result or "",
@@ -227,14 +234,8 @@ def build_message_history(history: list[dict[str, str]]) -> list[ModelRequest | 
         elif msg["role"] == "system":
             model_history.append(ModelRequest(parts=[SystemPromptPart(content=msg["content"])]))
         elif msg["role"] == "tool":
-            # Include tool execution context for LLM learning
-            tool_summary = (
-                f"Tool: {msg.get('tool_name', 'unknown')}\n"
-                f"Status: {msg.get('status', 'unknown')}\n"
-                f"Args: {msg.get('args', {})}\n"
-                f"Result: {msg.get('result', '')}"
-            )
-            model_history.append(ModelResponse(parts=[TextPart(content=tool_summary)]))
+            # Include tool execution context for LLM learning (content already formatted)
+            model_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
 
     return model_history
 
