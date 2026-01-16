@@ -12,6 +12,7 @@ The endpoints are:
 - GET /conversations/{id}/messages - List messages in conversation
 """
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -27,8 +28,6 @@ from app.schemas.conversation import (
     MessageList,
     MessageRead,
 )
-
-import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -145,7 +144,9 @@ async def list_messages(
 
     Returns messages ordered by creation time (oldest first).
     """
-    items, total = await conversation_service.list_messages(conversation_id, skip=skip, limit=limit)
+    items, total = await conversation_service.list_messages(
+        conversation_id, skip=skip, limit=limit, include_tool_calls=True
+    )
     return MessageList(items=items, total=total)
 
 

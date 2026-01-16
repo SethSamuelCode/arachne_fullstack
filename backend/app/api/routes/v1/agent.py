@@ -175,8 +175,10 @@ async def enrich_history_with_tool_calls(
         async with get_db_context() as db:
             conv_service = get_conversation_service(db)
 
-            # Get all messages with their IDs
-            messages, _ = await conv_service.list_messages(conversation_id, limit=10000)
+            # Get all messages with their IDs and tool calls
+            messages, _ = await conv_service.list_messages(
+                conversation_id, limit=10000, include_tool_calls=True
+            )
             message_id_map = {msg.content: msg.id for msg in messages if msg.content}
 
             for msg in history:
@@ -398,7 +400,10 @@ async def agent_websocket(
                             fetch_limit = 1000
                             skip = max(0, total_count - fetch_limit)
                             restored_msgs, _ = await conv_service.list_messages(
-                                UUID(requested_conv_id), skip=skip, limit=fetch_limit
+                                UUID(requested_conv_id),
+                                skip=skip,
+                                limit=fetch_limit,
+                                include_tool_calls=True,
                             )
 
                             # 3. Populate history
