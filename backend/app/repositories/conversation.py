@@ -205,6 +205,22 @@ async def delete_message(db: AsyncSession, message_id: UUID) -> bool:
     return False
 
 
+async def update_message_content(
+    db: AsyncSession,
+    message_id: UUID,
+    content: str,
+) -> Message | None:
+    """Update message content by ID."""
+    message = await get_message_by_id(db, message_id)
+    if message:
+        message.content = content
+        db.add(message)
+        await db.flush()
+        await db.refresh(message)
+        return message
+    return None
+
+
 # =============================================================================
 # ToolCall Operations
 # =============================================================================

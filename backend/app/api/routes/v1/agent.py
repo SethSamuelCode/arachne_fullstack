@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -29,12 +30,15 @@ from pydantic_ai.messages import (
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import optimize_context_window
 from app.api.deps import get_conversation_service, get_current_user_ws
+from app.core.utils import serialize_tool_result_for_db
 from app.db.models.user import User
 from app.db.session import get_db_context
 from app.schemas.attachment import AttachmentInMessage, validate_attachments_total_size
 from app.schemas.conversation import (
     ConversationCreate,
     MessageCreate,
+    ToolCallComplete,
+    ToolCallCreate,
 )
 from app.services.s3 import get_s3_service
 
@@ -98,11 +102,13 @@ def serialize_tool_content(content: Any) -> list[dict[str, Any]]:
     for item in content:
         if isinstance(item, BinaryContent):
             # Encode binary data as base64 for JSON transport
-            parts.append({
-                "type": "image",
-                "media_type": item.media_type,
-                "data": base64.b64encode(item.data).decode("utf-8"),
-            })
+            parts.append(
+                {
+                    "type": "image",
+                    "media_type": item.media_type,
+                    "data": base64.b64encode(item.data).decode("utf-8"),
+                }
+            )
         elif isinstance(item, str):
             parts.append({"type": "text", "text": item})
         else:
@@ -147,6 +153,66 @@ class AgentConnectionManager:
 manager = AgentConnectionManager()
 
 
+async def enrich_history_with_tool_calls(
+    history: list[dict[str, str]],
+    conversation_id: UUID,
+) -> list[dict[str, Any]]:
+    """Enrich conversation history with tool call context for LLM learning.
+
+    Inserts tool execution records (name, args, result, status) after each
+    assistant message so the LLM can learn from past tool usage and errors.
+
+    Args:
+        history: Base conversation history with user/assistant messages
+        conversation_id: UUID of the conversation
+
+    Returns:
+        Enriched history with tool call entries inserted
+    """
+    enriched_history: list[dict[str, Any]] = []
+
+    try:
+        async with get_db_context() as db:
+            conv_service = get_conversation_service(db)
+
+            # Get all messages with their IDs
+            messages, _ = await conv_service.list_messages(conversation_id, limit=10000)
+            message_id_map = {msg.content: msg.id for msg in messages if msg.content}
+
+            for msg in history:
+                # Add the original message
+                enriched_history.append(msg)
+
+                # If this is an assistant message, check for tool calls
+                if msg["role"] == "assistant":
+                    # Try to find message ID by matching content
+                    message_id = message_id_map.get(msg["content"])
+
+                    if message_id:
+                        # Get tool calls for this message
+                        tool_calls = await conv_service.list_tool_calls(message_id)
+
+                        # Add tool call records to history
+                        for tc in tool_calls:
+                            enriched_history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_name": tc.tool_name,
+                                    "args": tc.args,
+                                    "result": tc.result or "",
+                                    "status": tc.status,
+                                    "duration_ms": tc.duration_ms,
+                                }
+                            )
+
+    except Exception as e:
+        logger.warning(f"Failed to enrich history with tool calls: {e}")
+        # Return original history if enrichment fails
+        return history
+
+    return enriched_history
+
+
 def build_message_history(history: list[dict[str, str]]) -> list[ModelRequest | ModelResponse]:
     """Convert conversation history to PydanticAI message format."""
     model_history: list[ModelRequest | ModelResponse] = []
@@ -158,6 +224,15 @@ def build_message_history(history: list[dict[str, str]]) -> list[ModelRequest | 
             model_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
         elif msg["role"] == "system":
             model_history.append(ModelRequest(parts=[SystemPromptPart(content=msg["content"])]))
+        elif msg["role"] == "tool":
+            # Include tool execution context for LLM learning
+            tool_summary = (
+                f"Tool: {msg.get('tool_name', 'unknown')}\n"
+                f"Status: {msg.get('status', 'unknown')}\n"
+                f"Args: {msg.get('args', {})}\n"
+                f"Result: {msg.get('result', '')}"
+            )
+            model_history.append(ModelResponse(parts=[TextPart(content=tool_summary)]))
 
     return model_history
 
@@ -193,13 +268,11 @@ async def build_multimodal_input(
         full_key = f"{user_prefix}{attachment.s3_key}"
         try:
             image_data = s3.download_obj(full_key)
-            content.append(
-                BinaryContent(data=image_data, media_type=attachment.mime_type)
-            )
+            content.append(BinaryContent(data=image_data, media_type=attachment.mime_type))
             logger.debug(f"Added image attachment: {attachment.s3_key} ({len(image_data)} bytes)")
         except Exception as e:
             logger.error(f"Failed to download attachment {attachment.s3_key}: {e}")
-            raise ValueError(f"Failed to load image '{attachment.s3_key}': {e}")
+            raise ValueError(f"Failed to load image '{attachment.s3_key}': {e}") from e
 
     return content
 
@@ -330,10 +403,9 @@ async def agent_websocket(
 
                             # 3. Populate history
                             for msg in restored_msgs:
-                                conversation_history.append({
-                                    "role": msg.role,
-                                    "content": msg.content or ""
-                                })
+                                conversation_history.append(
+                                    {"role": msg.role, "content": msg.content or ""}
+                                )
 
                     elif not current_conversation_id:
                         # Create new conversation
@@ -366,15 +438,26 @@ async def agent_websocket(
             if current_conversation_id:
                 async with get_db_context() as db:
                     conv_service = get_conversation_service(db)
-                    current_conv = await conv_service.get_conversation(UUID(current_conversation_id))
+                    current_conv = await conv_service.get_conversation(
+                        UUID(current_conversation_id)
+                    )
                     if current_conv:
                         system_prompt = current_conv.system_prompt
-                        logger.info(f"Using system prompt for conversation {current_conversation_id}: {system_prompt}")
+                        logger.info(
+                            f"Using system prompt for conversation {current_conversation_id}: {system_prompt}"
+                        )
 
             try:
                 # Use user's default model preference or backend default
                 model_name = user.default_model
                 assistant = get_agent(system_prompt=system_prompt, model_name=model_name)
+
+                # Enrich history with tool call context for LLM learning
+                if current_conversation_id:
+                    conversation_history = await enrich_history_with_tool_calls(
+                        conversation_history,
+                        UUID(current_conversation_id),
+                    )
 
                 # Optimize context window with tiered memory management
                 # Uses 85% of model's context limit for better responsiveness
@@ -395,6 +478,10 @@ async def agent_websocket(
                 except ValueError as e:
                     await manager.send_event(websocket, "error", {"message": str(e)})
                     continue
+
+                # Track assistant message and tool call mapping for persistence
+                assistant_message_id: UUID | None = None
+                tool_call_mapping: dict[str, UUID] = {}  # Maps PydanticAI tool_call_id to DB UUID
 
                 # Use iter() on the underlying PydanticAI agent to stream all events
                 async with assistant.agent.iter(
@@ -479,11 +566,51 @@ async def agent_websocket(
                                             },
                                         )
 
+                                        # Persist tool call to database
+                                        if current_conversation_id:
+                                            try:
+                                                # Create assistant message if not exists
+                                                if assistant_message_id is None:
+                                                    async with get_db_context() as db:
+                                                        conv_service = get_conversation_service(db)
+                                                        assistant_msg = await conv_service.add_message(
+                                                            UUID(current_conversation_id),
+                                                            MessageCreate(
+                                                                role="assistant",
+                                                                content="",  # Will be updated after agent completes
+                                                                model_name=assistant.model_name
+                                                                if hasattr(assistant, "model_name")
+                                                                else None,
+                                                            ),
+                                                        )
+                                                        assistant_message_id = assistant_msg.id
+
+                                                # Start tool call
+                                                async with get_db_context() as db:
+                                                    conv_service = get_conversation_service(db)
+                                                    tool_call = await conv_service.start_tool_call(
+                                                        assistant_message_id,
+                                                        ToolCallCreate(
+                                                            tool_call_id=event.part.tool_call_id,
+                                                            tool_name=event.part.tool_name,
+                                                            args=event.part.args
+                                                            if isinstance(event.part.args, dict)
+                                                            else {},
+                                                            started_at=datetime.now(UTC),
+                                                        ),
+                                                    )
+                                                    # Map PydanticAI ID to DB UUID
+                                                    tool_call_mapping[event.part.tool_call_id] = (
+                                                        tool_call.id
+                                                    )
+                                            except Exception as e:
+                                                logger.warning(
+                                                    f"Failed to persist tool call start: {e}"
+                                                )
+
                                     elif isinstance(event, FunctionToolResultEvent):
                                         # Serialize content, handling BinaryContent for images
-                                        content_parts = serialize_tool_content(
-                                            event.result.content
-                                        )
+                                        content_parts = serialize_tool_content(event.result.content)
                                         await manager.send_event(
                                             websocket,
                                             "tool_result",
@@ -492,6 +619,44 @@ async def agent_websocket(
                                                 "content": content_parts,
                                             },
                                         )
+
+                                        # Persist tool result to database
+                                        if (
+                                            current_conversation_id
+                                            and event.tool_call_id in tool_call_mapping
+                                        ):
+                                            try:
+                                                # Get DB UUID for this tool call
+                                                db_tool_call_id = tool_call_mapping[
+                                                    event.tool_call_id
+                                                ]
+
+                                                # Serialize result for database (text only, truncated)
+                                                result_text = serialize_tool_result_for_db(
+                                                    event.result.content
+                                                )
+
+                                                # Detect if this is an error result
+                                                is_error = (
+                                                    isinstance(event.result.content, dict)
+                                                    and event.result.content.get("error") is True
+                                                )
+
+                                                # Complete tool call
+                                                async with get_db_context() as db:
+                                                    conv_service = get_conversation_service(db)
+                                                    await conv_service.complete_tool_call(
+                                                        db_tool_call_id,
+                                                        ToolCallComplete(
+                                                            result=result_text,
+                                                            completed_at=datetime.now(UTC),
+                                                            success=not is_error,
+                                                        ),
+                                                    )
+                                            except Exception as e:
+                                                logger.warning(
+                                                    f"Failed to persist tool result: {e}"
+                                                )
 
                         elif Agent.is_end_node(node) and agent_run.result is not None:
                             await manager.send_event(
@@ -507,23 +672,50 @@ async def agent_websocket(
                         {"role": "assistant", "content": agent_run.result.output}
                     )
 
-                # Save assistant response to database
+                # Save or update assistant response to database
                 if current_conversation_id and agent_run.result:
                     try:
                         async with get_db_context() as db:
                             conv_service = get_conversation_service(db)
-                            await conv_service.add_message(
-                                UUID(current_conversation_id),
-                                MessageCreate(
-                                    role="assistant",
-                                    content=agent_run.result.output,
-                                    model_name=assistant.model_name
-                                    if hasattr(assistant, "model_name")
-                                    else None,
-                                ),
-                            )
+
+                            # If assistant message was created for tool calls, update it
+                            if assistant_message_id is not None:
+                                # Update the existing message with final content
+                                from app.repositories.conversation import update_message_content
+
+                                await update_message_content(
+                                    db,
+                                    assistant_message_id,
+                                    agent_run.result.output,
+                                )
+                            else:
+                                # No tools were used, create new message
+                                await conv_service.add_message(
+                                    UUID(current_conversation_id),
+                                    MessageCreate(
+                                        role="assistant",
+                                        content=agent_run.result.output,
+                                        model_name=assistant.model_name
+                                        if hasattr(assistant, "model_name")
+                                        else None,
+                                    ),
+                                )
                     except Exception as e:
                         logger.warning(f"Failed to persist assistant response: {e}")
+
+                # Handle case where assistant message was created but agent didn't complete
+                elif current_conversation_id and assistant_message_id is not None:
+                    try:
+                        async with get_db_context() as db:
+                            from app.repositories.conversation import update_message_content
+
+                            await update_message_content(
+                                db,
+                                assistant_message_id,
+                                "(Tool execution interrupted)",
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to update interrupted message: {e}")
 
                 await manager.send_event(
                     websocket,
