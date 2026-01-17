@@ -194,7 +194,7 @@ services:
       - NODE_ENV=production
       - BACKEND_URL=http://app:8550
       - BACKEND_WS_URL=ws://app:8550
-      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     networks:
       - backend-internal
