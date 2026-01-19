@@ -98,3 +98,30 @@ class FileContentResponse(BaseSchema):
     size: int = Field(description="File size in bytes")
     is_binary: bool = Field(default=False, description="Whether content is base64 encoded binary")
     is_truncated: bool = Field(default=False, description="Whether content was truncated due to size")
+
+
+class RenameRequest(BaseSchema):
+    """Request to rename a file or folder."""
+
+    old_path: str = Field(description="Current path of the file or folder")
+    new_path: str = Field(description="New path for the file or folder")
+
+
+class RenameResponse(BaseSchema):
+    """Response for a successful rename operation."""
+
+    success: bool = Field(default=True, description="Whether rename was successful")
+    old_path: str = Field(description="Original path")
+    new_path: str = Field(description="New path")
+
+
+class FolderRenameProgress(BaseSchema):
+    """Progress event for folder rename operation (SSE)."""
+
+    event: str = Field(description="Event type: 'progress', 'complete', or 'error'")
+    total: int = Field(default=0, description="Total number of files to move")
+    completed: int = Field(default=0, description="Number of files moved so far")
+    current_file: str | None = Field(default=None, description="Currently processing file")
+    old_path: str = Field(description="Original folder path")
+    new_path: str = Field(description="New folder path")
+    error: str | None = Field(default=None, description="Error message if event is 'error'")

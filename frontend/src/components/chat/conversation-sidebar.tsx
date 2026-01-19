@@ -3,10 +3,11 @@
 
 import { useEffect, useState } from "react";
 import { useConversations } from "@/hooks";
-import { Button } from "@/components/ui";
+import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useChatSidebarStore } from "@/stores";
+import { FilesSidebar } from "@/components/files";
 import {
   MessageSquarePlus,
   MessageSquare,
@@ -16,6 +17,7 @@ import {
   Pencil,
   ChevronLeft,
   ChevronRight,
+  FolderOpen,
 } from "lucide-react";
 import type { Conversation } from "@/types";
 
@@ -230,6 +232,7 @@ interface ConversationSidebarProps {
 
 export function ConversationSidebar({ className }: ConversationSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<"conversations" | "files">("conversations");
   const { isOpen, close } = useChatSidebarStore();
   const {
     conversations,
@@ -277,11 +280,41 @@ export function ConversationSidebar({ className }: ConversationSidebarProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-10 w-10 p-0"
+          className="h-10 w-10 p-0 mb-2"
           onClick={startNewChat}
           title="New Chat"
         >
           <MessageSquarePlus className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-10 w-10 p-0",
+            activeTab === "conversations" && "bg-secondary"
+          )}
+          onClick={() => {
+            setActiveTab("conversations");
+            setIsCollapsed(false);
+          }}
+          title="Conversations"
+        >
+          <MessageSquare className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-10 w-10 p-0",
+            activeTab === "files" && "bg-secondary"
+          )}
+          onClick={() => {
+            setActiveTab("files");
+            setIsCollapsed(false);
+          }}
+          title="Files"
+        >
+          <FolderOpen className="h-4 w-4" />
         </Button>
       </div>
     );
@@ -291,32 +324,77 @@ export function ConversationSidebar({ className }: ConversationSidebarProps) {
     <>
       <aside
         className={cn(
-          "hidden md:flex w-64 shrink-0 flex-col border-r bg-background",
+          "hidden md:flex w-80 shrink-0 flex-col border-r bg-background",
           className
         )}
       >
-        <div className="flex items-center justify-between border-b px-4 py-3 h-12">
-          <h2 className="font-semibold text-sm">Conversations</h2>
+        {/* Header with collapse button */}
+        <div className="flex items-center justify-between border-b px-3 py-2 h-12">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as "conversations" | "files")}
+            className="flex-1"
+          >
+            <TabsList className="h-8">
+              <TabsTrigger value="conversations" className="text-xs px-2 py-1">
+                <MessageSquare className="h-3 w-3 mr-1" />
+                Chats
+              </TabsTrigger>
+              <TabsTrigger value="files" className="text-xs px-2 py-1">
+                <FolderOpen className="h-3 w-3 mr-1" />
+                Files
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 ml-2"
             onClick={() => setIsCollapsed(true)}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
         </div>
-        <ConversationList {...listProps} />
+
+        {/* Tab content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {activeTab === "conversations" ? (
+            <ConversationList {...listProps} />
+          ) : (
+            <FilesSidebar />
+          )}
+        </div>
       </aside>
 
+      {/* Mobile sheet */}
       <Sheet open={isOpen} onOpenChange={close}>
         <SheetContent side="left" className="w-80 p-0">
           <SheetHeader className="h-12 px-4">
-            <SheetTitle>Conversations</SheetTitle>
+            <SheetTitle>
+              <Tabs
+                value={activeTab}
+                onValueChange={(v) => setActiveTab(v as "conversations" | "files")}
+              >
+                <TabsList className="h-8">
+                  <TabsTrigger value="conversations" className="text-xs px-2 py-1">
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                    Chats
+                  </TabsTrigger>
+                  <TabsTrigger value="files" className="text-xs px-2 py-1">
+                    <FolderOpen className="h-3 w-3 mr-1" />
+                    Files
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </SheetTitle>
             <SheetClose onClick={close} />
           </SheetHeader>
           <div className="flex flex-col h-[calc(100%-48px)]">
-            <ConversationList {...listProps} onNavigate={close} />
+            {activeTab === "conversations" ? (
+              <ConversationList {...listProps} onNavigate={close} />
+            ) : (
+              <FilesSidebar />
+            )}
           </div>
         </SheetContent>
       </Sheet>

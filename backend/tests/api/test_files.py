@@ -553,3 +553,196 @@ class TestFileContent:
         data = response.json()
         assert data["is_binary"] is False
         assert "print" in data["content"]
+
+
+class TestFileRename:
+    """Tests for file rename endpoint."""
+
+    @pytest.mark.anyio
+    async def test_rename_file_success(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test renaming a file successfully."""
+        old_path = "old_name.txt"
+        new_path = "new_name.txt"
+        old_full_key = f"users/{mock_user.id}/{old_path}"
+
+        patch_s3_service.list_objs.return_value = [old_full_key]
+        patch_s3_service.copy_file = MagicMock(return_value=None)
+        patch_s3_service.delete_obj = MagicMock(return_value=None)
+
+        response = await authenticated_client.post(
+            "/api/v1/files/rename",
+            json={"old_path": old_path, "new_path": new_path},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["old_path"] == old_path
+        assert data["new_path"] == new_path
+        patch_s3_service.copy_file.assert_called_once()
+        patch_s3_service.delete_obj.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_rename_file_source_not_found(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+    ):
+        """Test renaming a file that doesn't exist returns 404."""
+        patch_s3_service.list_objs.return_value = []
+
+        response = await authenticated_client.post(
+            "/api/v1/files/rename",
+            json={"old_path": "nonexistent.txt", "new_path": "new.txt"},
+        )
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "File not found" in data["detail"]
+
+    @pytest.mark.anyio
+    async def test_rename_file_destination_exists(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test renaming to an existing file returns 409."""
+        old_path = "old_name.txt"
+        new_path = "existing.txt"
+        old_full_key = f"users/{mock_user.id}/{old_path}"
+        new_full_key = f"users/{mock_user.id}/{new_path}"
+
+        # Both source and destination exist
+        patch_s3_service.list_objs.return_value = [old_full_key, new_full_key]
+
+        response = await authenticated_client.post(
+            "/api/v1/files/rename",
+            json={"old_path": old_path, "new_path": new_path},
+        )
+
+        assert response.status_code == 409
+        data = response.json()
+        assert "already exists" in data["detail"]
+
+
+class TestFolderRenameSSE:
+    """Tests for folder rename SSE endpoint."""
+
+    @pytest.mark.anyio
+    async def test_rename_folder_sse_success(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test renaming a folder with SSE progress events."""
+        old_path = "old_folder"
+        new_path = "new_folder"
+        old_prefix = f"users/{mock_user.id}/{old_path}/"
+        file1 = f"{old_prefix}file1.txt"
+        file2 = f"{old_prefix}file2.txt"
+
+        # Source folder has files, destination doesn't exist
+        patch_s3_service.list_objs.side_effect = [
+            [file1, file2],  # First call for source folder
+            [],  # Second call for destination folder
+        ]
+        patch_s3_service.copy_file = MagicMock(return_value=None)
+        patch_s3_service.delete_obj = MagicMock(return_value=None)
+
+        # Make the request (SSE endpoint)
+        response = await authenticated_client.get(
+            "/api/v1/files/rename/folder",
+            params={"old_path": old_path, "new_path": new_path},
+        )
+
+        assert response.status_code == 200
+        # SSE response content type
+        assert "text/event-stream" in response.headers.get("content-type", "")
+
+        # Parse SSE events from the response content
+        content = response.text
+        lines = content.strip().split("\n")
+
+        # Should have progress and complete events
+        events = []
+        current_event = {}
+        for line in lines:
+            if line.startswith("event:"):
+                current_event["event"] = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                import json
+
+                current_event["data"] = json.loads(line.split(":", 1)[1].strip())
+                events.append(current_event)
+                current_event = {}
+
+        # Should have at least progress and complete events
+        assert len(events) >= 2
+
+        # Last event should be complete
+        last_event = events[-1]
+        assert last_event["data"]["event"] == "complete"
+        assert last_event["data"]["completed"] == 2
+
+    @pytest.mark.anyio
+    async def test_rename_folder_sse_source_empty(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+    ):
+        """Test renaming an empty/nonexistent folder returns error event."""
+        old_path = "nonexistent_folder"
+        new_path = "new_folder"
+
+        # No files in source
+        patch_s3_service.list_objs.return_value = []
+
+        response = await authenticated_client.get(
+            "/api/v1/files/rename/folder",
+            params={"old_path": old_path, "new_path": new_path},
+        )
+
+        assert response.status_code == 200
+        content = response.text
+
+        # Should have an error event
+        assert "error" in content
+        assert "not found or empty" in content
+
+    @pytest.mark.anyio
+    async def test_rename_folder_sse_destination_exists(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test renaming to existing folder returns error event."""
+        old_path = "old_folder"
+        new_path = "existing_folder"
+        old_prefix = f"users/{mock_user.id}/{old_path}/"
+        new_prefix = f"users/{mock_user.id}/{new_path}/"
+
+        # Source has files, destination also has files
+        patch_s3_service.list_objs.side_effect = [
+            [f"{old_prefix}file.txt"],  # Source folder
+            [f"{new_prefix}existing.txt"],  # Destination folder
+        ]
+
+        response = await authenticated_client.get(
+            "/api/v1/files/rename/folder",
+            params={"old_path": old_path, "new_path": new_path},
+        )
+
+        assert response.status_code == 200
+        content = response.text
+
+        # Should have an error event
+        assert "error" in content
+        assert "already exists" in content
