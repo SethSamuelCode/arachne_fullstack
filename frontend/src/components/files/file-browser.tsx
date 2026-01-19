@@ -752,36 +752,99 @@ export function FileBrowser({ children }: FileBrowserProps) {
             <DialogClose onClick={() => setPreviewFile(null)} />
           </DialogHeader>
           <DialogBody>
-            {isLoadingPreview ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : previewFile?.is_truncated ? (
-              <>
-                <div className="mb-2 text-sm text-amber-500 bg-amber-500/10 p-2 rounded">
-                  ⚠️ File truncated (showing first 1MB of {formatFileSize(previewFile.size)})
-                </div>
-                {previewFile.is_binary ? (
-                  <div className="text-center text-muted-foreground py-8">
-                    Binary file - cannot display preview
+            {(() => {
+              // Helper to detect if file is an image
+              const isImage = (file: FileContentResponse | null): boolean => {
+                if (!file) return false;
+                if (file.content_type?.startsWith("image/")) return true;
+                // Fallback: check extension
+                const ext = file.key.split(".").pop()?.toLowerCase();
+                return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"].includes(ext || "");
+              };
+              
+              // Get mime type for data URL
+              const getImageMimeType = (file: FileContentResponse): string => {
+                if (file.content_type?.startsWith("image/")) return file.content_type;
+                const ext = file.key.split(".").pop()?.toLowerCase();
+                const mimeMap: Record<string, string> = {
+                  png: "image/png",
+                  jpg: "image/jpeg",
+                  jpeg: "image/jpeg",
+                  gif: "image/gif",
+                  webp: "image/webp",
+                  svg: "image/svg+xml",
+                  bmp: "image/bmp",
+                  ico: "image/x-icon",
+                };
+                return mimeMap[ext || ""] || "image/png";
+              };
+
+              if (isLoadingPreview) {
+                return (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                );
+              }
+              
+              if (previewFile?.is_truncated) {
+                return (
+                  <>
+                    <div className="mb-2 text-sm text-amber-500 bg-amber-500/10 p-2 rounded">
+                      ⚠️ File truncated (showing first 200MB of {formatFileSize(previewFile.size)})
+                    </div>
+                    {previewFile.is_binary ? (
+                      isImage(previewFile) ? (
+                        <div className="flex justify-center">
+                          <img 
+                            src={`data:${getImageMimeType(previewFile)};base64,${previewFile.content}`}
+                            alt={previewFile.key}
+                            className="max-w-full max-h-[60vh] object-contain rounded"
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-center text-muted-foreground py-8">
+                          Binary file - cannot display preview
+                        </div>
+                      )
+                    ) : (
+                      <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
+                        {previewFile.content}
+                      </pre>
+                    )}
+                  </>
+                );
+              }
+              
+              if (previewFile?.is_binary) {
+                return isImage(previewFile) ? (
+                  <div className="flex flex-col items-center">
+                    <img 
+                      src={`data:${getImageMimeType(previewFile)};base64,${previewFile.content}`}
+                      alt={previewFile.key}
+                      className="max-w-full max-h-[60vh] object-contain rounded"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">Size: {formatFileSize(previewFile.size)}</p>
                   </div>
                 ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    <File className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>Binary file - cannot display preview</p>
+                    <p className="text-xs mt-1">Size: {formatFileSize(previewFile.size)}</p>
+                  </div>
+                );
+              }
+              
+              if (previewFile) {
+                return (
                   <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
                     {previewFile.content}
                   </pre>
-                )}
-              </>
-            ) : previewFile?.is_binary ? (
-              <div className="text-center text-muted-foreground py-8">
-                <File className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>Binary file - cannot display preview</p>
-                <p className="text-xs mt-1">Size: {formatFileSize(previewFile.size)}</p>
-              </div>
-            ) : previewFile ? (
-              <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
-                {previewFile.content}
-              </pre>
-            ) : null}
+                );
+              }
+              
+              return null;
+            })()}
           </DialogBody>
         </DialogContent>
       </Dialog>

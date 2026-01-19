@@ -150,8 +150,8 @@ async def get_batch_presigned_upload_urls(
         ) from e
 
 
-# Max file size for preview (1MB)
-MAX_PREVIEW_SIZE = 1024 * 1024
+# Max file size for preview (200MB)
+MAX_PREVIEW_SIZE = 200 * 1024 * 1024
 
 # Text file extensions that can be previewed
 TEXT_EXTENSIONS = {
@@ -160,6 +160,71 @@ TEXT_EXTENSIONS = {
     ".ini", ".cfg", ".rst", ".sql", ".r", ".rb", ".go", ".java", ".c", ".cpp",
     ".h", ".hpp", ".rs", ".swift", ".kt", ".scala", ".php", ".pl", ".lua",
 }
+
+# Magic bytes signatures for common file types
+# Format: (magic_bytes, offset, mime_type)
+MAGIC_SIGNATURES: list[tuple[bytes, int, str]] = [
+    # Images
+    (b"\x89PNG\r\n\x1a\n", 0, "image/png"),
+    (b"\xff\xd8\xff", 0, "image/jpeg"),
+    (b"GIF87a", 0, "image/gif"),
+    (b"GIF89a", 0, "image/gif"),
+    (b"RIFF", 0, "image/webp"),  # WebP starts with RIFF, need to check WEBP at offset 8
+    (b"BM", 0, "image/bmp"),
+    (b"\x00\x00\x01\x00", 0, "image/x-icon"),  # ICO
+    (b"\x00\x00\x02\x00", 0, "image/x-icon"),  # CUR (cursor, similar to ICO)
+    # SVG detection handled separately (XML-based)
+    # PDF
+    (b"%PDF", 0, "application/pdf"),
+    # Archives
+    (b"PK\x03\x04", 0, "application/zip"),
+    (b"\x1f\x8b", 0, "application/gzip"),
+    (b"Rar!\x1a\x07", 0, "application/x-rar-compressed"),
+    # Audio/Video
+    (b"ID3", 0, "audio/mpeg"),
+    (b"\xff\xfb", 0, "audio/mpeg"),
+    (b"\xff\xfa", 0, "audio/mpeg"),
+    (b"OggS", 0, "audio/ogg"),
+    (b"fLaC", 0, "audio/flac"),
+    (b"\x00\x00\x00\x1cftyp", 0, "video/mp4"),
+    (b"\x00\x00\x00\x20ftyp", 0, "video/mp4"),
+    # Documents
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", 0, "application/msword"),  # DOC/XLS/PPT
+]
+
+
+def detect_mime_type_from_magic(content_bytes: bytes) -> str | None:
+    """Detect MIME type from file magic bytes.
+    
+    Args:
+        content_bytes: The file content bytes.
+        
+    Returns:
+        The detected MIME type or None if not detected.
+    """
+    if len(content_bytes) < 12:
+        return None
+    
+    # Check for WebP specifically (RIFF....WEBP)
+    if content_bytes[:4] == b"RIFF" and content_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    
+    # Check for SVG (XML-based)
+    # Look for <?xml or <svg in first 1000 bytes
+    header = content_bytes[:1000]
+    try:
+        header_str = header.decode("utf-8", errors="ignore").lower()
+        if "<svg" in header_str or ("<?xml" in header_str and "svg" in header_str):
+            return "image/svg+xml"
+    except Exception:
+        pass
+    
+    # Check magic signatures
+    for magic, offset, mime_type in MAGIC_SIGNATURES:
+        if content_bytes[offset:offset + len(magic)] == magic:
+            return mime_type
+    
+    return None
 
 
 @router.get("/{file_key:path}/content", response_model=FileContentResponse)
@@ -170,7 +235,7 @@ async def get_file_content(
     """Get file content for preview.
 
     Returns the file content as text if it's a text file, or base64 encoded if binary.
-    Large files (>1MB) will be truncated.
+    Large files (>200MB) will be truncated.
     """
     import base64
     from pathlib import Path
@@ -190,11 +255,7 @@ async def get_file_content(
             )
 
         file_size = file_obj["size"]
-        content_type = file_obj.get("content_type")
-
-        # Determine if file is text based on extension
-        ext = Path(file_key).suffix.lower()
-        is_text = ext in TEXT_EXTENSIONS or (content_type and content_type.startswith("text/"))
+        stored_content_type = file_obj.get("content_type")
 
         # Download file content
         content_bytes = s3.download_obj(full_key)
@@ -203,6 +264,14 @@ async def get_file_content(
         if len(content_bytes) > MAX_PREVIEW_SIZE:
             content_bytes = content_bytes[:MAX_PREVIEW_SIZE]
             is_truncated = True
+
+        # Detect content type from magic bytes first, then fall back to stored/extension
+        detected_content_type = detect_mime_type_from_magic(content_bytes)
+        content_type = detected_content_type or stored_content_type
+        
+        # Determine if file is text based on extension or content type
+        ext = Path(file_key).suffix.lower()
+        is_text = ext in TEXT_EXTENSIONS or (content_type and content_type.startswith("text/"))
 
         if is_text:
             try:

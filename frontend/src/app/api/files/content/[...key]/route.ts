@@ -1,41 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendFetch, BackendApiError, buildBackendHeaders } from "@/lib/server-api";
 
-const BACKEND_URL = process.env.INTERNAL_BACKEND_URL || "http://backend:8000";
+interface RouteParams {
+  params: Promise<{ key: string[] }>;
+}
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ key: string[] }> }
+  { params }: RouteParams
 ): Promise<NextResponse> {
-  const accessToken = request.cookies.get("access_token")?.value;
-
-  if (!accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { key } = await params;
-  const fileKey = key.join("/");
-
   try {
-    const response = await fetch(
-      `${BACKEND_URL}/api/v1/files/${encodeURIComponent(fileKey)}/content`,
+    const accessToken = request.cookies.get("access_token")?.value;
+
+    if (!accessToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { key } = await params;
+    const fileKey = key.join("/");
+
+    const data = await backendFetch(
+      `/api/v1/files/${fileKey}/content`,
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: buildBackendHeaders(accessToken),
       }
     );
 
-    if (!response.ok) {
-      const error = await response.text();
-      return NextResponse.json(
-        { error: error || "Failed to fetch file content" },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
+    if (error instanceof BackendApiError) {
+      const detail =
+        typeof error.data === "object" && error.data !== null && "detail" in error.data
+          ? (error.data as { detail: string }).detail
+          : error.message || "Failed to fetch file content";
+      return NextResponse.json({ error: detail }, { status: error.status });
+    }
     console.error("Error fetching file content:", error);
     return NextResponse.json(
       { error: "Internal server error" },
