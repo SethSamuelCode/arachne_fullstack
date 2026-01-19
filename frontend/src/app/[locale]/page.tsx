@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { Button, Card, CardHeader, CardTitle, CardContent } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
 

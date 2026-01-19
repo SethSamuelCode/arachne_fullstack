@@ -1,11 +1,14 @@
-
+/**
+ * Server-side i18n configuration for next-intl.
+ *
+ * This file is used by next-intl to load locale messages on the server.
+ * For routing and navigation, see @/i18n/index.ts
+ */
 import { getRequestConfig } from "next-intl/server";
+import { locales, defaultLocale, type Locale } from "./i18n/config";
 
-// Supported locales
-export const locales = ["en", "pl"] as const;
-export type Locale = (typeof locales)[number];
-
-export const defaultLocale: Locale = "en";
+// Re-export for backwards compatibility
+export { locales, defaultLocale, getLocaleLabel, type Locale } from "./i18n/config";
 
 export default getRequestConfig(async ({ requestLocale }) => {
   // This typically corresponds to the `[locale]` segment
@@ -21,11 +24,3 @@ export default getRequestConfig(async ({ requestLocale }) => {
     messages: (await import(`../messages/${locale}.json`)).default,
   };
 });
-
-export function getLocaleLabel(locale: Locale): string {
-  const labels: Record<Locale, string> = {
-    en: "English",
-    pl: "Polski",
-  };
-  return labels[locale];
-}

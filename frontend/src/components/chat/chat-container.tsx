@@ -8,7 +8,7 @@ import { Button } from "@/components/ui";
 import { Wifi, WifiOff, RotateCcw, Bot } from "lucide-react";
 import { useConversationStore, useChatStore, useAuthStore } from "@/stores";
 import { useConversations } from "@/hooks";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 
 
 import { SystemPromptSettings } from "./system-prompt-settings";

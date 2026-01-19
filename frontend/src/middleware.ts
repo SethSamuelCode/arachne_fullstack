@@ -16,7 +16,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import createIntlMiddleware from "next-intl/middleware";
 import { verifyToken, isAdmin, type AuthJWTPayload } from "@/lib/jwt";
-import { locales, defaultLocale } from "./i18n";
+import { routing } from "@/i18n/routing";
+import { locales } from "@/i18n/config";
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = ["/", "/login", "/register", "/auth/callback"];
@@ -27,12 +28,8 @@ const AUTH_ROUTES = ["/login", "/register"];
 // Routes that require admin role
 const ADMIN_ROUTES = ["/admin"];
 
-// Initialize i18n middleware
-const intlMiddleware = createIntlMiddleware({
-  locales,
-  defaultLocale,
-  localePrefix: "as-needed",
-});
+// Initialize i18n middleware using shared routing configuration
+const intlMiddleware = createIntlMiddleware(routing);
 
 /**
  * Strip locale prefix from pathname for route matching.
