@@ -27,18 +27,14 @@ class PresignedUploadRequest(BaseSchema):
     """Request for generating a presigned upload URL."""
 
     filename: str = Field(description="Name of the file to upload")
-    content_type: str | None = Field(
-        default=None, description="MIME type of the file (optional)"
-    )
+    content_type: str | None = Field(default=None, description="MIME type of the file (optional)")
 
 
 class PresignedUploadResponse(BaseSchema):
     """Response containing presigned POST URL and fields for direct S3 upload."""
 
     url: str = Field(description="URL to POST the file to")
-    fields: dict[str, str] = Field(
-        description="Form fields to include in the POST request"
-    )
+    fields: dict[str, str] = Field(description="Form fields to include in the POST request")
     key: str = Field(description="The S3 key where the file will be stored")
 
 
@@ -54,3 +50,32 @@ class FileDeleteResponse(BaseSchema):
 
     success: bool = Field(default=True, description="Whether deletion was successful")
     key: str = Field(description="Key of the deleted file")
+
+
+class BatchFileItem(BaseSchema):
+    """Single file item in a batch upload request."""
+
+    filename: str = Field(description="Name/path of the file to upload")
+    content_type: str | None = Field(default=None, description="MIME type of the file (optional)")
+
+
+class BatchPresignedUploadRequest(BaseSchema):
+    """Request for generating presigned upload URLs for multiple files."""
+
+    files: list[BatchFileItem] = Field(description="List of files to get presigned URLs for")
+
+
+class BatchPresignedUploadItem(BaseSchema):
+    """Single presigned upload URL result."""
+
+    filename: str = Field(description="Original filename from request")
+    url: str = Field(description="URL to POST the file to")
+    fields: dict[str, str] = Field(description="Form fields to include in the POST request")
+    key: str = Field(description="The S3 key where the file will be stored")
+
+
+class BatchPresignedUploadResponse(BaseSchema):
+    """Response containing presigned POST URLs for multiple files."""
+
+    uploads: list[BatchPresignedUploadItem] = Field(description="List of presigned upload URLs")
+    total: int = Field(description="Total number of presigned URLs generated")

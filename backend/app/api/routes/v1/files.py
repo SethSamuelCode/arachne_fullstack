@@ -13,6 +13,9 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser
 from app.schemas.file import (
+    BatchPresignedUploadItem,
+    BatchPresignedUploadRequest,
+    BatchPresignedUploadResponse,
     FileDeleteResponse,
     FileInfo,
     FileListResponse,
@@ -100,6 +103,48 @@ async def get_presigned_upload_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate upload URL: {e!s}",
+        ) from e
+
+
+@router.post("/presign/batch", response_model=BatchPresignedUploadResponse)
+async def get_batch_presigned_upload_urls(
+    request: BatchPresignedUploadRequest,
+    current_user: CurrentUser,
+) -> BatchPresignedUploadResponse:
+    """Get presigned POST URLs for multiple files for direct upload to S3.
+
+    Useful for folder uploads where many files need presigned URLs at once.
+    The client should POST each file directly to its returned URL with the
+    provided fields included as form data.
+    """
+    s3 = get_s3_service()
+
+    try:
+        # Build full paths and generate presigned URLs
+        file_items = []
+        object_names = []
+        for file_item in request.files:
+            full_key = _get_user_path(str(current_user.id), file_item.filename)
+            object_names.append(full_key)
+            file_items.append(file_item)
+
+        presigned_results = s3.generate_presigned_posts_batch(object_names, expiration=3600)
+
+        uploads = [
+            BatchPresignedUploadItem(
+                filename=file_items[i].filename,
+                url=presigned["url"],
+                fields=presigned["fields"],
+                key=file_items[i].filename,  # Return relative key to user
+            )
+            for i, presigned in enumerate(presigned_results)
+        ]
+
+        return BatchPresignedUploadResponse(uploads=uploads, total=len(uploads))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate batch upload URLs: {e!s}",
         ) from e
 
 
