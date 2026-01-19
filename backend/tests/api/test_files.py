@@ -56,6 +56,7 @@ def mock_s3_service() -> MagicMock:
     )
     service.delete_obj = MagicMock(return_value=None)
     service.delete_objects_by_prefix = MagicMock(return_value=0)
+    service.download_obj = MagicMock(return_value=b"Hello, World!")
     return service
 
 
@@ -431,3 +432,124 @@ class TestFolderDelete:
         assert response.status_code == 200
         # Should still work correctly
         patch_s3_service.delete_objects_by_prefix.assert_called_once_with(expected_prefix)
+
+
+class TestFileContent:
+    """Tests for file content preview endpoint."""
+
+    @pytest.mark.anyio
+    async def test_get_file_content_text_file(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test getting content of a text file."""
+        from datetime import datetime
+
+        file_key = "test.txt"
+        full_key = f"users/{mock_user.id}/{file_key}"
+        content = b"Hello, World!"
+
+        patch_s3_service.list_objs_with_metadata.return_value = [
+            {
+                "key": full_key,
+                "size": len(content),
+                "last_modified": datetime.now(),
+                "content_type": "text/plain",
+            }
+        ]
+        patch_s3_service.download_obj.return_value = content
+
+        response = await authenticated_client.get(f"/api/v1/files/{file_key}/content")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["key"] == file_key
+        assert data["content"] == "Hello, World!"
+        assert data["is_binary"] is False
+        assert data["is_truncated"] is False
+
+    @pytest.mark.anyio
+    async def test_get_file_content_binary_file(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test getting content of a binary file returns base64."""
+        from datetime import datetime
+        import base64
+
+        file_key = "image.png"
+        full_key = f"users/{mock_user.id}/{file_key}"
+        content = b"\x89PNG\r\n\x1a\n"  # PNG header bytes
+
+        patch_s3_service.list_objs_with_metadata.return_value = [
+            {
+                "key": full_key,
+                "size": len(content),
+                "last_modified": datetime.now(),
+                "content_type": "image/png",
+            }
+        ]
+        patch_s3_service.download_obj.return_value = content
+
+        response = await authenticated_client.get(f"/api/v1/files/{file_key}/content")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["key"] == file_key
+        assert data["is_binary"] is True
+        # Verify it's valid base64
+        decoded = base64.b64decode(data["content"])
+        assert decoded == content
+
+    @pytest.mark.anyio
+    async def test_get_file_content_not_found(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test getting content of non-existent file returns 404."""
+        file_key = "nonexistent.txt"
+
+        patch_s3_service.list_objs_with_metadata.return_value = []
+
+        response = await authenticated_client.get(f"/api/v1/files/{file_key}/content")
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "File not found" in data["detail"]
+
+    @pytest.mark.anyio
+    async def test_get_file_content_python_file(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test getting content of a Python file (text by extension)."""
+        from datetime import datetime
+
+        file_key = "script.py"
+        full_key = f"users/{mock_user.id}/{file_key}"
+        content = b"print('Hello')\n"
+
+        patch_s3_service.list_objs_with_metadata.return_value = [
+            {
+                "key": full_key,
+                "size": len(content),
+                "last_modified": datetime.now(),
+                "content_type": None,  # No content type
+            }
+        ]
+        patch_s3_service.download_obj.return_value = content
+
+        response = await authenticated_client.get(f"/api/v1/files/{file_key}/content")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_binary"] is False
+        assert "print" in data["content"]

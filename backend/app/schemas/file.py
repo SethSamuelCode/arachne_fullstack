@@ -87,3 +87,14 @@ class BatchPresignedUploadResponse(BaseSchema):
 
     uploads: list[BatchPresignedUploadItem] = Field(description="List of presigned upload URLs")
     total: int = Field(description="Total number of presigned URLs generated")
+
+
+class FileContentResponse(BaseSchema):
+    """Response containing file content for preview."""
+
+    key: str = Field(description="File key/path")
+    content: str = Field(description="File content (text or base64 encoded)")
+    content_type: str | None = Field(default=None, description="MIME type of the file")
+    size: int = Field(description="File size in bytes")
+    is_binary: bool = Field(default=False, description="Whether content is base64 encoded binary")
+    is_truncated: bool = Field(default=False, description="Whether content was truncated due to size")

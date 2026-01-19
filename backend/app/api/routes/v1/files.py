@@ -16,6 +16,7 @@ from app.schemas.file import (
     BatchPresignedUploadItem,
     BatchPresignedUploadRequest,
     BatchPresignedUploadResponse,
+    FileContentResponse,
     FileDeleteResponse,
     FileInfo,
     FileListResponse,
@@ -146,6 +147,88 @@ async def get_batch_presigned_upload_urls(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate batch upload URLs: {e!s}",
+        ) from e
+
+
+# Max file size for preview (1MB)
+MAX_PREVIEW_SIZE = 1024 * 1024
+
+# Text file extensions that can be previewed
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",
+    ".xml", ".html", ".css", ".csv", ".log", ".sh", ".bash", ".env", ".toml",
+    ".ini", ".cfg", ".rst", ".sql", ".r", ".rb", ".go", ".java", ".c", ".cpp",
+    ".h", ".hpp", ".rs", ".swift", ".kt", ".scala", ".php", ".pl", ".lua",
+}
+
+
+@router.get("/{file_key:path}/content", response_model=FileContentResponse)
+async def get_file_content(
+    file_key: str,
+    current_user: CurrentUser,
+) -> FileContentResponse:
+    """Get file content for preview.
+
+    Returns the file content as text if it's a text file, or base64 encoded if binary.
+    Large files (>1MB) will be truncated.
+    """
+    import base64
+    from pathlib import Path
+
+    s3 = get_s3_service()
+    full_key = _get_user_path(str(current_user.id), file_key)
+
+    try:
+        # Verify file exists and get metadata
+        objects = s3.list_objs_with_metadata(prefix=full_key)
+        file_obj = next((obj for obj in objects if obj["key"] == full_key), None)
+
+        if not file_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found: {file_key}",
+            )
+
+        file_size = file_obj["size"]
+        content_type = file_obj.get("content_type")
+
+        # Determine if file is text based on extension
+        ext = Path(file_key).suffix.lower()
+        is_text = ext in TEXT_EXTENSIONS or (content_type and content_type.startswith("text/"))
+
+        # Download file content
+        content_bytes = s3.download_obj(full_key)
+        is_truncated = False
+
+        if len(content_bytes) > MAX_PREVIEW_SIZE:
+            content_bytes = content_bytes[:MAX_PREVIEW_SIZE]
+            is_truncated = True
+
+        if is_text:
+            try:
+                content = content_bytes.decode("utf-8")
+                is_binary = False
+            except UnicodeDecodeError:
+                content = base64.b64encode(content_bytes).decode("ascii")
+                is_binary = True
+        else:
+            content = base64.b64encode(content_bytes).decode("ascii")
+            is_binary = True
+
+        return FileContentResponse(
+            key=file_key,
+            content=content,
+            content_type=content_type,
+            size=file_size,
+            is_binary=is_binary,
+            is_truncated=is_truncated,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get file content: {e!s}",
         ) from e
 
 

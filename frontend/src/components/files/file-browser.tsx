@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogBody } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { apiClient } from "@/lib/api-client";
@@ -17,7 +18,8 @@ import {
   Loader2,
   FolderUp,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Eye
 } from "lucide-react";
 
 interface FileInfo {
@@ -58,6 +60,15 @@ interface BatchPresignedUploadItem {
 interface BatchPresignedUploadResponse {
   uploads: BatchPresignedUploadItem[];
   total: number;
+}
+
+interface FileContentResponse {
+  key: string;
+  content: string;
+  content_type: string | null;
+  size: number;
+  is_binary: boolean;
+  is_truncated: boolean;
 }
 
 interface UploadProgress {
@@ -170,6 +181,8 @@ export function FileBrowser({ children }: FileBrowserProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [previewFile, setPreviewFile] = useState<FileContentResponse | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -559,6 +572,21 @@ export function FileBrowser({ children }: FileBrowserProps) {
     }
   };
 
+  const loadFilePreview = async (fileKey: string) => {
+    setIsLoadingPreview(true);
+    setError(null);
+    try {
+      const response = await apiClient.get<FileContentResponse>(
+        `/files/${encodeURIComponent(fileKey)}/content`
+      );
+      setPreviewFile(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load file preview");
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
   const trigger = children || (
     <Button variant="ghost" size="icon" title="File Storage">
       <FolderOpen className="h-5 w-5" />
@@ -703,6 +731,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
                     onDownload={downloadFile}
                     onDelete={deleteFile}
                     onDeleteFolder={deleteFolder}
+                    onPreview={loadFilePreview}
                     onRemoveEmptyFolder={(path) =>
                       setEmptyFolders((prev) => prev.filter((f) => f.path !== path))
                     }
@@ -714,6 +743,48 @@ export function FileBrowser({ children }: FileBrowserProps) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* File Preview Dialog */}
+      <Dialog open={previewFile !== null || isLoadingPreview} onOpenChange={(open) => !open && setPreviewFile(null)}>
+        <DialogContent className="md:max-w-3xl lg:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{previewFile?.key || "Loading..."}</DialogTitle>
+            <DialogClose onClick={() => setPreviewFile(null)} />
+          </DialogHeader>
+          <DialogBody>
+            {isLoadingPreview ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : previewFile?.is_truncated ? (
+              <>
+                <div className="mb-2 text-sm text-amber-500 bg-amber-500/10 p-2 rounded">
+                  ⚠️ File truncated (showing first 1MB of {formatFileSize(previewFile.size)})
+                </div>
+                {previewFile.is_binary ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    Binary file - cannot display preview
+                  </div>
+                ) : (
+                  <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
+                    {previewFile.content}
+                  </pre>
+                )}
+              </>
+            ) : previewFile?.is_binary ? (
+              <div className="text-center text-muted-foreground py-8">
+                <File className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>Binary file - cannot display preview</p>
+                <p className="text-xs mt-1">Size: {formatFileSize(previewFile.size)}</p>
+              </div>
+            ) : previewFile ? (
+              <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
+                {previewFile.content}
+              </pre>
+            ) : null}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -726,6 +797,7 @@ interface FileTreeViewProps {
   onDownload: (key: string) => void;
   onDelete: (key: string) => void;
   onDeleteFolder: (path: string) => void;
+  onPreview: (key: string) => void;
   onRemoveEmptyFolder: (path: string) => void;
   emptyFolderPaths: Set<string>;
 }
@@ -738,6 +810,7 @@ function FileTreeView({
   onDownload,
   onDelete,
   onDeleteFolder,
+  onPreview,
   onRemoveEmptyFolder,
   emptyFolderPaths,
 }: FileTreeViewProps) {
@@ -762,6 +835,7 @@ function FileTreeView({
             onDownload={onDownload}
             onDelete={onDelete}
             onDeleteFolder={onDeleteFolder}
+            onPreview={onPreview}
             onRemoveEmptyFolder={onRemoveEmptyFolder}
             emptyFolderPaths={emptyFolderPaths}
           />
@@ -841,6 +915,7 @@ function FileTreeView({
                 onDownload={onDownload}
                 onDelete={onDelete}
                 onDeleteFolder={onDeleteFolder}
+                onPreview={onPreview}
                 onRemoveEmptyFolder={onRemoveEmptyFolder}
                 emptyFolderPaths={emptyFolderPaths}
               />
@@ -869,6 +944,15 @@ function FileTreeView({
         )}
       </div>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={() => onPreview(node.path)}
+          title="Preview"
+        >
+          <Eye className="h-3 w-3" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
