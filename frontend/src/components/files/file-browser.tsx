@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogBo
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { apiClient } from "@/lib/api-client";
+import { MarkdownContent } from "@/components/chat/markdown-content";
 import { 
   FolderOpen, 
   Upload, 
@@ -843,6 +844,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
               
               // Text content
               if (previewFile && !previewFile.is_binary && previewFile.content) {
+                const isMarkdown = previewFile.key.toLowerCase().endsWith(".md");
                 return (
                   <>
                     {previewFile.is_truncated && (
@@ -850,9 +852,15 @@ export function FileBrowser({ children }: FileBrowserProps) {
                         ⚠️ File truncated (showing first 200MB of {formatFileSize(previewFile.size)})
                       </div>
                     )}
-                    <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
-                      {previewFile.content}
-                    </pre>
+                    {isMarkdown ? (
+                      <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto max-h-[60vh] p-4 bg-muted/30 rounded-md">
+                        <MarkdownContent content={previewFile.content} />
+                      </div>
+                    ) : (
+                      <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
+                        {previewFile.content}
+                      </pre>
+                    )}
                   </>
                 );
               }
