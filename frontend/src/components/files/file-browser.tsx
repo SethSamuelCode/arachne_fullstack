@@ -588,29 +588,28 @@ export function FileBrowser({ children }: FileBrowserProps) {
     setIsLoadingPreview(true);
     setError(null);
     try {
-      // Check if it's an image by extension - use presigned URL for fast loading
-      const ext = fileKey.split(".").pop()?.toLowerCase();
+      const ext = fileKey.split(".").pop()?.toLowerCase() || "";
       const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"];
+      const textExtensions = [
+        "txt", "md", "py", "js", "ts", "tsx", "jsx", "json", "yaml", "yml",
+        "xml", "html", "css", "csv", "log", "sh", "bash", "env", "toml",
+        "ini", "cfg", "rst", "sql", "r", "rb", "go", "java", "c", "cpp",
+        "h", "hpp", "rs", "swift", "kt", "scala", "php", "pl", "lua",
+      ];
       
-      if (ext && imageExtensions.includes(ext)) {
-        // For images, get presigned URL for direct browser loading
-        const downloadResponse = await apiClient.get<PresignedDownloadResponse>(
-          `/files/${fileKey}/download`
-        );
-        
-        // Get file info from the files list
-        const fileInfo = files.find(f => f.key === fileKey);
+      // Get presigned URL for direct S3 access (fast!)
+      const downloadResponse = await apiClient.get<PresignedDownloadResponse>(
+        `/files/${fileKey}/download`
+      );
+      const fileInfo = files.find(f => f.key === fileKey);
+      
+      if (imageExtensions.includes(ext)) {
+        // Images: use presigned URL directly in img src
         const mimeMap: Record<string, string> = {
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          gif: "image/gif",
-          webp: "image/webp",
-          svg: "image/svg+xml",
-          bmp: "image/bmp",
-          ico: "image/x-icon",
+          png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+          gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+          bmp: "image/bmp", ico: "image/x-icon",
         };
-        
         setPreviewFile({
           key: fileKey,
           content_type: mimeMap[ext] || "image/png",
@@ -619,14 +618,32 @@ export function FileBrowser({ children }: FileBrowserProps) {
           is_binary: true,
           is_truncated: false,
         });
-      } else {
-        // For non-images, fetch content as before
-        const response = await apiClient.get<FileContentResponse>(
-          `/files/content/${fileKey}`
-        );
+      } else if (textExtensions.includes(ext)) {
+        // Text files: fetch content from presigned URL and display in pre tag
+        const textResponse = await fetch(downloadResponse.url);
+        if (!textResponse.ok) {
+          throw new Error("Failed to fetch file content");
+        }
+        const textContent = await textResponse.text();
+        const maxSize = 200 * 1024 * 1024; // 200MB
+        const is_truncated = textContent.length > maxSize;
+        
         setPreviewFile({
-          ...response,
-          presigned_url: undefined,
+          key: fileKey,
+          content_type: "text/plain",
+          size: fileInfo?.size || textContent.length,
+          content: is_truncated ? textContent.slice(0, maxSize) : textContent,
+          is_binary: false,
+          is_truncated,
+        });
+      } else {
+        // Binary files: show info only
+        setPreviewFile({
+          key: fileKey,
+          content_type: fileInfo?.content_type || "application/octet-stream",
+          size: fileInfo?.size || 0,
+          is_binary: true,
+          is_truncated: false,
         });
       }
     } catch (err) {
