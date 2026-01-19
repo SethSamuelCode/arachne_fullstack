@@ -142,7 +142,17 @@ export function FileBrowser({ children }: FileBrowserProps) {
     });
 
     if (!uploadResponse.ok) {
-      throw new Error(`Upload failed for ${presigned.filename}: ${uploadResponse.statusText}`);
+      // Try to get more details from the response
+      let errorDetail = uploadResponse.statusText;
+      try {
+        const errorText = await uploadResponse.text();
+        if (errorText) {
+          errorDetail = errorText;
+        }
+      } catch {
+        // Ignore error reading response
+      }
+      throw new Error(`Upload failed for ${presigned.filename}: ${errorDetail}`);
     }
   };
 
@@ -210,7 +220,9 @@ export function FileBrowser({ children }: FileBrowserProps) {
       // Refresh file list after all uploads complete
       await fetchFiles();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload files");
+      const errorMessage = err instanceof Error ? err.message : "Failed to upload files";
+      setError(errorMessage);
+      console.error("Batch upload error:", err);
     } finally {
       setIsUploading(false);
       setUploadProgress(null);
@@ -222,7 +234,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
     setError(null);
     try {
       // Get presigned upload URL
-      const presigned = await apiClient.post<PresignedUploadResponse>("/files", {
+      const presigned = await apiClient.post<PresignedUploadResponse>("/files/presign", {
         filename: file.name,
         content_type: file.type || undefined,
       });
@@ -240,13 +252,25 @@ export function FileBrowser({ children }: FileBrowserProps) {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+        // Try to get more details from the response
+        let errorDetail = uploadResponse.statusText;
+        try {
+          const errorText = await uploadResponse.text();
+          if (errorText) {
+            errorDetail = errorText;
+          }
+        } catch {
+          // Ignore error reading response
+        }
+        throw new Error(`Upload failed: ${errorDetail}`);
       }
 
       // Refresh file list
       await fetchFiles();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload file");
+      const errorMessage = err instanceof Error ? err.message : "Failed to upload file";
+      setError(errorMessage);
+      console.error("Upload error:", err);
     } finally {
       setIsUploading(false);
     }
