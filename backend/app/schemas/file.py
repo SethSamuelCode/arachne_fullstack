@@ -52,6 +52,14 @@ class FileDeleteResponse(BaseSchema):
     key: str = Field(description="Key of the deleted file")
 
 
+class FolderDeleteResponse(BaseSchema):
+    """Response for folder deletion."""
+
+    success: bool = Field(default=True, description="Whether deletion was successful")
+    prefix: str = Field(description="Prefix/path of the deleted folder")
+    deleted_count: int = Field(description="Number of files deleted")
+
+
 class BatchFileItem(BaseSchema):
     """Single file item in a batch upload request."""
 

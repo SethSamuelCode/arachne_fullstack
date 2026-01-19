@@ -85,6 +85,33 @@ class s3Service:
             print(f"Error deleting object from S3: {e}")
             raise e
 
+    def delete_objects_by_prefix(self, prefix: str) -> int:
+        """Delete all objects with a given prefix from an S3 bucket.
+
+        :param prefix: Prefix to match for deletion (e.g., 'users/123/folder/')
+        :return: Number of objects deleted
+        """
+        try:
+            # List all objects with the prefix
+            objects_to_delete = self.list_objs(prefix=prefix)
+            if not objects_to_delete:
+                return 0
+
+            # S3 delete_objects can handle up to 1000 objects at a time
+            deleted_count = 0
+            batch_size = 1000
+
+            for i in range(0, len(objects_to_delete), batch_size):
+                batch = objects_to_delete[i : i + batch_size]
+                delete_request = {"Objects": [{"Key": key} for key in batch], "Quiet": True}
+                self.s3_client.delete_objects(Bucket=S3_BUCKET, Delete=delete_request)
+                deleted_count += len(batch)
+
+            return deleted_count
+        except Exception as e:
+            print(f"Error deleting objects by prefix from S3: {e}")
+            raise e
+
     def list_objs(self, prefix: str | None = None) -> list[str]:
         """List objects in an S3 bucket
 

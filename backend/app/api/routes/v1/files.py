@@ -19,6 +19,7 @@ from app.schemas.file import (
     FileDeleteResponse,
     FileInfo,
     FileListResponse,
+    FolderDeleteResponse,
     PresignedDownloadResponse,
     PresignedUploadRequest,
     PresignedUploadResponse,
@@ -177,6 +178,45 @@ async def get_download_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate download URL: {e!s}",
+        ) from e
+
+
+@router.delete("/folder/{folder_path:path}", response_model=FolderDeleteResponse)
+async def delete_folder(
+    folder_path: str,
+    current_user: CurrentUser,
+) -> FolderDeleteResponse:
+    """Delete a folder and all its contents from the user's storage.
+
+    The folder_path should be the relative path within the user's storage.
+    All files with keys starting with this prefix will be deleted.
+    """
+    s3 = get_s3_service()
+    # Ensure the prefix ends with / to only match folder contents
+    folder_prefix = folder_path.rstrip("/") + "/"
+    full_prefix = _get_user_path(str(current_user.id), folder_prefix)
+
+    try:
+        # Check if folder has any contents
+        objects = s3.list_objs(prefix=full_prefix)
+        if not objects:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Folder not found or empty: {folder_path}",
+            )
+
+        deleted_count = s3.delete_objects_by_prefix(full_prefix)
+        return FolderDeleteResponse(
+            success=True,
+            prefix=folder_path,
+            deleted_count=deleted_count,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete folder: {e!s}",
         ) from e
 
 

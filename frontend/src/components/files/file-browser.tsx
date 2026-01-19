@@ -548,6 +548,17 @@ export function FileBrowser({ children }: FileBrowserProps) {
     }
   };
 
+  const deleteFolder = async (folderPath: string) => {
+    if (!confirm(`Delete folder "${folderPath}" and all its contents?`)) return;
+    
+    try {
+      await apiClient.delete(`/files/folder/${encodeURIComponent(folderPath)}`);
+      await fetchFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete folder");
+    }
+  };
+
   const trigger = children || (
     <Button variant="ghost" size="icon" title="File Storage">
       <FolderOpen className="h-5 w-5" />
@@ -691,6 +702,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
                     onToggleFolder={toggleFolder}
                     onDownload={downloadFile}
                     onDelete={deleteFile}
+                    onDeleteFolder={deleteFolder}
                     onRemoveEmptyFolder={(path) =>
                       setEmptyFolders((prev) => prev.filter((f) => f.path !== path))
                     }
@@ -713,6 +725,7 @@ interface FileTreeViewProps {
   onToggleFolder: (path: string) => void;
   onDownload: (key: string) => void;
   onDelete: (key: string) => void;
+  onDeleteFolder: (path: string) => void;
   onRemoveEmptyFolder: (path: string) => void;
   emptyFolderPaths: Set<string>;
 }
@@ -724,6 +737,7 @@ function FileTreeView({
   onToggleFolder,
   onDownload,
   onDelete,
+  onDeleteFolder,
   onRemoveEmptyFolder,
   emptyFolderPaths,
 }: FileTreeViewProps) {
@@ -747,6 +761,7 @@ function FileTreeView({
             onToggleFolder={onToggleFolder}
             onDownload={onDownload}
             onDelete={onDelete}
+            onDeleteFolder={onDeleteFolder}
             onRemoveEmptyFolder={onRemoveEmptyFolder}
             emptyFolderPaths={emptyFolderPaths}
           />
@@ -764,7 +779,7 @@ function FileTreeView({
     return (
       <div>
         <div
-          className={`flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors ${
+          className={`flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors group ${
             isEmptyFolder ? "border border-dashed border-muted-foreground/30" : ""
           }`}
           style={{ paddingLeft }}
@@ -783,7 +798,7 @@ function FileTreeView({
           <span className="text-sm truncate flex-1" title={node.path}>
             {node.name}
           </span>
-          {isEmptyFolder && (
+          {isEmptyFolder ? (
             <>
               <span className="text-xs text-muted-foreground">(empty)</span>
               <Button
@@ -799,6 +814,19 @@ function FileTreeView({
                 <Trash2 className="h-3 w-3" />
               </Button>
             </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteFolder(node.path);
+              }}
+              title="Delete folder"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           )}
         </div>
         {!isCollapsed && hasChildren && (
@@ -812,6 +840,7 @@ function FileTreeView({
                 onToggleFolder={onToggleFolder}
                 onDownload={onDownload}
                 onDelete={onDelete}
+                onDeleteFolder={onDeleteFolder}
                 onRemoveEmptyFolder={onRemoveEmptyFolder}
                 emptyFolderPaths={emptyFolderPaths}
               />

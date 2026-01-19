@@ -55,6 +55,7 @@ def mock_s3_service() -> MagicMock:
         return_value="https://s3.example.com/bucket/file?signed=true"
     )
     service.delete_obj = MagicMock(return_value=None)
+    service.delete_objects_by_prefix = MagicMock(return_value=0)
     return service
 
 
@@ -331,3 +332,102 @@ class TestPathSanitization:
         # All paths should be sanitized
         for path in object_names:
             assert ".." not in path
+
+
+class TestFolderDelete:
+    """Tests for folder deletion endpoint."""
+
+    @pytest.mark.anyio
+    async def test_delete_folder_success(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test successful folder deletion."""
+        folder_path = "my-folder"
+        user_prefix = f"users/{mock_user.id}/{folder_path}/"
+
+        # Mock list_objs to return files in the folder
+        patch_s3_service.list_objs.return_value = [
+            f"{user_prefix}file1.txt",
+            f"{user_prefix}file2.txt",
+            f"{user_prefix}subfolder/file3.txt",
+        ]
+        patch_s3_service.delete_objects_by_prefix.return_value = 3
+
+        response = await authenticated_client.delete(f"/api/v1/files/folder/{folder_path}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["prefix"] == folder_path
+        assert data["deleted_count"] == 3
+
+        # Verify S3 service was called with correct prefix
+        patch_s3_service.delete_objects_by_prefix.assert_called_once_with(user_prefix)
+
+    @pytest.mark.anyio
+    async def test_delete_folder_not_found(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test folder deletion when folder doesn't exist."""
+        folder_path = "nonexistent-folder"
+
+        # Mock list_objs to return empty list
+        patch_s3_service.list_objs.return_value = []
+
+        response = await authenticated_client.delete(f"/api/v1/files/folder/{folder_path}")
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "Folder not found or empty" in data["detail"]
+
+    @pytest.mark.anyio
+    async def test_delete_nested_folder(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test deletion of a nested folder."""
+        folder_path = "parent/child/grandchild"
+        user_prefix = f"users/{mock_user.id}/{folder_path}/"
+
+        patch_s3_service.list_objs.return_value = [
+            f"{user_prefix}file.txt",
+        ]
+        patch_s3_service.delete_objects_by_prefix.return_value = 1
+
+        response = await authenticated_client.delete(f"/api/v1/files/folder/{folder_path}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["prefix"] == folder_path
+        assert data["deleted_count"] == 1
+
+    @pytest.mark.anyio
+    async def test_delete_folder_trailing_slash_handled(
+        self,
+        authenticated_client: AsyncClient,
+        patch_s3_service: MagicMock,
+        mock_user: MockUser,
+    ):
+        """Test that trailing slashes in folder path are handled correctly."""
+        folder_path = "my-folder/"  # With trailing slash
+        expected_prefix = f"users/{mock_user.id}/my-folder/"
+
+        patch_s3_service.list_objs.return_value = [
+            f"{expected_prefix}file.txt",
+        ]
+        patch_s3_service.delete_objects_by_prefix.return_value = 1
+
+        response = await authenticated_client.delete(f"/api/v1/files/folder/{folder_path}")
+
+        assert response.status_code == 200
+        # Should still work correctly
+        patch_s3_service.delete_objects_by_prefix.assert_called_once_with(expected_prefix)
