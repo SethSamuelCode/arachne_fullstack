@@ -235,6 +235,180 @@ def detect_mime_type_from_magic(content_bytes: bytes) -> str | None:
     return None
 
 
+@router.post("/rename", response_model=RenameResponse)
+async def rename_file(
+    request: RenameRequest,
+    current_user: CurrentUser,
+) -> RenameResponse:
+    """Rename a single file in the user's storage.
+
+    This performs a copy-then-delete operation since S3 doesn't support rename.
+    For folders, use the /rename/folder endpoint which streams progress via SSE.
+    """
+    s3 = get_s3_service()
+    old_full_key = _get_user_path(str(current_user.id), request.old_path)
+    new_full_key = _get_user_path(str(current_user.id), request.new_path)
+
+    try:
+        # Verify source file exists
+        objects = s3.list_objs()
+        if old_full_key not in objects:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found: {request.old_path}",
+            )
+
+        # Check destination doesn't exist
+        if new_full_key in objects:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"File already exists: {request.new_path}",
+            )
+
+        # Copy to new location then delete original
+        s3.copy_file(old_full_key, new_full_key)
+        s3.delete_obj(old_full_key)
+
+        return RenameResponse(
+            success=True,
+            old_path=request.old_path,
+            new_path=request.new_path,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rename file: {e!s}",
+        ) from e
+
+
+@router.get("/rename/folder")
+async def rename_folder_sse(
+    request: Request,
+    old_path: str,
+    new_path: str,
+    current_user: CurrentUser,
+) -> EventSourceResponse:
+    """Rename a folder and all its contents, streaming progress via SSE.
+
+    This moves all files under the old_path prefix to new_path.
+    Progress events are streamed as SSE with types: 'progress', 'complete', 'error'.
+    """
+    s3 = get_s3_service()
+    user_id = str(current_user.id)
+
+    # Ensure paths end with / for folder operations
+    old_prefix = old_path.rstrip("/") + "/"
+    new_prefix = new_path.rstrip("/") + "/"
+    old_full_prefix = _get_user_path(user_id, old_prefix)
+    new_full_prefix = _get_user_path(user_id, new_prefix)
+
+    async def event_generator() -> AsyncGenerator[dict, None]:
+        try:
+            # List all files in the source folder
+            source_files = s3.list_objs(prefix=old_full_prefix)
+
+            if not source_files:
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        FolderRenameProgress(
+                            event="error",
+                            total=0,
+                            completed=0,
+                            old_path=old_path,
+                            new_path=new_path,
+                            error=f"Folder not found or empty: {old_path}",
+                        ).model_dump()
+                    ),
+                }
+                return
+
+            total = len(source_files)
+            completed = 0
+
+            # Check if any destination files already exist
+            dest_files = s3.list_objs(prefix=new_full_prefix)
+            if dest_files:
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        FolderRenameProgress(
+                            event="error",
+                            total=total,
+                            completed=0,
+                            old_path=old_path,
+                            new_path=new_path,
+                            error=f"Destination folder already exists: {new_path}",
+                        ).model_dump()
+                    ),
+                }
+                return
+
+            # Move each file
+            for source_key in source_files:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    return
+
+                # Calculate new key
+                relative_path = source_key[len(old_full_prefix) :]
+                dest_key = new_full_prefix + relative_path
+                current_file = _strip_user_prefix(user_id, source_key)
+
+                # Send progress event
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(
+                        FolderRenameProgress(
+                            event="progress",
+                            total=total,
+                            completed=completed,
+                            current_file=current_file,
+                            old_path=old_path,
+                            new_path=new_path,
+                        ).model_dump()
+                    ),
+                }
+
+                # Copy and delete
+                s3.copy_file(source_key, dest_key)
+                s3.delete_obj(source_key)
+                completed += 1
+
+            # Send completion event
+            yield {
+                "event": "complete",
+                "data": json.dumps(
+                    FolderRenameProgress(
+                        event="complete",
+                        total=total,
+                        completed=completed,
+                        old_path=old_path,
+                        new_path=new_path,
+                    ).model_dump()
+                ),
+            }
+
+        except Exception as e:
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    FolderRenameProgress(
+                        event="error",
+                        total=0,
+                        completed=0,
+                        old_path=old_path,
+                        new_path=new_path,
+                        error=str(e),
+                    ).model_dump()
+                ),
+            }
+
+    return EventSourceResponse(event_generator())
+
+
 @router.get("/{file_key:path}/content", response_model=FileContentResponse)
 async def get_file_content(
     file_key: str,
@@ -410,177 +584,3 @@ async def delete_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete file: {e!s}",
         ) from e
-
-
-@router.post("/rename", response_model=RenameResponse)
-async def rename_file(
-    request: RenameRequest,
-    current_user: CurrentUser,
-) -> RenameResponse:
-    """Rename a single file in the user's storage.
-
-    This performs a copy-then-delete operation since S3 doesn't support rename.
-    For folders, use the /rename/folder endpoint which streams progress via SSE.
-    """
-    s3 = get_s3_service()
-    old_full_key = _get_user_path(str(current_user.id), request.old_path)
-    new_full_key = _get_user_path(str(current_user.id), request.new_path)
-
-    try:
-        # Verify source file exists
-        objects = s3.list_objs()
-        if old_full_key not in objects:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File not found: {request.old_path}",
-            )
-
-        # Check destination doesn't exist
-        if new_full_key in objects:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"File already exists: {request.new_path}",
-            )
-
-        # Copy to new location then delete original
-        s3.copy_file(old_full_key, new_full_key)
-        s3.delete_obj(old_full_key)
-
-        return RenameResponse(
-            success=True,
-            old_path=request.old_path,
-            new_path=request.new_path,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to rename file: {e!s}",
-        ) from e
-
-
-@router.get("/rename/folder")
-async def rename_folder_sse(
-    request: Request,
-    old_path: str,
-    new_path: str,
-    current_user: CurrentUser,
-) -> EventSourceResponse:
-    """Rename a folder and all its contents, streaming progress via SSE.
-
-    This moves all files under the old_path prefix to new_path.
-    Progress events are streamed as SSE with types: 'progress', 'complete', 'error'.
-    """
-    s3 = get_s3_service()
-    user_id = str(current_user.id)
-
-    # Ensure paths end with / for folder operations
-    old_prefix = old_path.rstrip("/") + "/"
-    new_prefix = new_path.rstrip("/") + "/"
-    old_full_prefix = _get_user_path(user_id, old_prefix)
-    new_full_prefix = _get_user_path(user_id, new_prefix)
-
-    async def event_generator() -> AsyncGenerator[dict, None]:
-        try:
-            # List all files in the source folder
-            source_files = s3.list_objs(prefix=old_full_prefix)
-
-            if not source_files:
-                yield {
-                    "event": "error",
-                    "data": json.dumps(
-                        FolderRenameProgress(
-                            event="error",
-                            total=0,
-                            completed=0,
-                            old_path=old_path,
-                            new_path=new_path,
-                            error=f"Folder not found or empty: {old_path}",
-                        ).model_dump()
-                    ),
-                }
-                return
-
-            total = len(source_files)
-            completed = 0
-
-            # Check if any destination files already exist
-            dest_files = s3.list_objs(prefix=new_full_prefix)
-            if dest_files:
-                yield {
-                    "event": "error",
-                    "data": json.dumps(
-                        FolderRenameProgress(
-                            event="error",
-                            total=total,
-                            completed=0,
-                            old_path=old_path,
-                            new_path=new_path,
-                            error=f"Destination folder already exists: {new_path}",
-                        ).model_dump()
-                    ),
-                }
-                return
-
-            # Move each file
-            for source_key in source_files:
-                # Check if client disconnected
-                if await request.is_disconnected():
-                    return
-
-                # Calculate new key
-                relative_path = source_key[len(old_full_prefix) :]
-                dest_key = new_full_prefix + relative_path
-                current_file = _strip_user_prefix(user_id, source_key)
-
-                # Send progress event
-                yield {
-                    "event": "progress",
-                    "data": json.dumps(
-                        FolderRenameProgress(
-                            event="progress",
-                            total=total,
-                            completed=completed,
-                            current_file=current_file,
-                            old_path=old_path,
-                            new_path=new_path,
-                        ).model_dump()
-                    ),
-                }
-
-                # Copy and delete
-                s3.copy_file(source_key, dest_key)
-                s3.delete_obj(source_key)
-                completed += 1
-
-            # Send completion event
-            yield {
-                "event": "complete",
-                "data": json.dumps(
-                    FolderRenameProgress(
-                        event="complete",
-                        total=total,
-                        completed=completed,
-                        old_path=old_path,
-                        new_path=new_path,
-                    ).model_dump()
-                ),
-            }
-
-        except Exception as e:
-            yield {
-                "event": "error",
-                "data": json.dumps(
-                    FolderRenameProgress(
-                        event="error",
-                        total=0,
-                        completed=0,
-                        old_path=old_path,
-                        new_path=new_path,
-                        error=str(e),
-                    ).model_dump()
-                ),
-            }
-
-    return EventSourceResponse(event_generator())
