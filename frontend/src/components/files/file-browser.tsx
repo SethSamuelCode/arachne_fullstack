@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -15,7 +15,9 @@ import {
   Folder,
   AlertCircle,
   Loader2,
-  FolderUp
+  FolderUp,
+  ChevronRight,
+  ChevronDown
 } from "lucide-react";
 
 interface FileInfo {
@@ -68,6 +70,14 @@ interface EmptyFolder {
   path: string;
 }
 
+interface FileTreeNode {
+  name: string;
+  path: string;
+  isFolder: boolean;
+  children: Map<string, FileTreeNode>;
+  file?: FileInfo;
+}
+
 interface FileBrowserProps {
   children?: React.ReactNode;
 }
@@ -90,6 +100,66 @@ function formatDate(dateString: string): string {
   });
 }
 
+/**
+ * Build a tree structure from flat file list
+ */
+function buildFileTree(files: FileInfo[], emptyFolders: EmptyFolder[]): FileTreeNode {
+  const root: FileTreeNode = {
+    name: "",
+    path: "",
+    isFolder: true,
+    children: new Map(),
+  };
+
+  // Add files to tree
+  for (const file of files) {
+    const parts = file.key.split("/");
+    let current = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      const currentPath = parts.slice(0, i + 1).join("/");
+
+      if (!current.children.has(part)) {
+        current.children.set(part, {
+          name: part,
+          path: currentPath,
+          isFolder: !isLast,
+          children: new Map(),
+          file: isLast ? file : undefined,
+        });
+      }
+
+      current = current.children.get(part)!;
+    }
+  }
+
+  // Add empty folders to tree
+  for (const folder of emptyFolders) {
+    const parts = folder.path.split("/");
+    let current = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const currentPath = parts.slice(0, i + 1).join("/");
+
+      if (!current.children.has(part)) {
+        current.children.set(part, {
+          name: part,
+          path: currentPath,
+          isFolder: true,
+          children: new Map(),
+        });
+      }
+
+      current = current.children.get(part)!;
+    }
+  }
+
+  return root;
+}
+
 export function FileBrowser({ children }: FileBrowserProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -99,11 +169,30 @@ export function FileBrowser({ children }: FileBrowserProps) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Concurrency limit for uploads
   const UPLOAD_CONCURRENCY = 5;
+
+  // Build file tree from flat list
+  const fileTree = useMemo(
+    () => buildFileTree(files, emptyFolders),
+    [files, emptyFolders]
+  );
+
+  const toggleFolder = useCallback((path: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   const fetchFiles = useCallback(async () => {
     setIsLoading(true);
@@ -559,7 +648,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
             {/* Error Message */}
             {error && (
               <div className="mx-4 mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-2 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
@@ -594,75 +683,19 @@ export function FileBrowser({ children }: FileBrowserProps) {
                   <p className="text-xs">Upload files to get started</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {/* Empty folders */}
-                  {emptyFolders.map((folder) => (
-                    <div
-                      key={`folder-${folder.path}`}
-                      className="p-3 border rounded-lg bg-card/50 border-dashed"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0 flex items-center gap-2">
-                          <Folder className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate text-muted-foreground" title={folder.path}>
-                              {folder.path}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Empty folder
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => setEmptyFolders((prev) => prev.filter((f) => f.path !== folder.path))}
-                          title="Remove from list"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {/* Files */}
-                  {files.map((file) => (
-                    <div
-                      key={file.key}
-                      className="p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate" title={file.key}>
-                            {file.key}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatFileSize(file.size)} • {formatDate(file.last_modified)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => downloadFile(file.key)}
-                            title="Download"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => deleteFile(file.key)}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  <FileTreeView
+                    node={fileTree}
+                    depth={0}
+                    collapsedFolders={collapsedFolders}
+                    onToggleFolder={toggleFolder}
+                    onDownload={downloadFile}
+                    onDelete={deleteFile}
+                    onRemoveEmptyFolder={(path) =>
+                      setEmptyFolders((prev) => prev.filter((f) => f.path !== path))
+                    }
+                    emptyFolderPaths={new Set(emptyFolders.map((f) => f.path))}
+                  />
                 </div>
               )}
             </div>
@@ -670,5 +703,162 @@ export function FileBrowser({ children }: FileBrowserProps) {
         </SheetContent>
       </Sheet>
     </>
+  );
+}
+
+interface FileTreeViewProps {
+  node: FileTreeNode;
+  depth: number;
+  collapsedFolders: Set<string>;
+  onToggleFolder: (path: string) => void;
+  onDownload: (key: string) => void;
+  onDelete: (key: string) => void;
+  onRemoveEmptyFolder: (path: string) => void;
+  emptyFolderPaths: Set<string>;
+}
+
+function FileTreeView({
+  node,
+  depth,
+  collapsedFolders,
+  onToggleFolder,
+  onDownload,
+  onDelete,
+  onRemoveEmptyFolder,
+  emptyFolderPaths,
+}: FileTreeViewProps) {
+  // Sort children: folders first, then files, alphabetically
+  const sortedChildren = Array.from(node.children.values()).sort((a, b) => {
+    if (a.isFolder && !b.isFolder) return -1;
+    if (!a.isFolder && b.isFolder) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // For root node, just render children
+  if (depth === 0) {
+    return (
+      <>
+        {sortedChildren.map((child) => (
+          <FileTreeView
+            key={child.path}
+            node={child}
+            depth={1}
+            collapsedFolders={collapsedFolders}
+            onToggleFolder={onToggleFolder}
+            onDownload={onDownload}
+            onDelete={onDelete}
+            onRemoveEmptyFolder={onRemoveEmptyFolder}
+            emptyFolderPaths={emptyFolderPaths}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const isCollapsed = collapsedFolders.has(node.path);
+  const isEmptyFolder = emptyFolderPaths.has(node.path);
+  const hasChildren = node.children.size > 0;
+  const paddingLeft = (depth - 1) * 16;
+
+  if (node.isFolder) {
+    return (
+      <div>
+        <div
+          className={`flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors ${
+            isEmptyFolder ? "border border-dashed border-muted-foreground/30" : ""
+          }`}
+          style={{ paddingLeft }}
+          onClick={() => hasChildren && onToggleFolder(node.path)}
+        >
+          {hasChildren ? (
+            isCollapsed ? (
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )
+          ) : (
+            <span className="w-4" />
+          )}
+          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="text-sm truncate flex-1" title={node.path}>
+            {node.name}
+          </span>
+          {isEmptyFolder && (
+            <>
+              <span className="text-xs text-muted-foreground">(empty)</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-destructive hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveEmptyFolder(node.path);
+                }}
+                title="Remove from list"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </>
+          )}
+        </div>
+        {!isCollapsed && hasChildren && (
+          <div>
+            {sortedChildren.map((child) => (
+              <FileTreeView
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                collapsedFolders={collapsedFolders}
+                onToggleFolder={onToggleFolder}
+                onDownload={onDownload}
+                onDelete={onDelete}
+                onRemoveEmptyFolder={onRemoveEmptyFolder}
+                emptyFolderPaths={emptyFolderPaths}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // File node
+  return (
+    <div
+      className="flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group"
+      style={{ paddingLeft: paddingLeft + 20 }}
+    >
+      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm truncate block" title={node.path}>
+          {node.name}
+        </span>
+        {node.file && (
+          <span className="text-xs text-muted-foreground">
+            {formatFileSize(node.file.size)}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={() => onDownload(node.path)}
+          title="Download"
+        >
+          <Download className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-destructive hover:text-destructive"
+          onClick={() => onDelete(node.path)}
+          title="Delete"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
   );
 }
