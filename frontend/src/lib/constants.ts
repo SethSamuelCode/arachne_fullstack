@@ -31,6 +31,7 @@ export const ROUTES = {
   REGISTER: "/register",
   DASHBOARD: "/dashboard",
   CHAT: "/chat",
+  FILES: "/files",
   PROFILE: "/profile",
   SETTINGS: "/settings",
   ADMIN_USERS: "/admin/users",

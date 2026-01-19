@@ -8,6 +8,7 @@ import { ROUTES } from "@/lib/constants";
 import {
   LayoutDashboard,
   MessageSquare,
+  FolderOpen,
   Users,
   Settings,
   ChevronLeft,
@@ -21,6 +22,7 @@ import { LogOut, User } from "lucide-react";
 const navigation = [
   { name: "Dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { name: "Chat", href: ROUTES.CHAT, icon: MessageSquare },
+  { name: "Files", href: ROUTES.FILES, icon: FolderOpen },
 ];
 
 const adminNavigation = [
