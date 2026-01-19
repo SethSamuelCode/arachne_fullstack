@@ -71,6 +71,18 @@ interface FileContentResponse {
   is_truncated: boolean;
 }
 
+interface FilePreviewData {
+  key: string;
+  content_type: string | null;
+  size: number;
+  // For images: presigned URL for direct loading
+  presigned_url?: string;
+  // For text files: actual content
+  content?: string;
+  is_binary: boolean;
+  is_truncated: boolean;
+}
+
 interface UploadProgress {
   completed: number;
   total: number;
@@ -181,7 +193,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
-  const [previewFile, setPreviewFile] = useState<FileContentResponse | null>(null);
+  const [previewFile, setPreviewFile] = useState<FilePreviewData | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -576,10 +588,47 @@ export function FileBrowser({ children }: FileBrowserProps) {
     setIsLoadingPreview(true);
     setError(null);
     try {
-      const response = await apiClient.get<FileContentResponse>(
-        `/files/content/${fileKey}`
-      );
-      setPreviewFile(response);
+      // Check if it's an image by extension - use presigned URL for fast loading
+      const ext = fileKey.split(".").pop()?.toLowerCase();
+      const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"];
+      
+      if (ext && imageExtensions.includes(ext)) {
+        // For images, get presigned URL for direct browser loading
+        const downloadResponse = await apiClient.get<PresignedDownloadResponse>(
+          `/files/${fileKey}/download`
+        );
+        
+        // Get file info from the files list
+        const fileInfo = files.find(f => f.key === fileKey);
+        const mimeMap: Record<string, string> = {
+          png: "image/png",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          gif: "image/gif",
+          webp: "image/webp",
+          svg: "image/svg+xml",
+          bmp: "image/bmp",
+          ico: "image/x-icon",
+        };
+        
+        setPreviewFile({
+          key: fileKey,
+          content_type: mimeMap[ext] || "image/png",
+          size: fileInfo?.size || 0,
+          presigned_url: downloadResponse.url,
+          is_binary: true,
+          is_truncated: false,
+        });
+      } else {
+        // For non-images, fetch content as before
+        const response = await apiClient.get<FileContentResponse>(
+          `/files/content/${fileKey}`
+        );
+        setPreviewFile({
+          ...response,
+          presigned_url: undefined,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load file preview");
     } finally {
@@ -753,32 +802,6 @@ export function FileBrowser({ children }: FileBrowserProps) {
           </DialogHeader>
           <DialogBody>
             {(() => {
-              // Helper to detect if file is an image
-              const isImage = (file: FileContentResponse | null): boolean => {
-                if (!file) return false;
-                if (file.content_type?.startsWith("image/")) return true;
-                // Fallback: check extension
-                const ext = file.key.split(".").pop()?.toLowerCase();
-                return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"].includes(ext || "");
-              };
-              
-              // Get mime type for data URL
-              const getImageMimeType = (file: FileContentResponse): string => {
-                if (file.content_type?.startsWith("image/")) return file.content_type;
-                const ext = file.key.split(".").pop()?.toLowerCase();
-                const mimeMap: Record<string, string> = {
-                  png: "image/png",
-                  jpg: "image/jpeg",
-                  jpeg: "image/jpeg",
-                  gif: "image/gif",
-                  webp: "image/webp",
-                  svg: "image/svg+xml",
-                  bmp: "image/bmp",
-                  ico: "image/x-icon",
-                };
-                return mimeMap[ext || ""] || "image/png";
-              };
-
               if (isLoadingPreview) {
                 return (
                   <div className="flex items-center justify-center py-8">
@@ -787,59 +810,44 @@ export function FileBrowser({ children }: FileBrowserProps) {
                 );
               }
               
-              if (previewFile?.is_truncated) {
+              // Image with presigned URL - fast direct loading from S3
+              if (previewFile?.presigned_url) {
                 return (
-                  <>
-                    <div className="mb-2 text-sm text-amber-500 bg-amber-500/10 p-2 rounded">
-                      ⚠️ File truncated (showing first 200MB of {formatFileSize(previewFile.size)})
-                    </div>
-                    {previewFile.is_binary ? (
-                      isImage(previewFile) ? (
-                        <div className="flex justify-center">
-                          <img 
-                            src={`data:${getImageMimeType(previewFile)};base64,${previewFile.content}`}
-                            alt={previewFile.key}
-                            className="max-w-full max-h-[60vh] object-contain rounded"
-                          />
-                        </div>
-                      ) : (
-                        <div className="text-center text-muted-foreground py-8">
-                          Binary file - cannot display preview
-                        </div>
-                      )
-                    ) : (
-                      <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
-                        {previewFile.content}
-                      </pre>
-                    )}
-                  </>
-                );
-              }
-              
-              if (previewFile?.is_binary) {
-                return isImage(previewFile) ? (
                   <div className="flex flex-col items-center">
                     <img 
-                      src={`data:${getImageMimeType(previewFile)};base64,${previewFile.content}`}
+                      src={previewFile.presigned_url}
                       alt={previewFile.key}
                       className="max-w-full max-h-[60vh] object-contain rounded"
                     />
                     <p className="text-xs text-muted-foreground mt-2">Size: {formatFileSize(previewFile.size)}</p>
                   </div>
-                ) : (
+                );
+              }
+              
+              // Text content
+              if (previewFile && !previewFile.is_binary && previewFile.content) {
+                return (
+                  <>
+                    {previewFile.is_truncated && (
+                      <div className="mb-2 text-sm text-amber-500 bg-amber-500/10 p-2 rounded">
+                        ⚠️ File truncated (showing first 200MB of {formatFileSize(previewFile.size)})
+                      </div>
+                    )}
+                    <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
+                      {previewFile.content}
+                    </pre>
+                  </>
+                );
+              }
+              
+              // Binary file (non-image)
+              if (previewFile?.is_binary) {
+                return (
                   <div className="text-center text-muted-foreground py-8">
                     <File className="h-12 w-12 mx-auto mb-2 opacity-50" />
                     <p>Binary file - cannot display preview</p>
                     <p className="text-xs mt-1">Size: {formatFileSize(previewFile.size)}</p>
                   </div>
-                );
-              }
-              
-              if (previewFile) {
-                return (
-                  <pre className="text-sm whitespace-pre-wrap break-all font-mono bg-muted p-4 rounded-md overflow-auto max-h-[60vh]">
-                    {previewFile.content}
-                  </pre>
                 );
               }
               
