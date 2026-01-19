@@ -577,7 +577,7 @@ export function FileBrowser({ children }: FileBrowserProps) {
     setError(null);
     try {
       const response = await apiClient.get<FileContentResponse>(
-        `/files/${encodeURIComponent(fileKey)}/content`
+        `/files/content/${fileKey}`
       );
       setPreviewFile(response);
     } catch (err) {
