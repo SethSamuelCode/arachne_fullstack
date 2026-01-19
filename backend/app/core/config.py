@@ -253,6 +253,12 @@ class Settings(BaseSettings):
     CORS_ALLOW_METHODS: list[str] = ["*"]
     CORS_ALLOW_HEADERS: list[str] = ["*"]
 
+    # === Proxy Configuration ===
+    # Trusted hosts for ProxyHeadersMiddleware (comma-separated IPs or CIDRs)
+    # Use "*" for local development, restrict in production to docker_gwbridge gateway
+    # Find your gateway: docker network inspect docker_gwbridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+    TRUSTED_PROXY_HOSTS: str = "*"
+
     @field_validator("CORS_ORIGINS")
     @classmethod
     def validate_cors_origins(cls, v: list[str], info: ValidationInfo) -> list[str]:

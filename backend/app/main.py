@@ -16,6 +16,9 @@ from app.core.csrf import CSRFMiddleware
 from app.core.logfire_setup import instrument_app, setup_logfire
 from app.core.middleware import RequestIDMiddleware, SecurityHeadersMiddleware
 
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 
 class LifespanState(TypedDict):
     """Lifespan state - resources available via request.state."""
@@ -182,6 +185,15 @@ redesign of the arachne chat bot to better refine capability
     from starlette.middleware.sessions import SessionMiddleware
 
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+    # Proxy headers middleware (for correct client IPs behind proxies)
+    # Parse comma-separated trusted hosts from settings ("*" = trust all, for local dev)
+    trusted_hosts: list[str] | str = (
+        "*"
+        if settings.TRUSTED_PROXY_HOSTS == "*"
+        else [h.strip() for h in settings.TRUSTED_PROXY_HOSTS.split(",") if h.strip()]
+    )
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts)
 
     # Admin panel (all environments)
     from app.admin import setup_admin
