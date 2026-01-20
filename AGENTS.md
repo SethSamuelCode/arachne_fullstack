@@ -6,32 +6,52 @@ This file provides guidance for AI coding agents (Codex, Copilot, Cursor, Zed, O
 
 **arachne_fullstack** - FastAPI application.
 
-**Stack:** FastAPI + Pydantic v2, PostgreSQL, JWT auth, Redis, Next.js 15
+**Stack:** FastAPI + Pydantic v2, PostgreSQL (async), JWT auth, Redis, PydanticAI, Celery, Next.js 15
 
 ## Commands
 
+Use `make` shortcuts (run from project root):
+
 ```bash
-# Run server
-cd backend && uv run uvicorn app.main:app --reload
+make dev              # Start dev server with reload
+make test             # Run tests
+make format           # Auto-format code (ruff)
+make lint             # Check code quality
+make db-upgrade       # Apply migrations
+make db-migrate       # Create new migration
+make docker-up        # Start backend services
+make help             # Show all commands
+```
 
-# Tests & lint
-pytest
-ruff check . --fix && ruff format .
+### Running Commands via Docker (for LLMs)
 
-# Migrations
-uv run alembic upgrade head
+```bash
+docker compose exec app <command>        # Backend commands
+docker compose exec frontend <command>   # Frontend commands
+
+# Examples:
+docker compose exec app pytest
+docker compose exec app make db-upgrade
+docker compose exec frontend bun test
 ```
 
 ## Project Structure
 
 ```
 backend/app/
-├── api/routes/v1/    # Endpoints
+├── api/routes/v1/    # HTTP endpoints
 ├── services/         # Business logic
-├── repositories/     # Data access
+├── repositories/     # Data access layer
 ├── schemas/          # Pydantic models
-├── db/models/        # DB models
-└── commands/         # CLI commands
+├── db/models/        # SQLAlchemy models
+├── core/             # Config, security, middleware, utils
+├── agents/           # AI agents (PydanticAI)
+│   └── tools/        # Agent tools
+├── clients/          # External service clients (Redis, APIs)
+├── commands/         # CLI commands (auto-discovered)
+├── pipelines/        # Data processing pipelines
+└── worker/           # Celery background tasks
+    └── tasks/        # Task definitions
 ```
 
 ## Key Conventions
@@ -39,6 +59,7 @@ backend/app/
 - `db.flush()` in repositories, not `commit()`
 - Services raise `NotFoundError`, `AlreadyExistsError`
 - Separate `Create`, `Update`, `Response` schemas
+- Commands auto-discovered from `app/commands/`
 
 ## More Info
 
@@ -46,3 +67,4 @@ backend/app/
 - `docs/adding_features.md` - How to add features
 - `docs/testing.md` - Testing guide
 - `docs/patterns.md` - Code patterns
+- `docs/frontend.md` - Frontend architecture

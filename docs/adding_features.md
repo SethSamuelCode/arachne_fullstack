@@ -101,13 +101,77 @@ async def my_tool(ctx: RunContext[Deps], param: str) -> dict:
 ## Adding a Database Migration
 
 ```bash
-# Create migration
-uv run alembic revision --autogenerate -m "Add items table"
+# Using make (recommended)
+make db-migrate       # Create new migration (prompts for message)
+make db-upgrade       # Apply migrations
+make db-rollback      # Rollback last migration
 
-# Apply migration
+# Via Docker (for LLMs)
+docker compose exec app make db-migrate
+docker compose exec app make db-upgrade
+
+# Direct commands (from backend/)
+uv run alembic revision --autogenerate -m "Add items table"
 uv run alembic upgrade head
 
 # Or use CLI
 uv run arachne_fullstack db migrate -m "Add items table"
 uv run arachne_fullstack db upgrade
 ```
+
+## Adding a Celery Background Task
+
+1. **Create task** in `worker/tasks/`
+   ```python
+   # worker/tasks/my_tasks.py
+   from celery import shared_task
+   import logging
+
+   logger = logging.getLogger(__name__)
+
+   @shared_task(bind=True, max_retries=3)
+   def my_task(self, param: str) -> dict:
+       """
+       Task description.
+
+       Args:
+           param: Description of parameter
+
+       Returns:
+           Result dictionary
+       """
+       logger.info(f"Processing: {param}")
+
+       try:
+           # Your task logic here
+           result = {"status": "completed", "param": param}
+           return result
+
+       except Exception as exc:
+           logger.error(f"Task failed: {exc}")
+           # Retry with exponential backoff
+           raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+   ```
+
+2. **Import in tasks/__init__.py** (if not auto-discovered)
+   ```python
+   from .my_tasks import my_task
+   ```
+
+3. **Call task from service or route**
+   ```python
+   from app.worker.tasks.my_tasks import my_task
+
+   # Async call (returns immediately)
+   result = my_task.delay("value")
+
+   # Get result later
+   task_result = result.get(timeout=30)
+   ```
+
+4. **Run Celery worker**
+   ```bash
+   make celery-worker    # Start worker
+   make celery-beat      # Start scheduler (for periodic tasks)
+   make celery-flower    # Start monitoring UI
+   ```

@@ -8,38 +8,88 @@
 
 ## Commands
 
+Use `make` shortcuts (run from project root):
+
 ```bash
-# Backend
-cd backend
+# Development
+make dev              # Start dev server with reload
+make test             # Run pytest
+make format           # Auto-format (ruff format + ruff check --fix)
+make lint             # Check code quality (ruff + mypy)
+
+# Database
+make db-upgrade       # Apply migrations
+make db-migrate       # Create new migration
+make db-rollback      # Rollback last migration
+
+# Docker
+make docker-up        # Start backend services (postgres, redis, app)
+make docker-down      # Stop all services
+make docker-frontend  # Start frontend separately
+
+# Celery
+make celery-worker    # Start Celery worker
+make celery-beat      # Start Celery beat scheduler
+
+make help             # Show all available commands
+```
+
+### Running Commands via Docker (for LLMs)
+
+When executing code as an LLM agent, use Docker exec:
+
+```bash
+docker compose exec app <command>        # Backend commands
+docker compose exec frontend <command>   # Frontend commands
+
+# Examples:
+docker compose exec app pytest
+docker compose exec app make db-upgrade
+docker compose exec frontend bun test
+```
+
+### Raw Commands (alternative)
+
+```bash
+# Backend (from backend/)
 uv run uvicorn app.main:app --reload --port 8000
 pytest
 ruff check . --fix && ruff format .
 
-# Database
+# Database migrations
 uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "Description"
 
-# Frontend
-cd frontend
+# Frontend (from frontend/)
 bun dev
 bun test
-
-# Docker
-docker compose up -d
 ```
 
 ## Project Structure
 
 ```
 backend/app/
-├── api/routes/v1/    # HTTP endpoints
+├── api/routes/v1/    # HTTP endpoints (REST + WebSocket)
 ├── services/         # Business logic
-├── repositories/     # Data access
+├── repositories/     # Data access layer
 ├── schemas/          # Pydantic models
-├── db/models/        # Database models
-├── core/config.py    # Settings
-├── agents/           # AI agents
-└── commands/         # CLI commands
+├── db/models/        # SQLAlchemy models
+├── core/             # Config, security, middleware, utils
+│   ├── config.py     # Settings via pydantic-settings
+│   ├── security.py   # JWT/API key utilities
+│   ├── exceptions.py # Domain exceptions
+│   ├── middleware.py # Request middleware
+│   ├── rate_limit.py # Rate limiting
+│   └── cache.py      # Caching utilities
+├── agents/           # AI agents (PydanticAI)
+│   └── tools/        # Agent tools
+├── clients/          # External service clients
+│   ├── redis.py      # Redis client
+│   └── academic/     # Academic search APIs
+├── commands/         # CLI commands (auto-discovered)
+├── pipelines/        # Data processing pipelines
+└── worker/           # Celery background tasks
+    └── tasks/        # Task definitions
 ```
 
 ## Key Conventions
@@ -56,6 +106,7 @@ Before starting complex tasks, read relevant docs:
 - **Adding features:** `docs/adding_features.md`
 - **Testing guide:** `docs/testing.md`
 - **Code patterns:** `docs/patterns.md`
+- **Frontend architecture:** `docs/frontend.md`
 
 ## Environment Variables
 

@@ -3,12 +3,16 @@
 ## Running Tests
 
 ```bash
-cd backend
+# Using make (recommended)
+make test             # Run all tests
+make test-cov         # Run with coverage
 
-# Run all tests
+# Via Docker (for LLMs)
+docker compose exec app pytest
+docker compose exec app pytest --cov=app --cov-report=term-missing
+
+# Direct commands (from backend/)
 pytest
-
-# Run with coverage
 pytest --cov=app --cov-report=term-missing
 
 # Run specific test file
@@ -16,12 +20,6 @@ pytest tests/api/test_health.py -v
 
 # Run specific test
 pytest tests/api/test_health.py::test_health_check -v
-
-# Run only unit tests
-pytest tests/unit/
-
-# Run only integration tests
-pytest tests/integration/
 
 # Run with verbose output
 pytest -v
@@ -34,14 +32,25 @@ pytest -x
 
 ```
 tests/
-├── conftest.py          # Shared fixtures
-├── api/                 # API endpoint tests
+├── conftest.py           # Shared fixtures
+├── api/                  # API endpoint tests
+│   ├── test_auth.py
+│   ├── test_exceptions.py
+│   ├── test_files.py
 │   ├── test_health.py
-│   └── test_auth.py
-├── unit/                # Unit tests (services, utils)
-│   └── test_services.py
-└── integration/         # Integration tests
-    └── test_db.py
+│   ├── test_items.py
+│   ├── test_metrics.py
+│   └── test_users.py
+├── test_admin.py         # Admin functionality tests
+├── test_agents.py        # AI agent tests
+├── test_clients.py       # External client tests
+├── test_commands.py      # CLI command tests
+├── test_core.py          # Core utilities tests
+├── test_pipelines.py     # Pipeline tests
+├── test_repositories.py  # Repository tests
+├── test_security.py      # Security tests
+├── test_services.py      # Service tests
+└── test_worker.py        # Celery task tests
 ```
 
 ## Key Fixtures (`conftest.py`)
@@ -95,19 +104,15 @@ def test_protected_endpoint(auth_client):
 ## Frontend Tests
 
 ```bash
-cd frontend
+# Using bun (from frontend/)
+bun test              # Run unit tests (Vitest)
+bun test --watch      # Watch mode
+bun test:e2e          # Run E2E tests (Playwright)
+bun test:e2e --headed # E2E in headed mode (see browser)
 
-# Run unit tests
-bun test
-
-# Run with watch mode
-bun test --watch
-
-# Run E2E tests
-bun test:e2e
-
-# Run E2E in headed mode (see browser)
-bun test:e2e --headed
+# Via Docker (for LLMs)
+docker compose exec frontend bun test
+docker compose exec frontend bun test:e2e
 ```
 
 ## Test Database

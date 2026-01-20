@@ -151,3 +151,159 @@ function ChatPage() {
     const { messages, sendMessage, isStreaming } = useChat();
 }
 ```
+
+## AI Agent Pattern (PydanticAI)
+
+Agents wrap PydanticAI for conversational AI with tool support:
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai.models.google import GoogleModel
+
+from app.agents.tool_register import register_tools
+from app.schemas.assistant import Deps
+
+class AssistantAgent:
+    """Assistant agent wrapper for conversational AI."""
+
+    def __init__(self, model_name: str | None = None, system_prompt: str | None = None):
+        self.model_name = model_name or "gemini-2.0-flash"
+        self.system_prompt = system_prompt or "You are a helpful assistant."
+        self._agent: Agent[Deps, str] | None = None
+
+    def _create_agent(self) -> Agent[Deps, str]:
+        model = GoogleModel(model_name=self.model_name)
+        agent = Agent[Deps, str](
+            model=model,
+            deps_type=Deps,
+            system_prompt=self.system_prompt,
+            retries=3,
+        )
+        register_tools(agent)
+        return agent
+
+    @property
+    def agent(self) -> Agent[Deps, str]:
+        if self._agent is None:
+            self._agent = self._create_agent()
+        return self._agent
+```
+
+### Agent Tool Pattern
+
+```python
+from pydantic_ai import RunContext
+from app.schemas.assistant import Deps
+
+@agent.tool
+async def my_tool(ctx: RunContext[Deps], param: str) -> dict:
+    """
+    Tool description for LLM - be specific about what it does.
+
+    ARGS:
+        param: Description of what this parameter controls
+
+    RETURNS:
+        Dictionary with result data
+
+    USE WHEN:
+        - User asks for X
+        - Need to perform Y operation
+    """
+    # Access dependencies via ctx.deps
+    db = ctx.deps.db
+    user = ctx.deps.user
+
+    result = await some_operation(param)
+    return {"result": result}
+```
+
+## Celery Task Pattern
+
+Background tasks with retry support:
+
+```python
+from celery import shared_task
+import logging
+
+logger = logging.getLogger(__name__)
+
+@shared_task(bind=True, max_retries=3)
+def process_data(self, data_id: str) -> dict:
+    """
+    Process data asynchronously.
+
+    Args:
+        data_id: ID of data to process
+
+    Returns:
+        Result dictionary with status
+    """
+    logger.info(f"Processing data: {data_id}")
+
+    try:
+        # Your processing logic
+        result = {"status": "completed", "data_id": data_id}
+        return result
+
+    except Exception as exc:
+        logger.error(f"Task failed: {exc}")
+        # Retry with exponential backoff
+        raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+```
+
+### Calling Tasks
+
+```python
+from app.worker.tasks.my_tasks import process_data
+
+# Async call (returns immediately)
+result = process_data.delay("item-123")
+
+# Get result later (blocking)
+task_result = result.get(timeout=30)
+
+# Check status
+if result.ready():
+    print(result.result)
+```
+
+## WebSocket Route Pattern
+
+```python
+from fastapi import APIRouter, WebSocket
+
+router = APIRouter()
+
+class ConnectionManager:
+    """WebSocket connection manager."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket) -> None:
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str) -> None:
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time communication."""
+    await manager.connect(websocket)
+    try:
+        async for data in websocket.iter_text():
+            await manager.broadcast(f"Message: {data}")
+    finally:
+        manager.disconnect(websocket)
+```
