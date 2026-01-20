@@ -32,20 +32,34 @@ let cachedPublicKey: CryptoKey | null = null;
 let cachedKeyPem: string | null = null;
 
 /**
+ * Sanitize a PEM key string from environment variable.
+ * 
+ * Environment variables often have escaped \n instead of real newlines.
+ * This function converts them to actual newlines for proper PEM parsing.
+ */
+function sanitizePemKey(pem: string): string {
+  // Convert escaped \n to actual newlines (common in .env files)
+  return pem.replace(/\\n/g, "\n");
+}
+
+/**
  * Import and cache the Ed25519 public key for verification.
  *
  * @param publicKeyPem - PEM-encoded Ed25519 public key
  * @returns CryptoKey for JWT verification
  */
 async function getPublicKey(publicKeyPem: string): Promise<CryptoKey> {
+  // Sanitize the PEM key (convert escaped \n to actual newlines)
+  const sanitizedPem = sanitizePemKey(publicKeyPem);
+  
   // Return cached key if PEM hasn't changed
-  if (cachedPublicKey && cachedKeyPem === publicKeyPem) {
+  if (cachedPublicKey && cachedKeyPem === sanitizedPem) {
     return cachedPublicKey;
   }
 
   // EdDSA with Ed25519 curve
-  cachedPublicKey = await importSPKI(publicKeyPem, "EdDSA");
-  cachedKeyPem = publicKeyPem;
+  cachedPublicKey = await importSPKI(sanitizedPem, "EdDSA");
+  cachedKeyPem = sanitizedPem;
   return cachedPublicKey;
 }
 
