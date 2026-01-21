@@ -65,12 +65,18 @@ def mock_item_service(mock_item: MockItem, mock_items: list[MockItem]) -> MagicM
 async def client_with_mock_service(
     mock_item_service: MagicMock,
     mock_db_session,
+    monkeypatch,
 ) -> AsyncClient:
     """Client with mocked item service."""
     from httpx import ASGITransport
 
     from app.api.deps import get_item_service
+    from app.core import config
     from app.db.session import get_db_session
+
+    # Set internal API key for bypassing CSRF
+    test_api_key = "test-internal-api-key"
+    monkeypatch.setattr(config.settings, "INTERNAL_API_KEY", test_api_key)
 
     app.dependency_overrides[get_item_service] = lambda db=None: mock_item_service
     app.dependency_overrides[get_db_session] = lambda: mock_db_session
@@ -78,6 +84,7 @@ async def client_with_mock_service(
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
+        headers={"X-Internal-API-Key": test_api_key},
     ) as ac:
         yield ac
 

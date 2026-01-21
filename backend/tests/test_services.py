@@ -94,6 +94,7 @@ class TestUserServicePostgresql:
         """Test registering a new user."""
         with patch("app.services.user.user_repo") as mock_repo:
             mock_repo.get_by_email = AsyncMock(return_value=None)
+            mock_repo.count = AsyncMock(return_value=1)  # Not the first user
             mock_repo.create = AsyncMock(return_value=mock_user)
 
             user_in = UserCreate(
@@ -200,8 +201,11 @@ class TestUserServicePostgresql:
     @pytest.mark.anyio
     async def test_delete_success(self, user_service: UserService, mock_user: MockUser):
         """Test deleting user."""
-        with patch("app.services.user.user_repo") as mock_repo:
-            mock_repo.delete = AsyncMock(return_value=mock_user)
+        with patch("app.services.user.user_repo") as mock_repo, patch(
+            "app.services.user.session_repo"
+        ) as mock_session_repo:
+            mock_repo.soft_delete = AsyncMock(return_value=mock_user)
+            mock_session_repo.deactivate_all_user_sessions = AsyncMock()
 
             result = await user_service.delete(mock_user.id)
 
@@ -211,7 +215,7 @@ class TestUserServicePostgresql:
     async def test_delete_not_found(self, user_service: UserService):
         """Test deleting non-existent user."""
         with patch("app.services.user.user_repo") as mock_repo:
-            mock_repo.delete = AsyncMock(return_value=None)
+            mock_repo.soft_delete = AsyncMock(return_value=None)
 
             with pytest.raises(NotFoundError):
                 await user_service.delete(uuid4())

@@ -458,7 +458,7 @@ class TestRegisterModelsAuto:
 class TestGetSyncEngine:
     """Tests for get_sync_engine function."""
 
-    @patch("app.admin.create_engine")
+    @patch("sqlalchemy.create_engine")
     @patch("app.admin.settings")
     def test_creates_engine_with_settings(self, mock_settings, mock_create_engine):
         """Test that engine is created with correct settings."""
@@ -480,7 +480,7 @@ class TestGetSyncEngine:
         # Reset for other tests
         admin_module._sync_engine = None
 
-    @patch("app.admin.create_engine")
+    @patch("sqlalchemy.create_engine")
     @patch("app.admin.settings")
     def test_returns_cached_engine(self, mock_settings, mock_create_engine):
         """Test that engine is cached and reused."""
@@ -733,7 +733,9 @@ class TestAdminAuth:
         result = await auth_backend.logout(mock_request)
 
         assert result is True
-        mock_request.session.clear.assert_called_once()
+        # Verify session was cleared
+        assert "admin_user_id" not in mock_request.session
+        assert "admin_email" not in mock_request.session
 
     @pytest.mark.anyio
     async def test_authenticate_returns_false_without_session(self, auth_backend, mock_request):

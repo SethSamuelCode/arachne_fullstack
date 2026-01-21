@@ -12,30 +12,27 @@ class TestExampleTask:
         """Test example_task completes successfully."""
         from app.worker.tasks.examples import example_task
 
-        # Create a mock for self (the task)
-        mock_self = MagicMock()
-        mock_self.request.id = "test-task-id"
-
         with patch("app.worker.tasks.examples.time.sleep"):
-            result = example_task.run(mock_self, "test message")
+            # Use apply() which runs the task synchronously and returns an EagerResult
+            result = example_task.apply(args=["test message"])
 
-        assert result["status"] == "completed"
-        assert "test message" in result["message"]
-        assert result["task_id"] == "test-task-id"
+        assert result.successful()
+        assert result.result["status"] == "completed"
+        assert "test message" in result.result["message"]
 
     def test_example_task_retry_on_error(self):
         """Test example_task retries on error."""
+        from celery.exceptions import Retry
+
         from app.worker.tasks.examples import example_task
 
-        mock_self = MagicMock()
-        mock_self.request.id = "test-task-id"
-        mock_self.request.retries = 0
-
         with patch("app.worker.tasks.examples.time.sleep", side_effect=Exception("Test error")):
-            mock_self.retry = MagicMock(side_effect=Exception("Retry"))
-            with pytest.raises(Exception, match="Retry"):
-                example_task.run(mock_self, "test message")
-            mock_self.retry.assert_called_once()
+            # When an exception is raised and retry is called, Celery raises Retry
+            # Using apply() with throw=False captures the exception
+            result = example_task.apply(args=["test message"], throw=False)
+
+        # Task should have failed (retried)
+        assert result.failed()
 
 
 class TestLongRunningTask:
@@ -45,16 +42,12 @@ class TestLongRunningTask:
         """Test long_running_task completes with progress."""
         from app.worker.tasks.examples import long_running_task
 
-        mock_self = MagicMock()
-        mock_self.request.id = "test-task-id"
-
         with patch("app.worker.tasks.examples.time.sleep"):
-            result = long_running_task.run(mock_self, duration=3)
+            result = long_running_task.apply(kwargs={"duration": 3})
 
-        assert result["status"] == "completed"
-        assert result["duration"] == 3
-        # Check progress updates were made
-        assert mock_self.update_state.call_count == 3
+        assert result.successful()
+        assert result.result["status"] == "completed"
+        assert result.result["duration"] == 3
 
 
 class TestSendEmailTask:

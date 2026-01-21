@@ -12,6 +12,7 @@ from app.api.deps import get_current_active_superuser, get_current_user, get_use
 from app.api.deps import get_db_session
 from app.api.deps import get_redis
 from app.core.config import settings
+from app.db.models.user import UserRole
 from app.main import app
 
 
@@ -25,7 +26,7 @@ class MockUser:
         full_name="Test User",
         is_active=True,
         is_superuser=False,
-        role="admin",
+        role=UserRole.USER,
     ):
         self.id = id or uuid4()
         self.email = email
@@ -40,8 +41,8 @@ class MockUser:
     def has_role(self, role) -> bool:
         """Check if user has the specified role."""
         if hasattr(role, "value"):
-            return self.role == role.value
-        return self.role == role
+            return self.role.value == role.value
+        return self.role.value == role
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ def mock_user() -> MockUser:
 @pytest.fixture
 def mock_superuser() -> MockUser:
     """Create a mock superuser."""
-    return MockUser(is_superuser=True, email="admin@example.com")
+    return MockUser(is_superuser=True, email="admin@example.com", role=UserRole.ADMIN)
 
 
 @pytest.fixture
@@ -73,8 +74,15 @@ async def auth_client(
     mock_user_service: MagicMock,
     mock_redis: MagicMock,
     mock_db_session,
+    monkeypatch,
 ) -> AsyncClient:
     """Client with authenticated regular user."""
+    from app.core import config
+
+    # Set internal API key for bypassing CSRF
+    test_api_key = "test-internal-api-key"
+    monkeypatch.setattr(config.settings, "INTERNAL_API_KEY", test_api_key)
+
     app.dependency_overrides[get_current_user] = lambda: mock_user
     app.dependency_overrides[get_user_service] = lambda: mock_user_service
     app.dependency_overrides[get_redis] = lambda: mock_redis
@@ -83,6 +91,7 @@ async def auth_client(
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
+        headers={"X-Internal-API-Key": test_api_key},
     ) as ac:
         yield ac
 
@@ -95,8 +104,15 @@ async def superuser_client(
     mock_user_service: MagicMock,
     mock_redis: MagicMock,
     mock_db_session,
+    monkeypatch,
 ) -> AsyncClient:
     """Client with authenticated superuser."""
+    from app.core import config
+
+    # Set internal API key for bypassing CSRF
+    test_api_key = "test-internal-api-key"
+    monkeypatch.setattr(config.settings, "INTERNAL_API_KEY", test_api_key)
+
     app.dependency_overrides[get_current_user] = lambda: mock_superuser
     app.dependency_overrides[get_current_active_superuser] = lambda: mock_superuser
     app.dependency_overrides[get_user_service] = lambda: mock_user_service
@@ -106,6 +122,7 @@ async def superuser_client(
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
+        headers={"X-Internal-API-Key": test_api_key},
     ) as ac:
         yield ac
 

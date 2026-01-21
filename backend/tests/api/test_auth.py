@@ -8,9 +8,10 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.api.deps import get_user_service
+from app.api.deps import get_session_service, get_user_service
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token
+from app.db.models.user import UserRole
 from app.main import app
 
 
@@ -24,15 +25,25 @@ class MockUser:
         full_name="Test User",
         is_active=True,
         is_superuser=False,
+        role=UserRole.USER,
     ):
         self.id = id or uuid4()
         self.email = email
         self.full_name = full_name
         self.is_active = is_active
         self.is_superuser = is_superuser
+        self.role = role
         self.hashed_password = "hashed"
         self.created_at = datetime.now(UTC)
         self.updated_at = datetime.now(UTC)
+
+
+class MockSession:
+    """Mock session for testing."""
+
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.expires_at = datetime.now(UTC)
 
 
 @pytest.fixture
@@ -53,8 +64,20 @@ def mock_user_service(mock_user: MockUser) -> MagicMock:
 
 
 @pytest.fixture
+def mock_session_service(mock_user: MockUser) -> MagicMock:
+    """Create a mock session service."""
+    service = MagicMock()
+    mock_session = MockSession(user_id=mock_user.id)
+    service.validate_refresh_token = AsyncMock(return_value=mock_session)
+    service.create_session = AsyncMock()
+    service.logout_by_refresh_token = AsyncMock()
+    return service
+
+
+@pytest.fixture
 async def client_with_mock_service(
     mock_user_service: MagicMock,
+    mock_session_service: MagicMock,
     mock_redis: MagicMock,
     mock_db_session,
 ) -> AsyncClient:
@@ -64,6 +87,7 @@ async def client_with_mock_service(
     from httpx import ASGITransport
 
     app.dependency_overrides[get_user_service] = lambda: mock_user_service
+    app.dependency_overrides[get_session_service] = lambda: mock_session_service
     app.dependency_overrides[get_redis] = lambda: mock_redis
     app.dependency_overrides[get_db_session] = lambda: mock_db_session
 
@@ -167,8 +191,14 @@ async def test_refresh_token_success(
 
 
 @pytest.mark.anyio
-async def test_refresh_token_invalid(client_with_mock_service: AsyncClient):
+async def test_refresh_token_invalid(
+    client_with_mock_service: AsyncClient,
+    mock_session_service: MagicMock,
+):
     """Test refresh with invalid token."""
+    # Session service returns None for invalid token
+    mock_session_service.validate_refresh_token = AsyncMock(return_value=None)
+
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/refresh",
         json={"refresh_token": "invalid.token.here"},
@@ -180,8 +210,11 @@ async def test_refresh_token_invalid(client_with_mock_service: AsyncClient):
 async def test_refresh_token_wrong_type(
     client_with_mock_service: AsyncClient,
     mock_user: MockUser,
+    mock_session_service: MagicMock,
 ):
     """Test refresh with access token instead of refresh token."""
+    # Session service returns None for wrong token type
+    mock_session_service.validate_refresh_token = AsyncMock(return_value=None)
     access_token = create_access_token(subject=str(mock_user.id))
 
     response = await client_with_mock_service.post(
@@ -195,9 +228,13 @@ async def test_refresh_token_wrong_type(
 async def test_refresh_token_inactive_user(
     client_with_mock_service: AsyncClient,
     mock_user_service: MagicMock,
+    mock_session_service: MagicMock,
 ):
     """Test refresh token for inactive user."""
     inactive_user = MockUser(is_active=False)
+    mock_session_service.validate_refresh_token = AsyncMock(
+        return_value=MockSession(user_id=inactive_user.id)
+    )
     mock_user_service.get_by_id = AsyncMock(return_value=inactive_user)
     refresh_token = create_refresh_token(subject=str(inactive_user.id))
 
