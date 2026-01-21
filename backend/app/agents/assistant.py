@@ -16,8 +16,9 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+from pydantic_ai.models.google import GoogleModelSettings
 
+from app.agents.cached_google_model import CachedContentGoogleModel
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tool_register import register_tools
 from app.schemas import DEFAULT_GEMINI_MODEL
@@ -61,6 +62,9 @@ class AssistantAgent:
 
     def _create_agent(self) -> Agent[Deps, str]:
         """Create and configure the PydanticAI agent."""
+        # Determine if we're using cached content with tools
+        using_cached_tools = bool(self.cached_prompt_name)
+
         # Model settings with safety filters disabled and thinking enabled
         model_settings = GoogleModelSettings(
             google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
@@ -68,12 +72,15 @@ class AssistantAgent:
                 "thinking_level": ThinkingLevel.HIGH,
             },
             # Use cached content if available (75% cost reduction)
-            **({
-                "google_cached_content": self.cached_prompt_name
-            } if self.cached_prompt_name else {}),
+            google_cached_content=self.cached_prompt_name if self.cached_prompt_name else None,
         )
 
-        model = GoogleModel(model_name=self.model_name, settings=model_settings)
+        # Use our custom model that strips tools when using cached content
+        model = CachedContentGoogleModel(
+            model_name=self.model_name,
+            settings=model_settings,
+            using_cached_tools=using_cached_tools,
+        )
 
         # Build agent kwargs - omit system_prompt entirely when using cached content
         agent_kwargs: dict[str, Any] = {
@@ -89,11 +96,12 @@ class AssistantAgent:
         # Always register tools locally - PydanticAI needs them to execute tool calls.
         # When using cached content, Gemini already knows about the tools (they're
         # in the cache), but PydanticAI still needs them registered to handle the
-        # tool call responses.
+        # tool call responses. Our CachedContentGoogleModel strips tools from the
+        # API request so Gemini doesn't get duplicate tool definitions.
         register_tools(agent)
 
-        if self.skip_tool_registration:
-            logger.debug("Tools registered locally (Gemini tools are cached)")
+        if using_cached_tools:
+            logger.debug("Tools registered locally (will be stripped from Gemini request)")
 
         return agent
 

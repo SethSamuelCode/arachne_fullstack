@@ -341,15 +341,18 @@ def _convert_tools_to_gemini_format(
 async def get_cached_content(
     prompt: str,
     model_name: str,
-    tool_definitions: list[dict[str, Any]],
+    tool_definitions: list[dict[str, Any]] | None = None,
     redis_client: Any | None = None,
     extend_on_use: bool = True,
 ) -> str | None:
     """Get or create cached content (system prompt + tools) for reduced cost.
 
     Uses Gemini's CachedContent API to cache both system prompt and tool definitions
-    server-side. This satisfies Gemini's requirement that cached content must include
-    ALL of: system_instruction, tools, and tool_config together.
+    server-side. This provides ~75% cost reduction on input tokens.
+
+    Gemini requires that if you use CachedContent with tools, you cannot send
+    tools/tool_config in the GenerateContent request. The CachedContentGoogleModel
+    wrapper handles this by stripping tools from requests when cached content is used.
 
     Active sessions have their TTL extended automatically.
     On failure, returns None and logs a warning (graceful degradation).
@@ -400,7 +403,7 @@ async def get_cached_content(
         # Cache miss - create new cached content with system prompt + tools
         client = _get_genai_client()
 
-        # Convert tool definitions to Gemini format
+        # Convert tool definitions to Gemini format (sanitized)
         tools = _convert_tools_to_gemini_format(tool_definitions)
 
         # Tool config for function calling
