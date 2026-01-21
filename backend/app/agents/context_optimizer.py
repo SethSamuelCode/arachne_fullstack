@@ -209,6 +209,99 @@ def _hash_tools(tool_definitions: list[dict[str, Any]]) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()[:16]
 
 
+def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
+    """Sanitize a JSON Schema for Gemini's FunctionDeclaration.
+
+    Gemini's API uses a limited subset of JSON Schema and doesn't support:
+    - `examples` field
+    - `$ref` references
+    - `$defs` definitions
+    - `title` field in nested objects
+
+    This function resolves $ref references, removes unsupported fields, and
+    **enriches descriptions** with examples and titles for better LLM tool use.
+    Since schemas are cached, the enrichment cost is amortized.
+
+    Args:
+        schema: JSON Schema dict from PydanticAI tool.
+
+    Returns:
+        Sanitized schema compatible with Gemini, with enriched descriptions.
+    """
+    # Extract $defs for reference resolution
+    defs = schema.get("$defs", {})
+
+    def _enrich_description(obj: dict[str, Any]) -> str | None:
+        """Build an enriched description from title, description, and examples."""
+        parts: list[str] = []
+
+        # Add title as context if different from description
+        title = obj.get("title")
+        description = obj.get("description", "")
+
+        if title and title.lower() != description.lower()[:len(title)]:
+            parts.append(title + ".")
+
+        if description:
+            parts.append(description)
+
+        # Add examples - very valuable for LLM tool understanding
+        examples = obj.get("examples")
+        if examples:
+            if len(examples) == 1:
+                parts.append(f"Example: {examples[0]!r}")
+            else:
+                example_strs = [repr(ex) for ex in examples[:3]]  # Limit to 3
+                parts.append(f"Examples: {', '.join(example_strs)}")
+
+        # Add default value hint
+        default = obj.get("default")
+        if default is not None:
+            parts.append(f"Default: {default!r}")
+
+        return " ".join(parts) if parts else None
+
+    def resolve_refs(obj: Any) -> Any:
+        """Recursively resolve $ref, enrich descriptions, remove unsupported."""
+        if isinstance(obj, dict):
+            # Handle $ref - replace with the referenced definition
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                # Parse "#/$defs/TypeName" format
+                if ref_path.startswith("#/$defs/"):
+                    type_name = ref_path[8:]  # Remove "#/$defs/"
+                    if type_name in defs:
+                        # Return resolved definition (recursively sanitize it too)
+                        return resolve_refs(defs[type_name])
+                # If can't resolve, return empty object schema
+                logger.warning(f"Could not resolve $ref: {ref_path}")
+                return {"type": "object"}
+
+            # Build enriched description before removing fields
+            enriched_desc = _enrich_description(obj)
+
+            # Fields not supported by Gemini's Schema
+            unsupported = {"examples", "$defs", "title", "default"}
+            result: dict[str, Any] = {}
+
+            for key, value in obj.items():
+                if key not in unsupported:
+                    result[key] = resolve_refs(value)
+
+            # Apply enriched description (overwrite if we built a better one)
+            if enriched_desc:
+                result["description"] = enriched_desc
+
+            return result
+
+        if isinstance(obj, list):
+            return [resolve_refs(item) for item in obj]
+
+        return obj
+
+    return resolve_refs(schema)
+
+
 def _convert_tools_to_gemini_format(
     tool_definitions: list[dict[str, Any]],
 ) -> list[genai_types.Tool]:
@@ -222,11 +315,15 @@ def _convert_tools_to_gemini_format(
     """
     function_declarations = []
     for tool_def in tool_definitions:
+        # Sanitize the parameters schema for Gemini compatibility
+        sanitized_params = _sanitize_schema_for_gemini(tool_def["parameters"])
+
         # Build FunctionDeclaration from our tool schema
+        # Cast to Schema - Gemini accepts dict at runtime
         func_decl = genai_types.FunctionDeclaration(
             name=tool_def["name"],
             description=tool_def["description"],
-            parameters=tool_def["parameters"],
+            parameters=genai_types.Schema(**sanitized_params),
         )
         function_declarations.append(func_decl)
 

@@ -762,6 +762,190 @@ class TestAcademicSearchConfig:
         _ = settings.SEMANTIC_SCHOLAR_API_KEY
 
 
+class TestSchemaSanitization:
+    """Tests for Gemini schema sanitization."""
+
+    def test_sanitize_removes_examples(self):
+        """Test _sanitize_schema_for_gemini removes examples field."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "examples": ["example1", "example2"],
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+        assert "examples" not in result["properties"]["name"]
+        assert result["properties"]["name"]["type"] == "string"
+
+    def test_sanitize_removes_defs(self):
+        """Test _sanitize_schema_for_gemini removes $defs field."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "$defs": {"SomeType": {"type": "string"}},
+            "properties": {"name": {"type": "string"}},
+        }
+        result = _sanitize_schema_for_gemini(schema)
+        assert "$defs" not in result
+
+    def test_sanitize_resolves_refs(self):
+        """Test _sanitize_schema_for_gemini resolves $ref references."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "$defs": {
+                "SingleTask": {
+                    "type": "object",
+                    "properties": {"task_name": {"type": "string"}},
+                    "required": ["task_name"],
+                }
+            },
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/SingleTask"},
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        # $ref should be resolved
+        assert "$ref" not in result["properties"]["steps"]["items"]
+        # Resolved type should be inlined
+        assert result["properties"]["steps"]["items"]["type"] == "object"
+        assert "task_name" in result["properties"]["steps"]["items"]["properties"]
+
+    def test_sanitize_removes_title(self):
+        """Test _sanitize_schema_for_gemini removes title field."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "title": "MySchema",
+            "properties": {
+                "name": {"type": "string", "title": "Name Field"}
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+        assert "title" not in result
+        assert "title" not in result["properties"]["name"]
+
+    def test_sanitize_preserves_required_fields(self):
+        """Test _sanitize_schema_for_gemini preserves required schema fields."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The name"},
+                "count": {"type": "integer", "minimum": 0},
+            },
+            "required": ["name"],
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        assert result["type"] == "object"
+        assert result["required"] == ["name"]
+        assert result["properties"]["name"]["type"] == "string"
+        assert result["properties"]["name"]["description"] == "The name"
+        assert result["properties"]["count"]["minimum"] == 0
+
+    def test_sanitize_enriches_description_with_examples(self):
+        """Test _sanitize_schema_for_gemini adds examples to description."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The project name",
+                    "examples": ["Project Alpha", "Marketing Plan"],
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        # Examples should be removed as a field
+        assert "examples" not in result["properties"]["name"]
+        # But added to description for LLM understanding
+        desc = result["properties"]["name"]["description"]
+        assert "Project Alpha" in desc
+        assert "Marketing Plan" in desc
+        assert "The project name" in desc
+
+    def test_sanitize_enriches_description_with_title(self):
+        """Test _sanitize_schema_for_gemini adds title to description."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "title": "Item Count",
+                    "description": "Number of items to process",
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        # Title should be removed as a field
+        assert "title" not in result["properties"]["count"]
+        # But added to description
+        desc = result["properties"]["count"]["description"]
+        assert "Item Count" in desc
+        assert "Number of items" in desc
+
+    def test_sanitize_enriches_description_with_default(self):
+        """Test _sanitize_schema_for_gemini adds default to description."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results",
+                    "default": 10,
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        # Default should be removed as a field
+        assert "default" not in result["properties"]["limit"]
+        # But mentioned in description
+        desc = result["properties"]["limit"]["description"]
+        assert "Default: 10" in desc
+        assert "Max results" in desc
+
+    def test_sanitize_single_example_format(self):
+        """Test single example uses 'Example:' not 'Examples:'."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "examples": ["machine learning"],
+                }
+            },
+        }
+        result = _sanitize_schema_for_gemini(schema)
+        desc = result["properties"]["query"]["description"]
+        assert "Example: " in desc
+        assert "Examples:" not in desc
+
+
 class TestContextOptimizer:
     """Tests for context window optimization."""
 
