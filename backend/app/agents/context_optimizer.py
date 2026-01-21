@@ -2,11 +2,16 @@
 
 Implements tiered memory management with:
 - Token-aware context trimming using Gemini's native count_tokens API
-- System prompt caching via CachedContent for 75% cost reduction
+- System prompt + tools caching via CachedContent for 75% cost reduction
 - TTL extension for active sessions
+
+Note: Gemini's CachedContent API requires system_instruction, tools, and
+tool_config to ALL be cached together - you cannot mix cached content with
+dynamically registered tools.
 """
 
 import hashlib
+import json
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -32,13 +37,15 @@ class OptimizedContext(TypedDict):
 
     Attributes:
         history: Optimized message history in PydanticAI format.
-        cached_prompt_name: Gemini cache name if system prompt was cached, None otherwise.
+        cached_prompt_name: Gemini cache name if content was cached, None otherwise.
         system_prompt: The system prompt text if NOT cached, None if using cache.
+        skip_tool_registration: If True, tools are in cache; skip register_tools().
     """
 
     history: list[ModelRequest | ModelResponse]
     cached_prompt_name: str | None
     system_prompt: str | None
+    skip_tool_registration: bool
 
 
 # Model context limits (input tokens) with 85% budget for responsiveness
@@ -189,31 +196,81 @@ async def count_tokens_batch(
         return estimated_total
 
 
-async def get_cached_system_prompt(
+def _hash_tools(tool_definitions: list[dict[str, Any]]) -> str:
+    """Generate a short hash for tool definitions.
+
+    Args:
+        tool_definitions: List of tool definition dicts.
+
+    Returns:
+        16-char hash of serialized tools.
+    """
+    serialized = json.dumps(tool_definitions, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode()).hexdigest()[:16]
+
+
+def _convert_tools_to_gemini_format(
+    tool_definitions: list[dict[str, Any]],
+) -> list[genai_types.Tool]:
+    """Convert tool definitions to Gemini Tool format.
+
+    Args:
+        tool_definitions: List of tool definition dicts with 'name', 'description', 'parameters'.
+
+    Returns:
+        List of Gemini Tool objects for caching.
+    """
+    function_declarations = []
+    for tool_def in tool_definitions:
+        # Build FunctionDeclaration from our tool schema
+        func_decl = genai_types.FunctionDeclaration(
+            name=tool_def["name"],
+            description=tool_def["description"],
+            parameters=tool_def["parameters"],
+        )
+        function_declarations.append(func_decl)
+
+    # Wrap all functions in a single Tool
+    return [genai_types.Tool(function_declarations=function_declarations)]
+
+
+async def get_cached_content(
     prompt: str,
     model_name: str,
+    tool_definitions: list[dict[str, Any]],
     redis_client: Any | None = None,
     extend_on_use: bool = True,
 ) -> str | None:
-    """Get or create a cached system prompt for reduced latency and cost.
+    """Get or create cached content (system prompt + tools) for reduced cost.
 
-    Uses Gemini's CachedContent API to cache the system prompt server-side.
+    Uses Gemini's CachedContent API to cache both system prompt and tool definitions
+    server-side. This satisfies Gemini's requirement that cached content must include
+    ALL of: system_instruction, tools, and tool_config together.
+
     Active sessions have their TTL extended automatically.
+    On failure, returns None and logs a warning (graceful degradation).
 
     Args:
         prompt: The system prompt text.
         model_name: Gemini model name.
+        tool_definitions: List of tool definition dicts from get_tool_definitions().
         redis_client: Redis client for cache key storage.
         extend_on_use: Whether to extend TTL on cache hit.
 
     Returns:
-        The cache name for use in requests, or None if caching failed.
+        The cache name for use in requests, or None if caching failed/unavailable.
     """
     if not redis_client:
-        logger.debug("Redis client not available, skipping prompt caching")
+        logger.debug("Redis client not available, skipping content caching")
         return None
 
-    cache_key = f"arachne:system_prompt:{model_name}:{_hash_prompt(prompt)}"
+    if not tool_definitions:
+        logger.warning("No tool definitions provided, skipping content caching")
+        return None
+
+    # Cache key includes both prompt hash and tools hash
+    tools_hash = _hash_tools(tool_definitions)
+    cache_key = f"arachne:cached_content:{model_name}:{_hash_prompt(prompt)}:{tools_hash}"
 
     try:
         cached_name = await redis_client.get(cache_key)
@@ -233,47 +290,69 @@ async def get_cached_system_prompt(
                 except Exception as e:
                     logger.debug(f"Failed to extend Gemini cache TTL: {e}")
 
-            logger.debug(f"Using cached system prompt: {cached_name}")
+            logger.debug(f"Using cached content: {cached_name}")
             return cached_name
 
-        # Cache miss - create new cached content
+        # Cache miss - create new cached content with system prompt + tools
         client = _get_genai_client()
+
+        # Convert tool definitions to Gemini format
+        tools = _convert_tools_to_gemini_format(tool_definitions)
+
+        # Tool config for function calling
+        tool_config = genai_types.ToolConfig(
+            function_calling_config=genai_types.FunctionCallingConfig(
+                mode=genai_types.FunctionCallingConfigMode.AUTO
+            )
+        )
+
         cached = await client.aio.caches.create(
             model=model_name,
             config={
                 "system_instruction": prompt,
+                "tools": tools,
+                "tool_config": tool_config,
                 "ttl": f"{CACHE_TTL_SECONDS + 300}s",  # 60 min on Gemini side
             },
         )
 
         if cached and cached.name:
             await redis_client.set(cache_key, cached.name, ttl=CACHE_TTL_SECONDS)
-            logger.info(f"Created cached system prompt: {cached.name}")
+            logger.info(
+                f"Created cached content (prompt + {len(tool_definitions)} tools): {cached.name}"
+            )
             return cached.name
 
         return None
 
     except Exception as e:
-        logger.warning(f"System prompt caching failed: {e}")
+        # Graceful degradation - log warning and return None
+        logger.warning(f"Content caching failed (falling back to uncached): {e}")
         return None
 
 
-async def invalidate_cached_prompt(
+# Keep the old function name as an alias for backwards compatibility
+get_cached_system_prompt = get_cached_content
+
+
+async def invalidate_cached_content(
     prompt: str,
     model_name: str,
+    tools_hash: str,
     redis_client: Any | None = None,
 ) -> None:
-    """Invalidate a cached system prompt when it changes.
+    """Invalidate cached content when system prompt or tools change.
 
     Args:
         prompt: The system prompt text.
         model_name: Gemini model name.
+        tools_hash: Hash of tool definitions (from get_tools_schema_hash()).
         redis_client: Redis client for cache key storage.
     """
     if not redis_client:
         return
 
-    cache_key = f"arachne:system_prompt:{model_name}:{_hash_prompt(prompt)}"
+    cache_key = f"arachne:cached_content:{model_name}:{_hash_prompt(prompt)}:{tools_hash}"
 
     try:
         cached_name = await redis_client.get(cache_key)
@@ -287,15 +366,20 @@ async def invalidate_cached_prompt(
 
             # Delete from Redis
             await redis_client.delete(cache_key)
-            logger.info(f"Invalidated cached system prompt: {cached_name}")
+            logger.info(f"Invalidated cached content: {cached_name}")
     except Exception as e:
         logger.warning(f"Cache invalidation failed: {e}")
+
+
+# Keep the old function name as an alias for backwards compatibility
+invalidate_cached_prompt = invalidate_cached_content
 
 
 async def optimize_context_window(
     history: list[dict[str, str]],
     model_name: str,
     system_prompt: str | None = None,
+    tool_definitions: list[dict[str, Any]] | None = None,
     max_context_tokens: int | None = None,
     tokens_used_cache: dict[int, int] | None = None,
     redis_client: "RedisClient | None" = None,
@@ -308,46 +392,53 @@ async def optimize_context_window(
     3. Recent tool calls/results (last 10 if present)
     4. Older messages (FIFO trim from oldest until within budget)
 
-    When redis_client is provided and ENABLE_SYSTEM_PROMPT_CACHING is enabled,
-    system prompts are cached via Gemini's CachedContent API for 75% cost reduction.
+    When redis_client is provided, ENABLE_SYSTEM_PROMPT_CACHING is enabled,
+    and tool_definitions are provided, both system prompt and tools are cached
+    via Gemini's CachedContent API for 75% cost reduction.
 
     Args:
         history: Conversation history as list of {"role": "...", "content": "..."}.
         model_name: Model name for correct token budget lookup.
         system_prompt: Optional system prompt for token accounting.
+        tool_definitions: Optional list of tool defs for caching (from get_tool_definitions()).
         max_context_tokens: Override default budget (for testing).
         tokens_used_cache: Optional dict mapping message index to cached token count.
-        redis_client: Optional Redis client for system prompt caching.
+        redis_client: Optional Redis client for content caching.
 
     Returns:
-        OptimizedContext with history, cached_prompt_name, and system_prompt.
+        OptimizedContext with history, cached_prompt_name, system_prompt, and skip_tool_registration.
     """
-    # Attempt system prompt caching if enabled and Redis is available
+    # Attempt content caching if enabled and Redis is available
     cached_prompt_name: str | None = None
     effective_system_prompt: str | None = system_prompt
+    skip_tool_registration: bool = False
 
     if (
         system_prompt
+        and tool_definitions
         and redis_client
         and settings.ENABLE_SYSTEM_PROMPT_CACHING
     ):
-        cached_prompt_name = await get_cached_system_prompt(
+        cached_prompt_name = await get_cached_content(
             prompt=system_prompt,
             model_name=model_name,
+            tool_definitions=tool_definitions,
             redis_client=redis_client,
         )
         if cached_prompt_name:
-            # System prompt is cached; don't pass it to the agent separately
+            # Content is cached (system prompt + tools); skip separate tool registration
             effective_system_prompt = None
-            logger.info(f"System prompt cache hit: {cached_prompt_name}")
+            skip_tool_registration = True
+            logger.info(f"Content cache hit: {cached_prompt_name}")
         else:
-            logger.debug("System prompt cache miss, using raw prompt")
+            logger.debug("Content cache miss, using raw prompt and registering tools")
 
     if not history:
         return OptimizedContext(
             history=[],
             cached_prompt_name=cached_prompt_name,
             system_prompt=effective_system_prompt,
+            skip_tool_registration=skip_tool_registration,
         )
 
     # Get token budget for model (85% of max)
@@ -419,6 +510,7 @@ async def optimize_context_window(
         history=_to_pydantic_messages(optimized_messages),
         cached_prompt_name=cached_prompt_name,
         system_prompt=effective_system_prompt,
+        skip_tool_registration=skip_tool_registration,
     )
 
 

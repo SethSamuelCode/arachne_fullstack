@@ -30,6 +30,7 @@ from pydantic_ai.messages import (
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
+from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.clients.redis import RedisClient
 from app.core.utils import serialize_tool_result_for_db
@@ -479,12 +480,16 @@ async def agent_websocket(
                 # Get Redis client for system prompt caching
                 redis_client: RedisClient | None = getattr(websocket.state, "redis", None)
 
+                # Get tool definitions for caching (system prompt + tools cached together)
+                tool_definitions = get_tool_definitions()
+
                 # Optimize context window with tiered memory management
                 # Uses 85% of model's context limit for better responsiveness
                 optimized: OptimizedContext = await optimize_context_window(
                     history=conversation_history,
                     model_name=model_name or "gemini-2.5-flash",
                     system_prompt=system_prompt,
+                    tool_definitions=tool_definitions,
                     redis_client=redis_client,
                 )
                 model_history = optimized["history"]
@@ -493,10 +498,12 @@ async def agent_websocket(
                 )
 
                 # Create agent with system prompt or cached prompt
+                # skip_tool_registration=True when tools are already in the cached content
                 assistant = get_agent(
                     system_prompt=optimized["system_prompt"],
                     model_name=model_name,
                     cached_prompt_name=optimized["cached_prompt_name"],
+                    skip_tool_registration=optimized["skip_tool_registration"],
                 )
 
                 # Build multimodal input if attachments are present

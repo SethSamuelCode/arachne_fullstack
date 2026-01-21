@@ -230,11 +230,11 @@ class Settings(BaseSettings):
     IMAGE_GEN_DEFAULT_COUNT: int = 1
 
     # === System Prompt Caching ===
-    # Enable Gemini's CachedContent API for system prompts (75% cost reduction)
+    # Enable Gemini's CachedContent API for system prompts + tools (75% cost reduction)
     # Requires Redis for cache key storage
-    # NOTE: Currently disabled because Gemini's CachedContent cannot be used
-    # with tools in the same request. To enable, tools must also be cached.
-    ENABLE_SYSTEM_PROMPT_CACHING: bool = False
+    # Caches system prompt AND tool definitions together per Gemini API requirement
+    # (system_instruction, tools, and tool_config must all be cached together)
+    ENABLE_SYSTEM_PROMPT_CACHING: bool = True
 
     @field_validator(
         "S3_ACCESS_KEY",

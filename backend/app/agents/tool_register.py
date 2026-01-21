@@ -126,40 +126,79 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         RETURNS:
         The sub-agent's final text response.
         """
+        import logging
+
+        from app.core.cache_manager import get_subagent_cached_content
+
+        logger = logging.getLogger(__name__)
 
         spawn_depth: int = getattr(ctx.deps, "spawn_depth", 0)
         spawn_max_depth: int = getattr(ctx.deps, "spawn_max_depth", 10)
         if spawn_depth > 0 and spawn_depth >= spawn_max_depth:
             return f"Error: spawn depth limit reached ({spawn_max_depth})."
 
+        # Default system prompt for sub-agents
+        DEFAULT_SUBAGENT_PROMPT = "You are a helpful AI assistant."
+        effective_system_prompt = (
+            system_prompt if system_prompt is not None else DEFAULT_SUBAGENT_PROMPT
+        )
+        effective_model = model_name if model_name is not None else DEFAULT_GEMINI_MODEL
+
+        # Try to get cached content for default sub-agent prompt
+        cached_content_name: str | None = None
+        skip_tool_registration = False
+
+        # Only use cache if using the default prompt (cached prompts match)
+        if effective_system_prompt == DEFAULT_SUBAGENT_PROMPT:
+            cached_content_name = await get_subagent_cached_content(
+                model_name=effective_model.value if hasattr(effective_model, "value") else str(effective_model)
+            )
+            if cached_content_name:
+                skip_tool_registration = True
+                logger.debug(f"Sub-agent using cached content: {cached_content_name}")
+
         child_deps = SpawnAgentDeps(
             user_id=ctx.deps.user_id if hasattr(ctx.deps, "user_id") else None,
             user_name=ctx.deps.user_name if hasattr(ctx.deps, "user_name") else None,
             metadata=ctx.deps.metadata if hasattr(ctx.deps, "metadata") else {},
-            system_prompt=system_prompt
-            if system_prompt is not None
-            else "you are a helpful AI assistant.",
-            model_name=model_name if model_name is not None else DEFAULT_GEMINI_MODEL,
+            system_prompt=effective_system_prompt,
+            model_name=effective_model,
             spawn_depth=spawn_depth + 1,
             spawn_max_depth=spawn_max_depth,
+            cached_content_name=cached_content_name,
+            skip_tool_registration=skip_tool_registration,
         )
 
         # Model settings with safety filters disabled and thinking enabled
-        model_settings = GoogleModelSettings(
-            google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
-            google_thinking_config={
+        model_settings_kwargs: dict[str, Any] = {
+            "google_safety_settings": PERMISSIVE_SAFETY_SETTINGS,
+            "google_thinking_config": {
                 "thinking_level": ThinkingLevel.HIGH,
             },
-        )
+        }
+        # Add cached content if available
+        if cached_content_name:
+            model_settings_kwargs["google_cached_content"] = cached_content_name
+
+        model_settings = GoogleModelSettings(**model_settings_kwargs)
 
         sub_model = GoogleModel(child_deps.model_name.value, settings=model_settings)
-        sub_agent = Agent(
-            deps_type=SpawnAgentDeps,
-            model=sub_model,
-            system_prompt=child_deps.system_prompt or "You are a helpful AI assistant.",
-        )
 
-        register_tools(sub_agent)
+        # Build agent kwargs - omit system_prompt if using cached content
+        agent_kwargs: dict[str, Any] = {
+            "deps_type": SpawnAgentDeps,
+            "model": sub_model,
+        }
+        if not skip_tool_registration:
+            agent_kwargs["system_prompt"] = child_deps.system_prompt or DEFAULT_SUBAGENT_PROMPT
+
+        sub_agent = Agent(**agent_kwargs)
+
+        # Only register tools if not using cached content
+        if not skip_tool_registration:
+            register_tools(sub_agent)
+        else:
+            logger.debug("Skipping sub-agent tool registration (tools in cache)")
 
         result = await sub_agent.run(user_input, deps=child_deps)
         return _stringify(result.output)

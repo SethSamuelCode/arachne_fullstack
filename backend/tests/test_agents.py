@@ -814,9 +814,11 @@ class TestContextOptimizer:
         assert "history" in result
         assert "cached_prompt_name" in result
         assert "system_prompt" in result
+        assert "skip_tool_registration" in result
         assert result["history"] == []
         assert result["cached_prompt_name"] is None
         assert result["system_prompt"] is None
+        assert result["skip_tool_registration"] is False
 
     @pytest.mark.anyio
     async def test_optimize_returns_optimized_context_structure(self):
@@ -835,11 +837,14 @@ class TestContextOptimizer:
         assert "history" in result
         assert "cached_prompt_name" in result
         assert "system_prompt" in result
+        assert "skip_tool_registration" in result
 
         # Without Redis, caching is disabled
         assert result["cached_prompt_name"] is None
         # System prompt should be returned since not cached
         assert result["system_prompt"] == "You are helpful"
+        # Tools should be registered since not cached
+        assert result["skip_tool_registration"] is False
         # History should contain the message
         assert len(result["history"]) == 1
 
@@ -943,6 +948,8 @@ class TestContextOptimizer:
         mock_redis.set = AsyncMock(return_value=True)
 
         history = [{"role": "user", "content": "Hello"}]
+        # Mock tool definitions for caching
+        tool_definitions = [{"name": "test_tool", "description": "Test", "parameters": {}}]
 
         # Mock the Gemini client to avoid actual API calls
         with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
@@ -952,12 +959,14 @@ class TestContextOptimizer:
                 history=history,
                 model_name="gemini-2.5-flash",
                 system_prompt="You are helpful",
+                tool_definitions=tool_definitions,
                 redis_client=mock_redis,
             )
 
         # Should return system_prompt since caching failed
         assert result["system_prompt"] == "You are helpful"
         assert result["cached_prompt_name"] is None
+        assert result["skip_tool_registration"] is False
 
     @pytest.mark.anyio
     async def test_optimize_with_redis_cache_hit(self, mock_redis):
@@ -971,6 +980,8 @@ class TestContextOptimizer:
         mock_redis.set = AsyncMock(return_value=True)
 
         history = [{"role": "user", "content": "Hello"}]
+        # Mock tool definitions for caching
+        tool_definitions = [{"name": "test_tool", "description": "Test", "parameters": {}}]
 
         # Mock the Gemini client for TTL extension
         with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
@@ -980,12 +991,14 @@ class TestContextOptimizer:
                 history=history,
                 model_name="gemini-2.5-flash",
                 system_prompt="You are helpful",
+                tool_definitions=tool_definitions,
                 redis_client=mock_redis,
             )
 
         # Should return cached_prompt_name and system_prompt=None
         assert result["cached_prompt_name"] == "cachedContents/abc123"
         assert result["system_prompt"] is None
+        assert result["skip_tool_registration"] is True
 
     @pytest.mark.anyio
     async def test_optimize_caching_disabled_by_feature_flag(self, mock_redis, monkeypatch):
@@ -997,17 +1010,21 @@ class TestContextOptimizer:
         monkeypatch.setattr(config.settings, "ENABLE_SYSTEM_PROMPT_CACHING", False)
 
         history = [{"role": "user", "content": "Hello"}]
+        # Mock tool definitions for caching
+        tool_definitions = [{"name": "test_tool", "description": "Test", "parameters": {}}]
 
         result = await optimize_context_window(
             history=history,
             model_name="gemini-2.5-flash",
             system_prompt="You are helpful",
+            tool_definitions=tool_definitions,
             redis_client=mock_redis,
         )
 
         # Should not attempt caching, return raw system_prompt
         assert result["cached_prompt_name"] is None
         assert result["system_prompt"] == "You are helpful"
+        assert result["skip_tool_registration"] is False
         # Redis should not be called
         mock_redis.get.assert_not_called()
 
@@ -1116,4 +1133,159 @@ class TestGetAgentFactory:
         )
         assert agent.cached_prompt_name is None
         assert agent.system_prompt == "My prompt"
+
+    def test_get_agent_with_skip_tool_registration(self):
+        """Test get_agent passes skip_tool_registration to AssistantAgent."""
+        agent = get_agent(
+            system_prompt="Test",
+            model_name="gemini-2.5-flash",
+            cached_prompt_name="cachedContents/xyz789",
+            skip_tool_registration=True,
+        )
+        assert agent.skip_tool_registration is True
+
+    def test_get_agent_skip_tool_registration_default_false(self):
+        """Test get_agent defaults skip_tool_registration to False."""
+        agent = get_agent(
+            system_prompt="Test",
+            model_name="gemini-2.5-flash",
+        )
+        assert agent.skip_tool_registration is False
+
+
+class TestToolExtraction:
+    """Tests for tool definition extraction utilities."""
+
+    def test_get_tool_definitions_returns_list(self):
+        """Test get_tool_definitions returns a list of tool definitions."""
+        from app.agents.tools import get_tool_definitions
+
+        defs = get_tool_definitions()
+        assert isinstance(defs, list)
+        assert len(defs) > 0
+
+    def test_get_tool_definitions_structure(self):
+        """Test each tool definition has required fields."""
+        from app.agents.tools import get_tool_definitions
+
+        defs = get_tool_definitions()
+        for tool_def in defs:
+            assert "name" in tool_def
+            assert "description" in tool_def
+            assert "parameters" in tool_def
+            assert isinstance(tool_def["name"], str)
+            assert isinstance(tool_def["description"], str)
+            assert isinstance(tool_def["parameters"], dict)
+
+    def test_get_tool_definitions_includes_known_tools(self):
+        """Test get_tool_definitions includes expected tools."""
+        from app.agents.tools import get_tool_definitions
+
+        defs = get_tool_definitions()
+        tool_names = {d["name"] for d in defs}
+
+        # Check for some known tools
+        assert "search_web" in tool_names
+        assert "spawn_agent" in tool_names
+        assert "current_datetime" in tool_names
+
+    def test_get_tool_definitions_sorted_by_name(self):
+        """Test tool definitions are sorted by name for consistent hashing."""
+        from app.agents.tools import get_tool_definitions
+
+        defs = get_tool_definitions()
+        names = [d["name"] for d in defs]
+        assert names == sorted(names)
+
+    def test_get_tools_schema_hash_consistent(self):
+        """Test get_tools_schema_hash returns consistent hash."""
+        from app.agents.tools import get_tools_schema_hash
+
+        hash1 = get_tools_schema_hash()
+        hash2 = get_tools_schema_hash()
+        assert hash1 == hash2
+        assert len(hash1) == 16  # SHA256 first 16 chars
+
+    def test_get_tools_schema_hash_is_hex(self):
+        """Test get_tools_schema_hash returns valid hex string."""
+        from app.agents.tools import get_tools_schema_hash
+
+        hash_val = get_tools_schema_hash()
+        # Should be valid hex
+        int(hash_val, 16)
+
+
+class TestCacheManager:
+    """Tests for the cache manager functionality."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create a mock Redis client."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock = MagicMock()
+        mock.get = AsyncMock(return_value=None)
+        mock.set = AsyncMock(return_value=True)
+        mock.delete = AsyncMock(return_value=1)
+        mock.raw = MagicMock()
+        mock.raw.scan = AsyncMock(return_value=(0, []))
+        return mock
+
+    @pytest.mark.anyio
+    async def test_validate_tools_cache_stores_new_hash(self, mock_redis, monkeypatch):
+        """Test validate_tools_cache stores hash when none exists."""
+        from unittest.mock import AsyncMock
+
+        from app.core import cache_manager
+
+        # No stored hash
+        mock_redis.get = AsyncMock(return_value=None)
+
+        # Run validation
+        result = await cache_manager.validate_tools_cache(mock_redis)
+
+        # Should have stored the new hash
+        mock_redis.set.assert_called_once()
+        assert not result  # Cache was invalid (no hash)
+
+    @pytest.mark.anyio
+    async def test_validate_tools_cache_valid_hash(self, mock_redis, monkeypatch):
+        """Test validate_tools_cache returns True when hash matches."""
+        from unittest.mock import AsyncMock
+
+        from app.agents.tools import get_tools_schema_hash
+        from app.core import cache_manager
+
+        current_hash = get_tools_schema_hash()
+        mock_redis.get = AsyncMock(return_value=current_hash)
+
+        result = await cache_manager.validate_tools_cache(mock_redis)
+
+        assert result is True  # Cache is valid
+
+    @pytest.mark.anyio
+    async def test_get_subagent_cached_content_returns_none_when_disabled(self, monkeypatch):
+        """Test get_subagent_cached_content returns None when caching disabled."""
+        from app.core import cache_manager, config
+
+        monkeypatch.setattr(config.settings, "ENABLE_SYSTEM_PROMPT_CACHING", False)
+
+        result = await cache_manager.get_subagent_cached_content("gemini-2.5-flash")
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_get_subagent_cached_content_returns_cached_value(self, monkeypatch):
+        """Test get_subagent_cached_content returns cached value from memory."""
+        from app.core import cache_manager, config
+
+        monkeypatch.setattr(config.settings, "ENABLE_SYSTEM_PROMPT_CACHING", True)
+
+        # Pre-populate the in-memory cache
+        cache_manager._subagent_cache["gemini-2.5-flash"] = "cachedContents/test123"
+
+        result = await cache_manager.get_subagent_cached_content("gemini-2.5-flash")
+        assert result == "cachedContents/test123"
+
+        # Clean up
+        del cache_manager._subagent_cache["gemini-2.5-flash"]
 

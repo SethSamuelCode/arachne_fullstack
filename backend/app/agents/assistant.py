@@ -50,11 +50,13 @@ class AssistantAgent:
         model_name: str | None = None,
         system_prompt: str | None = None,
         cached_prompt_name: str | None = None,
+        skip_tool_registration: bool = False,
     ):
         self.model_name = model_name or DEFAULT_GEMINI_MODEL
         # If using cached prompt, don't pass system_prompt to agent (it's in the cache)
         self.system_prompt = None if cached_prompt_name else (system_prompt or DEFAULT_SYSTEM_PROMPT)
         self.cached_prompt_name = cached_prompt_name
+        self.skip_tool_registration = skip_tool_registration
         self._agent: Agent[Deps, str] | None = None
 
     def _create_agent(self) -> Agent[Deps, str]:
@@ -65,8 +67,10 @@ class AssistantAgent:
             google_thinking_config={
                 "thinking_level": ThinkingLevel.HIGH,
             },
-            # Use cached system prompt if available (75% cost reduction)
-            **({"google_cached_content": self.cached_prompt_name} if self.cached_prompt_name else {}),
+            # Use cached content if available (75% cost reduction)
+            **({
+                "google_cached_content": self.cached_prompt_name
+            } if self.cached_prompt_name else {}),
         )
 
         model = GoogleModel(model_name=self.model_name, settings=model_settings)
@@ -82,7 +86,11 @@ class AssistantAgent:
 
         agent = Agent[Deps, str](**agent_kwargs)
 
-        register_tools(agent)
+        # Only register tools if not using cached content (tools are in the cache)
+        if not self.skip_tool_registration:
+            register_tools(agent)
+        else:
+            logger.debug("Skipping tool registration (tools cached in Gemini content)")
 
         return agent
 
@@ -188,13 +196,15 @@ def get_agent(
     system_prompt: str | None = None,
     model_name: str | None = None,
     cached_prompt_name: str | None = None,
+    skip_tool_registration: bool = False,
 ) -> AssistantAgent:
     """Factory function to create an AssistantAgent.
 
     Args:
         system_prompt: Custom system prompt (ignored if cached_prompt_name is provided).
         model_name: Gemini model name to use.
-        cached_prompt_name: Gemini cache name for the system prompt (75% cost savings).
+        cached_prompt_name: Gemini cache name for the content (75% cost savings).
+        skip_tool_registration: If True, skip tool registration (tools in cache).
 
     Returns:
         Configured AssistantAgent instance.
@@ -203,6 +213,7 @@ def get_agent(
         system_prompt=system_prompt,
         model_name=model_name,
         cached_prompt_name=cached_prompt_name,
+        skip_tool_registration=skip_tool_registration,
     )
 
 

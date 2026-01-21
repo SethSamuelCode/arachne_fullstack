@@ -15,3 +15,7 @@ class SpawnAgentDeps:
     spawn_max_depth: int = 10
     model_name: GeminiModelName = DEFAULT_GEMINI_MODEL
     system_prompt: str | None = None
+
+    # Caching support: if set, use cached content instead of registering tools
+    cached_content_name: str | None = None
+    skip_tool_registration: bool = False

@@ -44,6 +44,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
 
     setup_cache(redis_client)
 
+    # Initialize cache manager (validates tools cache, warms sub-agent caches)
+    from app.core.cache_manager import initialize_cache_manager
+
+    await initialize_cache_manager(redis_client)
+
     yield {"redis": redis_client}
 
     # === Shutdown ===
