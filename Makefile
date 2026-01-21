@@ -174,6 +174,33 @@ docker-redis:
 docker-redis-stop:
 	docker-compose stop redis
 
+docker-rebuild-and-deploy-frontend:
+	@echo "Rebuilding and deploying frontend..."
+	docker-compose -f docker-compose.prod.yml build frontend --no-cache
+	docker-compose -f docker-compose.prod.yml up -d frontend
+	@echo ""
+	@echo "✅ Frontend rebuilt and deployed!"
+
+docker-rebuild-and-deploy-backend:
+	@echo "Rebuilding and deploying backend..."
+	docker-compose -f docker-compose.prod.yml build app --no-cache
+	docker-compose -f docker-compose.prod.yml up -d app
+	@echo ""
+	@echo "✅ Backend rebuilt and deployed!"
+
+docker-rebuild-and-deploy-all:
+	@echo "Rebuilding and deploying all services..."
+	docker-compose -f docker-compose.prod.yml build --no-cache
+	docker-compose -f docker-compose.prod.yml up -d
+	@echo ""
+	@echo "✅ All services rebuilt and deployed!"
+
+docker-rebuild-and-deploy-both:
+	@echo "Rebuilding and deploying frontend and backend..."
+	docker-compose -f docker-compose.prod.yml build frontend app --no-cache
+	docker-compose -f docker-compose.prod.yml up -d frontend app
+	@echo ""
+	@echo "✅ Frontend and backend rebuilt and deployed!"
 # === Cleanup ===
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
