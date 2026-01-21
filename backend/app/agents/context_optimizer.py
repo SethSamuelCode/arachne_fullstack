@@ -280,8 +280,15 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
             # Build enriched description before removing fields
             enriched_desc = _enrich_description(obj)
 
-            # Fields not supported by Gemini's Schema
-            unsupported = {"examples", "$defs", "title", "default"}
+            # Fields not supported by Gemini's Schema API
+            # See: https://ai.google.dev/api/caching#Schema
+            unsupported = {
+                "examples",           # JSON Schema examples
+                "$defs",              # JSON Schema definitions
+                "title",              # JSON Schema title
+                "default",            # JSON Schema default value
+                "additionalProperties",  # JSON Schema additionalProperties
+            }
             result: dict[str, Any] = {}
 
             for key, value in obj.items():

@@ -945,6 +945,22 @@ class TestSchemaSanitization:
         assert "Example: " in desc
         assert "Examples:" not in desc
 
+    def test_sanitize_removes_additional_properties(self):
+        """Test _sanitize_schema_for_gemini removes additionalProperties."""
+        from app.agents.context_optimizer import _sanitize_schema_for_gemini
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "data": {"type": "object", "additionalProperties": True}
+            },
+            "additionalProperties": False,
+        }
+        result = _sanitize_schema_for_gemini(schema)
+
+        assert "additionalProperties" not in result
+        assert "additionalProperties" not in result["properties"]["data"]
+
 
 class TestContextOptimizer:
     """Tests for context window optimization."""

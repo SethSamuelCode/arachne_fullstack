@@ -156,6 +156,9 @@ docker-prod-logs:
 docker-prod-build:
 	docker compose -f docker-compose.prod.yml build
 
+docker-app-logs:
+	docker compose -f docker-compose.prod.yml logs app
+
 # === Docker: Individual Services ===
 docker-db:
 	docker compose up -d db
