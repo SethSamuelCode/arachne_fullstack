@@ -109,17 +109,17 @@ docker-down:
 	docker-compose -f docker-compose.frontend.yml down 2>/dev/null || true
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 docker-build:
-	docker-compose build
+	docker compose build
 
 docker-shell:
-	docker-compose exec app /bin/bash
+	docker compose exec app /bin/bash
 
 # === Docker: Frontend (Development) ===
 docker-frontend:
-	docker-compose -f docker-compose.frontend.yml up -d
+	docker compose -f docker-compose.frontend.yml up -d
 	@echo ""
 	@echo "✅ Frontend started!"
 	@echo "   URL: http://localhost:3552"
@@ -127,17 +127,17 @@ docker-frontend:
 	@echo "Note: Backend must be running (make docker-up)"
 
 docker-frontend-down:
-	docker-compose -f docker-compose.frontend.yml down
+	docker compose -f docker-compose.frontend.yml down
 
 docker-frontend-logs:
-	docker-compose -f docker-compose.frontend.yml logs -f
+	docker compose -f docker-compose.frontend.yml logs -f
 
 docker-frontend-build:
-	docker-compose -f docker-compose.frontend.yml build
+	docker compose -f docker-compose.frontend.yml build
 
 # === Docker: Production (with Traefik) ===
 docker-prod:
-	docker-compose -f docker-compose.prod.yml up -d
+	docker compose -f docker-compose.prod.yml up -d
 	@echo ""
 	@echo "✅ Production services started with Traefik!"
 	@echo ""
@@ -148,57 +148,57 @@ docker-prod:
 	@echo "   Traefik: https://traefik.$$DOMAIN"
 
 docker-prod-down:
-	docker-compose -f docker-compose.prod.yml down
+	docker compose -f docker-compose.prod.yml down
 
 docker-prod-logs:
-	docker-compose -f docker-compose.prod.yml logs -f
+	docker compose -f docker-compose.prod.yml logs -f
 
 docker-prod-build:
-	docker-compose -f docker-compose.prod.yml build
+	docker compose -f docker-compose.prod.yml build
 
 # === Docker: Individual Services ===
 docker-db:
-	docker-compose up -d db
+	docker compose up -d db
 	@echo ""
 	@echo "✅ PostgreSQL started on port 5432"
 	@echo "   Connection: postgresql://postgres:postgres@localhost:5432/arachne_fullstack"
 
 docker-db-stop:
-	docker-compose stop db
+	docker compose stop db
 
 docker-redis:
-	docker-compose up -d redis
+	docker compose up -d redis
 	@echo ""
 	@echo "✅ Redis started on port 6379"
 
 docker-redis-stop:
-	docker-compose stop redis
+	docker compose stop redis
 
 docker-rebuild-and-deploy-frontend:
 	@echo "Rebuilding and deploying frontend..."
-	docker-compose -f docker-compose.prod.yml build frontend --no-cache
-	docker-compose -f docker-compose.prod.yml up -d frontend
+	docker compose -f docker-compose.prod.yml build frontend --no-cache
+	docker compose -f docker-compose.prod.yml up -d frontend
 	@echo ""
 	@echo "✅ Frontend rebuilt and deployed!"
 
 docker-rebuild-and-deploy-backend:
 	@echo "Rebuilding and deploying backend..."
-	docker-compose -f docker-compose.prod.yml build app --no-cache
-	docker-compose -f docker-compose.prod.yml up -d app
+	docker compose -f docker-compose.prod.yml build app --no-cache
+	docker compose -f docker-compose.prod.yml up -d app
 	@echo ""
 	@echo "✅ Backend rebuilt and deployed!"
 
 docker-rebuild-and-deploy-all:
 	@echo "Rebuilding and deploying all services..."
-	docker-compose -f docker-compose.prod.yml build --no-cache
-	docker-compose -f docker-compose.prod.yml up -d
+	docker compose -f docker-compose.prod.yml build --no-cache
+	docker compose -f docker-compose.prod.yml up -d
 	@echo ""
 	@echo "✅ All services rebuilt and deployed!"
 
 docker-rebuild-and-deploy-both:
 	@echo "Rebuilding and deploying frontend and backend..."
-	docker-compose -f docker-compose.prod.yml build frontend app --no-cache
-	docker-compose -f docker-compose.prod.yml up -d frontend app
+	docker compose -f docker-compose.prod.yml build frontend app --no-cache
+	docker compose -f docker-compose.prod.yml up -d frontend app
 	@echo ""
 	@echo "✅ Frontend and backend rebuilt and deployed!"
 # === Cleanup ===
