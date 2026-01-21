@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from google.genai.types import HarmBlockThreshold, HarmCategory
+from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
 from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.messages import (
     ModelRequest,
@@ -56,9 +56,12 @@ class AssistantAgent:
 
     def _create_agent(self) -> Agent[Deps, str]:
         """Create and configure the PydanticAI agent."""
-        # Model settings with safety filters disabled
+        # Model settings with safety filters disabled and thinking enabled
         model_settings = GoogleModelSettings(
             google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
+            google_thinking_config={
+                "thinking_level": ThinkingLevel.HIGH,
+            },
         )
 
         model = GoogleModel(model_name=self.model_name, settings=model_settings)

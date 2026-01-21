@@ -1,7 +1,7 @@
 from typing import Any, Literal, TypeVar
 from uuid import uuid4
 
-from google.genai.types import HarmBlockThreshold, HarmCategory
+from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
 from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from tavily import TavilyClient
@@ -144,9 +144,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             spawn_max_depth=spawn_max_depth,
         )
 
-        # Model settings with safety filters disabled
+        # Model settings with safety filters disabled and thinking enabled
         model_settings = GoogleModelSettings(
             google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
+            google_thinking_config={
+                "thinking_level": ThinkingLevel.HIGH,
+            },
         )
 
         sub_model = GoogleModel(child_deps.model_name.value, settings=model_settings)
