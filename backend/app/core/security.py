@@ -97,6 +97,9 @@ def create_refresh_token(
 
 def verify_token(token: str) -> dict[str, Any] | None:
     """Verify a JWT token and return payload using EdDSA."""
+    import logging
+
+    logger = logging.getLogger(__name__)
     try:
         payload = jwt.decode(
             token,
@@ -104,7 +107,14 @@ def verify_token(token: str) -> dict[str, Any] | None:
             algorithms=[_ALGORITHM],
         )
         return payload
-    except jwt.PyJWTError:
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token verification failed: token has expired")
+        return None
+    except jwt.InvalidSignatureError:
+        logger.warning("Token verification failed: invalid signature (key mismatch?)")
+        return None
+    except jwt.PyJWTError as e:
+        logger.warning(f"Token verification failed: {type(e).__name__}: {e}")
         return None
 
 

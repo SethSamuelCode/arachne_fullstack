@@ -6,12 +6,21 @@ from app.core.config import settings
 
 
 def setup_logfire() -> None:
-    """Configure Logfire instrumentation."""
+    """Configure Logfire instrumentation.
+
+    Only configures Logfire if LOGFIRE_TOKEN is provided.
+    Otherwise, disables sending telemetry to avoid export errors.
+    """
+    if not settings.LOGFIRE_TOKEN:
+        # Disable Logfire completely when no token is present
+        logfire.configure(send_to_logfire=False)
+        return
+
     logfire.configure(
         token=settings.LOGFIRE_TOKEN,
         service_name=settings.LOGFIRE_SERVICE_NAME,
         environment=settings.LOGFIRE_ENVIRONMENT,
-        send_to_logfire="if-token-present",
+        send_to_logfire=True,
     )
 
 

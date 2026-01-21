@@ -29,6 +29,7 @@ from pydantic_ai.messages import (
 
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
+from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.clients.redis import RedisClient
 from app.core.utils import serialize_tool_result_for_db
@@ -416,10 +417,16 @@ async def agent_websocket(
 
                     elif not current_conversation_id:
                         # Create new conversation
+                        # Priority: client-provided > user default > global default
+                        conv_system_prompt = (
+                            data.get("system_prompt")
+                            or user.default_system_prompt
+                            or DEFAULT_SYSTEM_PROMPT
+                        )
                         conv_data = ConversationCreate(
                             user_id=user.id,
                             title=user_message[:50] if len(user_message) > 50 else user_message,
-                            system_prompt=data.get("system_prompt"),
+                            system_prompt=conv_system_prompt,
                         )
                         conversation = await conv_service.create_conversation(conv_data)
                         current_conversation_id = str(conversation.id)
@@ -440,19 +447,23 @@ async def agent_websocket(
 
             await manager.send_event(websocket, "user_prompt", {"content": user_message})
 
-            # Retrieve the specific system prompt for this conversation
-            system_prompt = None
+            # Retrieve the system prompt for this conversation
+            # Priority: conversation-specific > user default > global default
+            system_prompt: str = DEFAULT_SYSTEM_PROMPT
             if current_conversation_id:
                 async with get_db_context() as db:
                     conv_service = get_conversation_service(db)
                     current_conv = await conv_service.get_conversation(
                         UUID(current_conversation_id)
                     )
-                    if current_conv:
+                    if current_conv and current_conv.system_prompt:
                         system_prompt = current_conv.system_prompt
-                        logger.info(
-                            f"Using system prompt for conversation {current_conversation_id}: {system_prompt}"
-                        )
+                    elif user.default_system_prompt:
+                        system_prompt = user.default_system_prompt
+            logger.info(
+                f"Using system prompt for conversation {current_conversation_id}: "
+                f"{system_prompt[:50]}..."
+            )
 
             try:
                 # Use user's default model preference or backend default

@@ -232,7 +232,9 @@ class Settings(BaseSettings):
     # === System Prompt Caching ===
     # Enable Gemini's CachedContent API for system prompts (75% cost reduction)
     # Requires Redis for cache key storage
-    ENABLE_SYSTEM_PROMPT_CACHING: bool = True
+    # NOTE: Currently disabled because Gemini's CachedContent cannot be used
+    # with tools in the same request. To enable, tools must also be cached.
+    ENABLE_SYSTEM_PROMPT_CACHING: bool = False
 
     @field_validator(
         "S3_ACCESS_KEY",
