@@ -64,7 +64,7 @@ async def search_openalex_impl(
 
     OpenAlex is a fully open catalog of 250M+ scholarly works.
     Base URL: https://api.openalex.org
-    
+
     PERFORMANCE & LIMITS:
     - No authentication: 1 request/sec (100k/day).
     - Polite Pool: 10 requests/sec if 'mailto' is configured in settings.
@@ -86,7 +86,7 @@ async def search_openalex_impl(
     CRITICAL GOTCHAS - READ CAREFULLY:
     1. ❌ DON'T filter by names (e.g., author_name:"Smith").
        ✅ DO use two-step lookup: Search entity -> Get ID -> Filter by ID.
-    
+
     2. ❌ DON'T use random page numbers for sampling.
        ✅ DO use 'sample' parameter (and 'seed' for reproducibility).
        Example: sample=50, seed=42

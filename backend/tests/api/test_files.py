@@ -478,8 +478,8 @@ class TestFileContent:
         mock_user: MockUser,
     ):
         """Test getting content of a binary file returns base64."""
-        from datetime import datetime
         import base64
+        from datetime import datetime
 
         file_key = "image.png"
         full_key = f"users/{mock_user.id}/{file_key}"

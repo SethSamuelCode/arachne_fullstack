@@ -229,6 +229,11 @@ class Settings(BaseSettings):
     IMAGE_GEN_DEFAULT_SIZE: str = "2K"
     IMAGE_GEN_DEFAULT_COUNT: int = 1
 
+    # === System Prompt Caching ===
+    # Enable Gemini's CachedContent API for system prompts (75% cost reduction)
+    # Requires Redis for cache key storage
+    ENABLE_SYSTEM_PROMPT_CACHING: bool = True
+
     @field_validator(
         "S3_ACCESS_KEY",
         "S3_SECRET_KEY",

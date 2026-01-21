@@ -8,9 +8,12 @@ Implements tiered memory management with:
 
 import hashlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from google import genai
+
+if TYPE_CHECKING:
+    from app.clients.redis import RedisClient
 from google.genai import types as genai_types
 from pydantic_ai.messages import (
     ModelRequest,
@@ -22,6 +25,21 @@ from pydantic_ai.messages import (
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class OptimizedContext(TypedDict):
+    """Result of context optimization.
+
+    Attributes:
+        history: Optimized message history in PydanticAI format.
+        cached_prompt_name: Gemini cache name if system prompt was cached, None otherwise.
+        system_prompt: The system prompt text if NOT cached, None if using cache.
+    """
+
+    history: list[ModelRequest | ModelResponse]
+    cached_prompt_name: str | None
+    system_prompt: str | None
+
 
 # Model context limits (input tokens) with 85% budget for responsiveness
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
@@ -280,7 +298,8 @@ async def optimize_context_window(
     system_prompt: str | None = None,
     max_context_tokens: int | None = None,
     tokens_used_cache: dict[int, int] | None = None,
-) -> list[ModelRequest | ModelResponse]:
+    redis_client: "RedisClient | None" = None,
+) -> OptimizedContext:
     """Optimize context window using tiered memory management.
 
     Implements intelligent trimming with priority order:
@@ -289,18 +308,47 @@ async def optimize_context_window(
     3. Recent tool calls/results (last 10 if present)
     4. Older messages (FIFO trim from oldest until within budget)
 
+    When redis_client is provided and ENABLE_SYSTEM_PROMPT_CACHING is enabled,
+    system prompts are cached via Gemini's CachedContent API for 75% cost reduction.
+
     Args:
         history: Conversation history as list of {"role": "...", "content": "..."}.
         model_name: Model name for correct token budget lookup.
         system_prompt: Optional system prompt for token accounting.
         max_context_tokens: Override default budget (for testing).
         tokens_used_cache: Optional dict mapping message index to cached token count.
+        redis_client: Optional Redis client for system prompt caching.
 
     Returns:
-        Optimized history as PydanticAI message format.
+        OptimizedContext with history, cached_prompt_name, and system_prompt.
     """
+    # Attempt system prompt caching if enabled and Redis is available
+    cached_prompt_name: str | None = None
+    effective_system_prompt: str | None = system_prompt
+
+    if (
+        system_prompt
+        and redis_client
+        and settings.ENABLE_SYSTEM_PROMPT_CACHING
+    ):
+        cached_prompt_name = await get_cached_system_prompt(
+            prompt=system_prompt,
+            model_name=model_name,
+            redis_client=redis_client,
+        )
+        if cached_prompt_name:
+            # System prompt is cached; don't pass it to the agent separately
+            effective_system_prompt = None
+            logger.info(f"System prompt cache hit: {cached_prompt_name}")
+        else:
+            logger.debug("System prompt cache miss, using raw prompt")
+
     if not history:
-        return []
+        return OptimizedContext(
+            history=[],
+            cached_prompt_name=cached_prompt_name,
+            system_prompt=effective_system_prompt,
+        )
 
     # Get token budget for model (85% of max)
     budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
@@ -338,12 +386,6 @@ async def optimize_context_window(
             current_tokens += msg_tokens
         else:
             # Budget exceeded - stop including older messages
-            trimmed_count = len(remaining_history) - len(optimized_messages) - 1
-            if trimmed_count > 0:
-                logger.info(
-                    f"Context optimization: trimmed {trimmed_count} messages "
-                    f"({current_tokens}/{budget} tokens used)"
-                )
             break
 
     # Reverse to restore chronological order
@@ -352,8 +394,32 @@ async def optimize_context_window(
     # Add the latest message back
     optimized_messages.append(latest_msg)
 
+    # Observability: log context optimization results
+    total_messages = len(history)
+    kept_messages = len(optimized_messages)
+    trimmed_count = total_messages - kept_messages
+    total_budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    tokens_used = current_tokens + latest_tokens + system_prompt_tokens + 8192  # Include reserves
+    budget_pct = round((tokens_used / total_budget) * 100, 1)
+    cache_status = "hit" if cached_prompt_name else "miss" if system_prompt else "n/a"
+
+    if trimmed_count > 0:
+        logger.info(
+            f"Context optimization: kept {kept_messages}/{total_messages} messages, "
+            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), cache={cache_status}"
+        )
+    else:
+        logger.debug(
+            f"Context optimization: all {total_messages} messages fit, "
+            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), cache={cache_status}"
+        )
+
     # Convert to PydanticAI format
-    return _to_pydantic_messages(optimized_messages)
+    return OptimizedContext(
+        history=_to_pydantic_messages(optimized_messages),
+        cached_prompt_name=cached_prompt_name,
+        system_prompt=effective_system_prompt,
+    )
 
 
 def _to_pydantic_messages(

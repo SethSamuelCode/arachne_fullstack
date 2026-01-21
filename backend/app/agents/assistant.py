@@ -49,9 +49,12 @@ class AssistantAgent:
         self,
         model_name: str | None = None,
         system_prompt: str | None = None,
+        cached_prompt_name: str | None = None,
     ):
         self.model_name = model_name or DEFAULT_GEMINI_MODEL
-        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        # If using cached prompt, don't pass system_prompt to agent (it's in the cache)
+        self.system_prompt = None if cached_prompt_name else (system_prompt or DEFAULT_SYSTEM_PROMPT)
+        self.cached_prompt_name = cached_prompt_name
         self._agent: Agent[Deps, str] | None = None
 
     def _create_agent(self) -> Agent[Deps, str]:
@@ -62,16 +65,22 @@ class AssistantAgent:
             google_thinking_config={
                 "thinking_level": ThinkingLevel.HIGH,
             },
+            # Use cached system prompt if available (75% cost reduction)
+            **({"google_cached_content": self.cached_prompt_name} if self.cached_prompt_name else {}),
         )
 
         model = GoogleModel(model_name=self.model_name, settings=model_settings)
 
-        agent = Agent[Deps, str](
-            model=model,
-            deps_type=Deps,
-            system_prompt=self.system_prompt,
-            retries=3,  # Allow more retries for tool calls and output validation
-        )
+        # Build agent kwargs - omit system_prompt entirely when using cached content
+        agent_kwargs: dict[str, Any] = {
+            "model": model,
+            "deps_type": Deps,
+            "retries": 3,  # Allow more retries for tool calls and output validation
+        }
+        if self.system_prompt:
+            agent_kwargs["system_prompt"] = self.system_prompt
+
+        agent = Agent[Deps, str](**agent_kwargs)
 
         register_tools(agent)
 
@@ -175,13 +184,26 @@ class AssistantAgent:
                 yield event
 
 
-def get_agent(system_prompt: str | None = None, model_name: str | None = None) -> AssistantAgent:
+def get_agent(
+    system_prompt: str | None = None,
+    model_name: str | None = None,
+    cached_prompt_name: str | None = None,
+) -> AssistantAgent:
     """Factory function to create an AssistantAgent.
+
+    Args:
+        system_prompt: Custom system prompt (ignored if cached_prompt_name is provided).
+        model_name: Gemini model name to use.
+        cached_prompt_name: Gemini cache name for the system prompt (75% cost savings).
 
     Returns:
         Configured AssistantAgent instance.
     """
-    return AssistantAgent(system_prompt=system_prompt, model_name=model_name)
+    return AssistantAgent(
+        system_prompt=system_prompt,
+        model_name=model_name,
+        cached_prompt_name=cached_prompt_name,
+    )
 
 
 async def run_agent(

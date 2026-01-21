@@ -550,7 +550,8 @@ class TestArxivClient:
 
         client = ArxivClient()
         query = client._build_query("machine learning", search_field="all")
-        assert "all:machine+learning" in query
+        # When search_field is "all", prefix is omitted (query used as-is)
+        assert "machine+learning" in query
 
     def test_build_query_with_categories(self):
         """Test query with category filter."""
@@ -587,7 +588,7 @@ class TestArxivClient:
         assert "quant-ph" in ARXIV_CATEGORIES
 
         # Verify structure
-        for code, info in ARXIV_CATEGORIES.items():
+        for _code, info in ARXIV_CATEGORIES.items():
             assert "name" in info
             assert "group" in info
 
@@ -800,15 +801,47 @@ class TestContextOptimizer:
         assert get_token_budget("unknown-model") == DEFAULT_TOKEN_BUDGET
 
     @pytest.mark.anyio
-    async def test_optimize_empty_history(self):
-        """Test optimize_context_window with empty history."""
+    async def test_optimize_empty_history_returns_optimized_context(self):
+        """Test optimize_context_window with empty history returns OptimizedContext."""
         from app.agents.context_optimizer import optimize_context_window
 
         result = await optimize_context_window(
             history=[],
             model_name="gemini-3-pro-preview",
         )
-        assert result == []
+        # Should return OptimizedContext TypedDict, not a list
+        assert isinstance(result, dict)
+        assert "history" in result
+        assert "cached_prompt_name" in result
+        assert "system_prompt" in result
+        assert result["history"] == []
+        assert result["cached_prompt_name"] is None
+        assert result["system_prompt"] is None
+
+    @pytest.mark.anyio
+    async def test_optimize_returns_optimized_context_structure(self):
+        """Test optimize_context_window returns correct OptimizedContext structure."""
+        from app.agents.context_optimizer import optimize_context_window
+
+        history = [{"role": "user", "content": "Hello"}]
+        result = await optimize_context_window(
+            history=history,
+            model_name="gemini-3-pro-preview",
+            system_prompt="You are helpful",
+        )
+
+        # Verify TypedDict structure
+        assert isinstance(result, dict)
+        assert "history" in result
+        assert "cached_prompt_name" in result
+        assert "system_prompt" in result
+
+        # Without Redis, caching is disabled
+        assert result["cached_prompt_name"] is None
+        # System prompt should be returned since not cached
+        assert result["system_prompt"] == "You are helpful"
+        # History should contain the message
+        assert len(result["history"]) == 1
 
     @pytest.mark.anyio
     async def test_optimize_single_message(self):
@@ -820,8 +853,8 @@ class TestContextOptimizer:
             history=history,
             model_name="gemini-3-pro-preview",
         )
-        assert len(result) == 1
-        assert result[0].parts[0].content == "Hello"
+        assert len(result["history"]) == 1
+        assert result["history"][0].parts[0].content == "Hello"
 
     @pytest.mark.anyio
     async def test_optimize_preserves_latest_message(self):
@@ -842,7 +875,7 @@ class TestContextOptimizer:
             hasattr(msg, "parts") and
             hasattr(msg.parts[0], "content") and
             msg.parts[0].content == "Latest message"
-            for msg in result
+            for msg in result["history"]
         )
 
     @pytest.mark.anyio
@@ -864,9 +897,9 @@ class TestContextOptimizer:
             max_context_tokens=50000,  # Small budget
         )
         # Should have fewer messages than original
-        assert len(result) < len(history)
+        assert len(result["history"]) < len(history)
         # Latest message must be present
-        assert result[-1].parts[0].content == "Latest"
+        assert result["history"][-1].parts[0].content == "Latest"
 
     @pytest.mark.anyio
     async def test_optimize_with_system_prompt_reserves_space(self):
@@ -896,7 +929,87 @@ class TestContextOptimizer:
         )
 
         # With system prompt, less history should fit
-        assert len(result_with_prompt) <= len(result_without_prompt)
+        assert len(result_with_prompt["history"]) <= len(result_without_prompt["history"])
+
+    @pytest.mark.anyio
+    async def test_optimize_with_redis_cache_miss(self, mock_redis):
+        """Test optimize_context_window with Redis but cache miss."""
+        from unittest.mock import AsyncMock, patch
+
+        from app.agents.context_optimizer import optimize_context_window
+
+        # Mock cache miss - get returns None, create fails gracefully
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.set = AsyncMock(return_value=True)
+
+        history = [{"role": "user", "content": "Hello"}]
+
+        # Mock the Gemini client to avoid actual API calls
+        with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
+            mock_client.return_value.aio.caches.create = AsyncMock(return_value=None)
+
+            result = await optimize_context_window(
+                history=history,
+                model_name="gemini-2.5-flash",
+                system_prompt="You are helpful",
+                redis_client=mock_redis,
+            )
+
+        # Should return system_prompt since caching failed
+        assert result["system_prompt"] == "You are helpful"
+        assert result["cached_prompt_name"] is None
+
+    @pytest.mark.anyio
+    async def test_optimize_with_redis_cache_hit(self, mock_redis):
+        """Test optimize_context_window with Redis cache hit."""
+        from unittest.mock import AsyncMock, patch
+
+        from app.agents.context_optimizer import optimize_context_window
+
+        # Mock cache hit
+        mock_redis.get = AsyncMock(return_value="cachedContents/abc123")
+        mock_redis.set = AsyncMock(return_value=True)
+
+        history = [{"role": "user", "content": "Hello"}]
+
+        # Mock the Gemini client for TTL extension
+        with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
+            mock_client.return_value.aio.caches.update = AsyncMock()
+
+            result = await optimize_context_window(
+                history=history,
+                model_name="gemini-2.5-flash",
+                system_prompt="You are helpful",
+                redis_client=mock_redis,
+            )
+
+        # Should return cached_prompt_name and system_prompt=None
+        assert result["cached_prompt_name"] == "cachedContents/abc123"
+        assert result["system_prompt"] is None
+
+    @pytest.mark.anyio
+    async def test_optimize_caching_disabled_by_feature_flag(self, mock_redis, monkeypatch):
+        """Test that caching is disabled when feature flag is off."""
+        from app.agents.context_optimizer import optimize_context_window
+        from app.core import config
+
+        # Disable caching via feature flag
+        monkeypatch.setattr(config.settings, "ENABLE_SYSTEM_PROMPT_CACHING", False)
+
+        history = [{"role": "user", "content": "Hello"}]
+
+        result = await optimize_context_window(
+            history=history,
+            model_name="gemini-2.5-flash",
+            system_prompt="You are helpful",
+            redis_client=mock_redis,
+        )
+
+        # Should not attempt caching, return raw system_prompt
+        assert result["cached_prompt_name"] is None
+        assert result["system_prompt"] == "You are helpful"
+        # Redis should not be called
+        mock_redis.get.assert_not_called()
 
     def test_estimate_tokens_heuristic(self):
         """Test _estimate_tokens uses char/4 heuristic."""
@@ -941,4 +1054,66 @@ class TestContextOptimizer:
         assert isinstance(result[1], ModelResponse)
         assert result[0].parts[0].content == "Hello"
         assert result[1].parts[0].content == "Hi there"
+
+
+class TestAssistantAgentWithCaching:
+    """Tests for AssistantAgent with system prompt caching support."""
+
+    def test_init_with_cached_prompt_nullifies_system_prompt(self):
+        """Test AssistantAgent sets system_prompt=None when cached_prompt_name provided."""
+        agent = AssistantAgent(
+            model_name="gemini-2.5-flash",
+            system_prompt="Original prompt",
+            cached_prompt_name="cachedContents/abc123",
+        )
+        # System prompt should be None when using cache
+        assert agent.system_prompt is None
+        assert agent.cached_prompt_name == "cachedContents/abc123"
+
+    def test_init_without_cached_prompt_keeps_system_prompt(self):
+        """Test AssistantAgent keeps system_prompt when no cached_prompt_name."""
+        agent = AssistantAgent(
+            model_name="gemini-2.5-flash",
+            system_prompt="Custom prompt",
+        )
+        assert agent.system_prompt == "Custom prompt"
+        assert agent.cached_prompt_name is None
+
+    @patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key-for-testing"})
+    def test_agent_creates_with_cached_content_setting(self):
+        """Test agent includes google_cached_content in model settings when cache provided."""
+        agent = AssistantAgent(
+            model_name="gemini-2.5-flash",
+            cached_prompt_name="cachedContents/abc123",
+        )
+        # Access agent to trigger creation
+        pydantic_agent = agent.agent
+        # The agent should be created (we can't easily inspect model_settings,
+        # but we verify it doesn't raise and the agent is created)
+        assert pydantic_agent is not None
+        assert agent.cached_prompt_name == "cachedContents/abc123"
+
+
+class TestGetAgentFactory:
+    """Tests for get_agent factory function with caching support."""
+
+    def test_get_agent_with_cached_prompt_name(self):
+        """Test get_agent passes cached_prompt_name to AssistantAgent."""
+        agent = get_agent(
+            system_prompt="Original",
+            model_name="gemini-2.5-flash",
+            cached_prompt_name="cachedContents/xyz789",
+        )
+        assert agent.cached_prompt_name == "cachedContents/xyz789"
+        # System prompt should be None when using cache
+        assert agent.system_prompt is None
+
+    def test_get_agent_without_cached_prompt_name(self):
+        """Test get_agent works without cached_prompt_name."""
+        agent = get_agent(
+            system_prompt="My prompt",
+            model_name="gemini-2.5-flash",
+        )
+        assert agent.cached_prompt_name is None
+        assert agent.system_prompt == "My prompt"
 

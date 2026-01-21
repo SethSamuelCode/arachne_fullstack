@@ -3,7 +3,6 @@
 This module contains Pydantic schemas for message attachments (images, files).
 """
 
-from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator
