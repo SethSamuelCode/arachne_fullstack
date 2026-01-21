@@ -86,11 +86,14 @@ class AssistantAgent:
 
         agent = Agent[Deps, str](**agent_kwargs)
 
-        # Only register tools if not using cached content (tools are in the cache)
-        if not self.skip_tool_registration:
-            register_tools(agent)
-        else:
-            logger.debug("Skipping tool registration (tools cached in Gemini content)")
+        # Always register tools locally - PydanticAI needs them to execute tool calls.
+        # When using cached content, Gemini already knows about the tools (they're
+        # in the cache), but PydanticAI still needs them registered to handle the
+        # tool call responses.
+        register_tools(agent)
+
+        if self.skip_tool_registration:
+            logger.debug("Tools registered locally (Gemini tools are cached)")
 
         return agent
 
