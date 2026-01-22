@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.schemas.models import DEFAULT_GEMINI_MODEL, GeminiModelName
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass
@@ -10,6 +13,7 @@ class SpawnAgentDeps:
     user_id: str | None = None
     user_name: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    db: "AsyncSession | None" = None
 
     spawn_depth: int = 0
     spawn_max_depth: int = 10

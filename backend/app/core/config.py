@@ -214,6 +214,10 @@ class Settings(BaseSettings):
     S3_BUCKET: str = "arachne_fullstack"
     S3_REGION: str = "us-east-1"
 
+    # Storage proxy URL for sandbox containers (auto-detected if not set)
+    # Example: "http://host.docker.internal:8000/api/v1/storage"
+    STORAGE_PROXY_URL: str | None = None
+
     # === AI Agent (pydantic_ai, openai) ===
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o-mini"

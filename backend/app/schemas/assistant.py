@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass
@@ -12,3 +15,5 @@ class Deps:
     user_id: str | None = None
     user_name: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    db: "AsyncSession | None" = None
+

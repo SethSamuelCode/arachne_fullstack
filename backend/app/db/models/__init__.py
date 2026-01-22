@@ -7,6 +7,7 @@ from app.db.models.item import Item
 from app.db.models.conversation import Conversation, Message, ToolCall
 from app.db.models.attachment import MessageAttachment
 from app.db.models.webhook import Webhook, WebhookDelivery
+from app.db.models.plan import Plan, PlanTask
 
 __all__ = [
     "User",
@@ -18,4 +19,6 @@ __all__ = [
     "MessageAttachment",
     "Webhook",
     "WebhookDelivery",
+    "Plan",
+    "PlanTask",
 ]

@@ -1,5 +1,6 @@
+import logging
 from typing import Any, Literal, TypeVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
 from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
@@ -21,7 +22,7 @@ from app.core.config import settings
 from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
 from app.schemas.models import GeminiModelName
-from app.schemas.planning import Plan, PlanUpdate, SingleTask
+from app.schemas.plan import PlanCreate, PlanRead, PlanTaskCreate, PlanTaskUpdate, PlanUpdate
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 # Type alias for image generation model selection
@@ -204,40 +205,81 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return _stringify(result.output)
 
     @agent.tool
-    async def create_plan(ctx: RunContext[TDeps], plan: Plan) -> str:
+    async def create_plan(ctx: RunContext[TDeps], plan: PlanCreate) -> str:
         """Create a new plan.
 
         Use this tool to create a structured plan with a list of tasks.
+        Plans are user-scoped - only you can access your plans.
 
         Args:
-            plan: The plan object containing the name and list of tasks (steps).
+            plan: The plan object containing:
+                - name: Plan name
+                - description: Plan description
+                - notes: Optional additional notes
+                - is_completed: Whether the plan is completed (default: false)
+                - tasks: List of initial tasks, each with:
+                    - description: Task description
+                    - notes: Optional task notes
+                    - status: 'pending', 'in_progress', or 'completed'
+                    - is_completed: Whether task is done
 
         Returns:
-            The ID of the created plan.
+            The UUID of the created plan.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        plan_id = plan_service.create_plan(plan)
-        return plan_id
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to create a plan."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_service = PlanService(ctx.deps.db)
+            created_plan = await plan_service.create_plan(user_uuid, plan)
+            return str(created_plan.id)
+        except Exception as e:
+            logger.exception("Error creating plan")
+            return f"Error creating plan: {e}"
 
     @agent.tool
-    async def get_plan(ctx: RunContext[TDeps], plan_id: str) -> Plan | str:
+    async def get_plan(ctx: RunContext[TDeps], plan_id: str) -> PlanRead | str:
         """Retrieve a plan by its ID.
 
         Use this tool to fetch the details of an existing plan, including its tasks and status.
+        You can only access your own plans.
 
         Args:
-            plan_id: The unique identifier of the plan to retrieve.
+            plan_id: The UUID of the plan to retrieve.
 
         Returns:
             The Plan object if found, or an error message.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        plan = plan_service.get_plan(plan_id)
-        return plan
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to get a plan."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_uuid = UUID(plan_id)
+            plan_service = PlanService(ctx.deps.db)
+            plan = await plan_service.get_plan(plan_uuid, user_uuid)
+            return plan
+        except NotFoundError:
+            return f"Plan not found: {plan_id}"
+        except ValueError:
+            return f"Invalid plan ID format: {plan_id}"
+        except Exception as e:
+            logger.exception("Error getting plan")
+            return f"Error getting plan: {e}"
 
     @agent.tool
     async def update_plan(ctx: RunContext[TDeps], plan_id: str, plan_data: PlanUpdate) -> str:
@@ -246,114 +288,244 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         Use this tool to modify a plan's details. Only fields you explicitly provide
         will be updated - missing fields retain their existing values.
 
-        IMPORTANT: This tool only updates EXISTING tasks. To add new tasks, use add_task_to_plan.
+        IMPORTANT: This tool updates the plan itself, not tasks. To update tasks,
+        use update_task. To add new tasks, use add_task_to_plan.
         To remove tasks, use remove_task_from_plan.
 
         Args:
-            plan_id: The unique identifier of the plan to update.
+            plan_id: The UUID of the plan to update.
             plan_data: The partial update data. Only include fields you want to change.
                 - name: New plan name (optional)
-                - plan_description: New plan description (optional)
-                - plan_notes: New plan notes (optional)
-                - plan_completed: Mark plan as completed (optional)
-                - steps: List of task updates, each containing:
-                    - id: (REQUIRED) The task ID to update
-                    - task_status: New status (optional)
-                    - task_completed: Mark task completed (optional)
-                    - task_description: New description (optional)
-                    - task_notes: New notes (optional)
-                    - task_position: New position (optional)
+                - description: New plan description (optional)
+                - notes: New plan notes (optional)
+                - is_completed: Mark plan as completed (optional)
 
         Returns:
-            A confirmation message or error if plan/task IDs not found.
-
-        Example - Mark a task as completed (preserves all other fields):
-            update_plan(plan_id="abc123", plan_data={"steps": [{"id": "task1", "task_status": "completed", "task_completed": true}]})
+            A confirmation message or error if plan not found.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        result = plan_service.update_plan(plan_id, plan_data)
-        return result
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to update a plan."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_uuid = UUID(plan_id)
+            plan_service = PlanService(ctx.deps.db)
+            await plan_service.update_plan(plan_uuid, user_uuid, plan_data)
+            return f"Plan {plan_id} updated successfully."
+        except NotFoundError:
+            return f"Plan not found: {plan_id}"
+        except ValueError:
+            return f"Invalid plan ID format: {plan_id}"
+        except Exception as e:
+            logger.exception("Error updating plan")
+            return f"Error updating plan: {e}"
 
     @agent.tool
     async def delete_plan(ctx: RunContext[TDeps], plan_id: str) -> str:
         """Delete a plan.
 
         Use this tool to remove a plan when it is no longer needed.
+        You can only delete your own plans.
 
         Args:
-            plan_id: The unique identifier of the plan to delete.
+            plan_id: The UUID of the plan to delete.
 
         Returns:
             A confirmation message indicating the result of the deletion.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        result = plan_service.delete_plan(plan_id)
-        return result
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to delete a plan."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_uuid = UUID(plan_id)
+            plan_service = PlanService(ctx.deps.db)
+            await plan_service.delete_plan(plan_uuid, user_uuid)
+            return f"Plan {plan_id} deleted successfully."
+        except NotFoundError:
+            return f"Plan not found: {plan_id}"
+        except ValueError:
+            return f"Invalid plan ID format: {plan_id}"
+        except Exception as e:
+            logger.exception("Error deleting plan")
+            return f"Error deleting plan: {e}"
 
     @agent.tool
     async def get_all_plans(
         ctx: RunContext[TDeps],
-    ) -> list:
-        """Retrieve a summary of all plans.
+    ) -> list | str:
+        """Retrieve a summary of all your plans.
 
-        Use this tool to get a list of all existing plans with their IDs, names, and descriptions.
+        Use this tool to get a list of all your existing plans with their IDs, names, and descriptions.
+        Only your own plans are returned.
 
         Returns:
-            A list of tuples containing plan ID, name, and description.
+            A list of plan summaries with ID, name, description, completion status, and task counts.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        result = plan_service.get_all_plans()
-        return result
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to list plans."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_service = PlanService(ctx.deps.db)
+            summaries = await plan_service.get_all_plan_summaries(user_uuid)
+            return [
+                {
+                    "id": str(s.id),
+                    "name": s.name,
+                    "description": s.description,
+                    "is_completed": s.is_completed,
+                    "task_count": s.task_count,
+                    "completed_task_count": s.completed_task_count,
+                }
+                for s in summaries
+            ]
+        except Exception as e:
+            logger.exception("Error listing plans")
+            return f"Error listing plans: {e}"
 
     @agent.tool
-    async def add_task_to_plan(ctx: RunContext[TDeps], plan_id: str, task: SingleTask) -> str:
+    async def add_task_to_plan(ctx: RunContext[TDeps], plan_id: str, task: PlanTaskCreate) -> str:
         """Add a new task to an existing plan.
 
-        Use this tool to add a new task to a plan. The task will be appended to the plan's
-        list of steps.
+        Use this tool to add a new task to a plan. If position is not specified,
+        the task will be appended at the end.
 
         Args:
-            plan_id: The unique identifier of the plan to add the task to.
+            plan_id: The UUID of the plan to add the task to.
             task: The new task to add, containing:
-                - task_description: Description of what needs to be done
-                - task_notes: Optional additional notes
-                - task_status: Initial status (default: "pending")
-                - task_completed: Initial completion state (default: false)
-                - task_position: Position in the task list (default: 0)
+                - description: Description of what needs to be done
+                - notes: Optional additional notes
+                - status: Initial status ('pending', 'in_progress', 'completed')
+                - is_completed: Whether task is done (default: false)
+                - position: Position in the task list (optional, appends at end if not specified)
 
         Returns:
             A confirmation message with the new task ID, or an error if the plan is not found.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        result = plan_service.add_task(plan_id, task)
-        return result
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to add a task."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            plan_uuid = UUID(plan_id)
+            plan_service = PlanService(ctx.deps.db)
+            created_task = await plan_service.add_task(plan_uuid, user_uuid, task)
+            return f"Task {created_task.id} added to plan {plan_id}."
+        except NotFoundError:
+            return f"Plan not found: {plan_id}"
+        except ValueError:
+            return f"Invalid plan ID format: {plan_id}"
+        except Exception as e:
+            logger.exception("Error adding task to plan")
+            return f"Error adding task: {e}"
 
     @agent.tool
-    async def remove_task_from_plan(ctx: RunContext[TDeps], plan_id: str, task_id: str) -> str:
-        """Remove a task from an existing plan.
+    async def update_task(
+        ctx: RunContext[TDeps], task_id: str, task_update: PlanTaskUpdate
+    ) -> str:
+        """Update an existing task.
 
-        Use this tool to remove a task from a plan by its ID.
+        Use this tool to modify a task's properties such as description, notes,
+        status, or completion state.
 
         Args:
-            plan_id: The unique identifier of the plan containing the task.
-            task_id: The unique identifier of the task to remove.
+            task_id: The UUID of the task to update.
+            task_update: The fields to update on the task.
 
         Returns:
-            A confirmation message, or an error if the plan or task is not found.
+            A confirmation message with the updated task details,
+            or an error if the task is not found or unauthorized.
         """
-        from app.agents.tools.plan_service import get_plan_service
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
 
-        plan_service = get_plan_service()
-        result = plan_service.remove_task(plan_id, task_id)
-        return result
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to update a task."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            task_uuid = UUID(task_id)
+            plan_service = PlanService(ctx.deps.db)
+            updated_task = await plan_service.update_task(task_uuid, user_uuid, task_update)
+            return (
+                f"Task {updated_task.id} updated: "
+                f"status={updated_task.status}, completed={updated_task.is_completed}"
+            )
+        except NotFoundError:
+            return f"Task not found or unauthorized: {task_id}"
+        except ValueError:
+            return f"Invalid task ID format: {task_id}"
+        except Exception as e:
+            logger.exception("Error updating task")
+            return f"Error updating task: {e}"
+
+    @agent.tool
+    async def remove_task_from_plan(ctx: RunContext[TDeps], task_id: str) -> str:
+        """Remove a task from its plan.
+
+        Use this tool to remove a task by its ID. The task's plan is determined automatically.
+
+        Args:
+            task_id: The UUID of the task to remove.
+
+        Returns:
+            A confirmation message, or an error if the task is not found.
+        """
+        from app.core.exceptions import NotFoundError
+        from app.services.plan import PlanService
+
+        logger = logging.getLogger(__name__)
+
+        if not ctx.deps.user_id:
+            return "Error: User ID is required to remove a task."
+        if not ctx.deps.db:
+            return "Error: Database session is required."
+
+        try:
+            user_uuid = UUID(ctx.deps.user_id)
+            task_uuid = UUID(task_id)
+            plan_service = PlanService(ctx.deps.db)
+            await plan_service.remove_task(task_uuid, user_uuid)
+            return f"Task {task_id} removed successfully."
+        except NotFoundError:
+            return f"Task not found: {task_id}"
+        except ValueError:
+            return f"Invalid task ID format: {task_id}"
+        except Exception as e:
+            logger.exception("Error removing task")
+            return f"Error removing task: {e}"
 
     @agent.tool
     @safe_tool
@@ -629,15 +801,23 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         Environment & Storage:
         - Internet access: Enabled.
         - Persistence: Ephemeral (reset after each call).
-        - S3 Storage: You can store persistent data in your S3 storage using `boto3`.
-          Environment variables are pre-configured: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL`, `S3_BUCKET`, and `S3_USER_PREFIX`.
-          IMPORTANT: Always prefix your S3 keys with `S3_USER_PREFIX` to store files in your personal storage.
+        - Storage Proxy: You can store persistent data via the storage proxy using `requests`.
+          Environment variables are pre-configured: `STORAGE_PROXY_URL`, `STORAGE_TOKEN`, and `S3_USER_PREFIX`.
+          The proxy enforces user-scoped access; you cannot access other users' data.
           Example:
           ```python
-          import boto3, os
-          s3 = boto3.client("s3")
-          prefix = os.environ.get("S3_USER_PREFIX", "")
-          s3.put_object(Bucket=os.environ["S3_BUCKET"], Key=f"{prefix}my_data.txt", Body="content")
+          import requests, os
+          url = os.environ["STORAGE_PROXY_URL"]
+          token = os.environ["STORAGE_TOKEN"]
+          headers = {"Authorization": f"Bearer {token}"}
+          # Upload a file
+          requests.put(f"{url}/objects/my_data.txt", data="content", headers=headers)
+          # Download a file
+          resp = requests.get(f"{url}/objects/my_data.txt", headers=headers)
+          # List files
+          resp = requests.get(f"{url}/objects", headers=headers)
+          # Delete a file
+          requests.delete(f"{url}/objects/my_data.txt", headers=headers)
           ```
 
         Available Libraries:
@@ -655,7 +835,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             * Date/Time: python-dateutil, pytz, arrow, pendulum
             * Data Formats: pyyaml, toml, xmltodict, defusedxml, jsonschema
             * Network: paramiko (SSH), dnspython, websockets
-            * Cloud: boto3 (AWS)
+            * Cloud: boto3 (AWS - for non-user-scoped external services only)
             * Archives: py7zr
             * Media: mutagen, pydub, av (video)
             * Validation: pydantic, marshmallow, email-validator, phonenumbers
@@ -669,11 +849,20 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             - TimeoutError: Code execution exceeded timeout limit.
             - DockerException: Docker service unavailable.
         """
+        from app.api.routes.v1.storage_proxy import create_sandbox_token
         from app.services.python import get_python_executor
 
         python_executor = get_python_executor()
         user_id = ctx.deps.user_id if ctx.deps.user_id else None
-        result = await python_executor.execute_code(code, timeout, user_id=user_id)
+
+        # Generate a short-lived storage token for secure S3 access
+        storage_token = None
+        if user_id:
+            storage_token, _ = create_sandbox_token(user_id)
+
+        result = await python_executor.execute_code(
+            code, timeout, user_id=user_id, storage_token=storage_token
+        )
         return result
 
     @agent.tool

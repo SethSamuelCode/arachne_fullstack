@@ -1,6 +1,6 @@
 """SQLModel base model."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, func
 from sqlmodel import Field, SQLModel
@@ -26,6 +26,7 @@ class TimestampMixin(SQLModel):
     """Mixin for created_at and updated_at timestamps."""
 
     created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),
         sa_column_kwargs={
             "server_default": func.now(),
