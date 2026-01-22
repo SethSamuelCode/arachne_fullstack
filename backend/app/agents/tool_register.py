@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
 from app.schemas.models import GeminiModelName
-from app.schemas.planning import Plan
+from app.schemas.planning import Plan, PlanUpdate, SingleTask
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
 # Type alias for image generation model selection
@@ -240,17 +240,35 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return plan
 
     @agent.tool
-    async def update_plan(ctx: RunContext[TDeps], plan_id: str, plan_data: Plan) -> str:
-        """Update an existing plan.
+    async def update_plan(ctx: RunContext[TDeps], plan_id: str, plan_data: PlanUpdate) -> str:
+        """Update an existing plan with partial update semantics.
 
-        Use this tool to modify a plan's details, such as marking tasks as completed, adding new tasks, or changing the plan name.
+        Use this tool to modify a plan's details. Only fields you explicitly provide
+        will be updated - missing fields retain their existing values.
+
+        IMPORTANT: This tool only updates EXISTING tasks. To add new tasks, use add_task_to_plan.
+        To remove tasks, use remove_task_from_plan.
 
         Args:
             plan_id: The unique identifier of the plan to update.
-            plan_data: The updated plan object.
+            plan_data: The partial update data. Only include fields you want to change.
+                - name: New plan name (optional)
+                - plan_description: New plan description (optional)
+                - plan_notes: New plan notes (optional)
+                - plan_completed: Mark plan as completed (optional)
+                - steps: List of task updates, each containing:
+                    - id: (REQUIRED) The task ID to update
+                    - task_status: New status (optional)
+                    - task_completed: Mark task completed (optional)
+                    - task_description: New description (optional)
+                    - task_notes: New notes (optional)
+                    - task_position: New position (optional)
 
         Returns:
-            A confirmation message indicating the result of the update.
+            A confirmation message or error if plan/task IDs not found.
+
+        Example - Mark a task as completed (preserves all other fields):
+            update_plan(plan_id="abc123", plan_data={"steps": [{"id": "task1", "task_status": "completed", "task_completed": true}]})
         """
         from app.agents.tools.plan_service import get_plan_service
 
@@ -291,6 +309,50 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
         plan_service = get_plan_service()
         result = plan_service.get_all_plans()
+        return result
+
+    @agent.tool
+    async def add_task_to_plan(ctx: RunContext[TDeps], plan_id: str, task: SingleTask) -> str:
+        """Add a new task to an existing plan.
+
+        Use this tool to add a new task to a plan. The task will be appended to the plan's
+        list of steps.
+
+        Args:
+            plan_id: The unique identifier of the plan to add the task to.
+            task: The new task to add, containing:
+                - task_description: Description of what needs to be done
+                - task_notes: Optional additional notes
+                - task_status: Initial status (default: "pending")
+                - task_completed: Initial completion state (default: false)
+                - task_position: Position in the task list (default: 0)
+
+        Returns:
+            A confirmation message with the new task ID, or an error if the plan is not found.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+
+        plan_service = get_plan_service()
+        result = plan_service.add_task(plan_id, task)
+        return result
+
+    @agent.tool
+    async def remove_task_from_plan(ctx: RunContext[TDeps], plan_id: str, task_id: str) -> str:
+        """Remove a task from an existing plan.
+
+        Use this tool to remove a task from a plan by its ID.
+
+        Args:
+            plan_id: The unique identifier of the plan containing the task.
+            task_id: The unique identifier of the task to remove.
+
+        Returns:
+            A confirmation message, or an error if the plan or task is not found.
+        """
+        from app.agents.tools.plan_service import get_plan_service
+
+        plan_service = get_plan_service()
+        result = plan_service.remove_task(plan_id, task_id)
         return result
 
     @agent.tool

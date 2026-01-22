@@ -26,3 +26,28 @@ class Plan(BaseModel):
     plan_completed: bool = Field(default=False, description="Indicates whether the plan has been completed.")
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=tz), description="Timestamp when the plan was created.")
     updated_at: datetime | None = Field(default=None, description="Timestamp when the plan was last updated.")
+
+
+class SingleTaskUpdate(BaseModel):
+    """Schema for partial task updates - only id is required, all other fields are optional."""
+
+    id: str = Field(..., description="The unique identifier of the task to update.")
+    task_description: str | None = Field(default=None, description="Description of the task and what needs to be done.")
+    task_notes: str | None = Field(default=None, description="Additional notes or context for the task.")
+    task_completed: bool | None = Field(default=None, description="Indicates whether the task has been completed.")
+    task_status: Literal["pending", "in_progress", "completed"] | None = Field(default=None, description="Current status of the task.")
+    task_position: int | None = Field(default=None, description="Position of the task in the list.")
+
+
+class PlanUpdate(BaseModel):
+    """Schema for partial plan updates - all fields are optional.
+
+    Only fields explicitly provided will be updated. Missing fields retain their existing values.
+    To update tasks, provide their IDs in the steps list - only provided task fields will be updated.
+    """
+
+    name: str | None = Field(default=None, description="Name of the plan.")
+    plan_description: str | None = Field(default=None, description="Detailed description of the plan and its objectives.")
+    steps: list[SingleTaskUpdate] | None = Field(default=None, description="List of task updates. Only provided fields per task will be updated.")
+    plan_notes: str | None = Field(default=None, description="Additional notes or context for the plan.")
+    plan_completed: bool | None = Field(default=None, description="Indicates whether the plan has been completed.")
