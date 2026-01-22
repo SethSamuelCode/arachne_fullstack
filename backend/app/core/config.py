@@ -235,6 +235,18 @@ class Settings(BaseSettings):
     # Caches system prompt AND tool definitions together per Gemini API requirement
     # (system_instruction, tools, and tool_config must all be cached together)
     ENABLE_SYSTEM_PROMPT_CACHING: bool = True
+    # Cache TTL in seconds (default 15 minutes). Gemini cache gets +300s buffer.
+    # Minimum 60 seconds (Gemini API constraint).
+    GOOGLE_CACHE_TTL_SECONDS: int = 900
+
+    @field_validator("GOOGLE_CACHE_TTL_SECONDS")
+    @classmethod
+    def validate_cache_ttl_minimum(cls, v: int) -> int:
+        """Validate cache TTL is at least 60 seconds (Gemini API minimum)."""
+        if v < 60:
+            msg = "GOOGLE_CACHE_TTL_SECONDS must be at least 60 seconds (Gemini API minimum)"
+            raise ValueError(msg)
+        return v
 
     @field_validator(
         "S3_ACCESS_KEY",

@@ -60,8 +60,8 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
 # Default fallback budget (conservative)
 DEFAULT_TOKEN_BUDGET = 850_000
 
-# Cache TTL in seconds (55 minutes, under Gemini's 1-hour limit)
-CACHE_TTL_SECONDS = 3300
+# Cache TTL from settings (default 15 min). Gemini gets +300s buffer to prevent race conditions.
+CACHE_TTL_SECONDS = settings.GOOGLE_CACHE_TTL_SECONDS
 
 # Gemini count_tokens API limit per call (conservative)
 COUNT_TOKENS_CHUNK_LIMIT = 900_000

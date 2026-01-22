@@ -37,6 +37,31 @@ class TestSettings:
             settings.OPENALEX_API_KEY, str
         )
 
+    def test_google_cache_ttl_default(self):
+        """Test GOOGLE_CACHE_TTL_SECONDS has correct default value."""
+        assert settings.GOOGLE_CACHE_TTL_SECONDS == 900  # 15 minutes
+
+    def test_google_cache_ttl_minimum_validation(self):
+        """Test GOOGLE_CACHE_TTL_SECONDS rejects values below 60 seconds."""
+        import os
+
+        import pytest
+        from pydantic import ValidationError as PydanticValidationError
+
+        from app.core.config import Settings
+
+        # Test that value below 60 raises ValidationError
+        with pytest.raises(PydanticValidationError) as exc_info:
+            Settings(GOOGLE_CACHE_TTL_SECONDS=59, _env_file=None)  # type: ignore[call-arg]
+
+        assert "GOOGLE_CACHE_TTL_SECONDS must be at least 60 seconds" in str(
+            exc_info.value
+        )
+
+        # Test that exactly 60 is valid
+        valid_settings = Settings(GOOGLE_CACHE_TTL_SECONDS=60, _env_file=None)  # type: ignore[call-arg]
+        assert valid_settings.GOOGLE_CACHE_TTL_SECONDS == 60
+
 
 class TestExceptions:
     """Tests for custom exceptions."""
