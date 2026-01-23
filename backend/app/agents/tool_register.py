@@ -226,20 +226,20 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         Returns:
             The UUID of the created plan.
         """
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to create a plan."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
-            plan_service = PlanService(ctx.deps.db)
-            created_plan = await plan_service.create_plan(user_uuid, plan)
-            return str(created_plan.id)
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                created_plan = await plan_service.create_plan(user_uuid, plan)
+                return str(created_plan.id)
         except Exception as e:
             logger.exception("Error creating plan")
             return f"Error creating plan: {e}"
@@ -258,21 +258,21 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             The Plan object if found, or an error message.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to get a plan."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             plan_uuid = UUID(plan_id)
-            plan_service = PlanService(ctx.deps.db)
-            plan = await plan_service.get_plan(plan_uuid, user_uuid)
-            return plan
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                plan = await plan_service.get_plan(plan_uuid, user_uuid)
+                return plan
         except NotFoundError:
             return f"Plan not found: {plan_id}"
         except ValueError:
@@ -304,21 +304,21 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message or error if plan not found.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to update a plan."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             plan_uuid = UUID(plan_id)
-            plan_service = PlanService(ctx.deps.db)
-            await plan_service.update_plan(plan_uuid, user_uuid, plan_data)
-            return f"Plan {plan_id} updated successfully."
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                await plan_service.update_plan(plan_uuid, user_uuid, plan_data)
+                return f"Plan {plan_id} updated successfully."
         except NotFoundError:
             return f"Plan not found: {plan_id}"
         except ValueError:
@@ -341,21 +341,21 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message indicating the result of the deletion.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to delete a plan."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             plan_uuid = UUID(plan_id)
-            plan_service = PlanService(ctx.deps.db)
-            await plan_service.delete_plan(plan_uuid, user_uuid)
-            return f"Plan {plan_id} deleted successfully."
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                await plan_service.delete_plan(plan_uuid, user_uuid)
+                return f"Plan {plan_id} deleted successfully."
         except NotFoundError:
             return f"Plan not found: {plan_id}"
         except ValueError:
@@ -376,30 +376,30 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         Returns:
             A list of plan summaries with ID, name, description, completion status, and task counts.
         """
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to list plans."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
-            plan_service = PlanService(ctx.deps.db)
-            summaries = await plan_service.get_all_plan_summaries(user_uuid)
-            return [
-                {
-                    "id": str(s.id),
-                    "name": s.name,
-                    "description": s.description,
-                    "is_completed": s.is_completed,
-                    "task_count": s.task_count,
-                    "completed_task_count": s.completed_task_count,
-                }
-                for s in summaries
-            ]
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                summaries = await plan_service.get_all_plan_summaries(user_uuid)
+                return [
+                    {
+                        "id": str(s.id),
+                        "name": s.name,
+                        "description": s.description,
+                        "is_completed": s.is_completed,
+                        "task_count": s.task_count,
+                        "completed_task_count": s.completed_task_count,
+                    }
+                    for s in summaries
+                ]
         except Exception as e:
             logger.exception("Error listing plans")
             return f"Error listing plans: {e}"
@@ -424,21 +424,21 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message with the new task ID, or an error if the plan is not found.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to add a task."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             plan_uuid = UUID(plan_id)
-            plan_service = PlanService(ctx.deps.db)
-            created_task = await plan_service.add_task(plan_uuid, user_uuid, task)
-            return f"Task {created_task.id} added to plan {plan_id}."
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                created_task = await plan_service.add_task(plan_uuid, user_uuid, task)
+                return f"Task {created_task.id} added to plan {plan_id}."
         except NotFoundError:
             return f"Plan not found: {plan_id}"
         except ValueError:
@@ -465,24 +465,24 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             or an error if the task is not found or unauthorized.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to update a task."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             task_uuid = UUID(task_id)
-            plan_service = PlanService(ctx.deps.db)
-            updated_task = await plan_service.update_task(task_uuid, user_uuid, task_update)
-            return (
-                f"Task {updated_task.id} updated: "
-                f"status={updated_task.status}, completed={updated_task.is_completed}"
-            )
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                updated_task = await plan_service.update_task(task_uuid, user_uuid, task_update)
+                return (
+                    f"Task {updated_task.id} updated: "
+                    f"status={updated_task.status}, completed={updated_task.is_completed}"
+                )
         except NotFoundError:
             return f"Task not found or unauthorized: {task_id}"
         except ValueError:
@@ -504,21 +504,21 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             A confirmation message, or an error if the task is not found.
         """
         from app.core.exceptions import NotFoundError
+        from app.db.session import get_db_context
         from app.services.plan import PlanService
 
         logger = logging.getLogger(__name__)
 
         if not ctx.deps.user_id:
             return "Error: User ID is required to remove a task."
-        if not ctx.deps.db:
-            return "Error: Database session is required."
 
         try:
             user_uuid = UUID(ctx.deps.user_id)
             task_uuid = UUID(task_id)
-            plan_service = PlanService(ctx.deps.db)
-            await plan_service.remove_task(task_uuid, user_uuid)
-            return f"Task {task_id} removed successfully."
+            async with get_db_context() as db:
+                plan_service = PlanService(db)
+                await plan_service.remove_task(task_uuid, user_uuid)
+                return f"Task {task_id} removed successfully."
         except NotFoundError:
             return f"Task not found: {task_id}"
         except ValueError:
