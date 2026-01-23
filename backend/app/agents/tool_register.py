@@ -801,26 +801,28 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         Environment & Storage:
         - Internet access: Enabled.
         - Persistence: Ephemeral (reset after each call).
-        - Storage Proxy: You can store persistent data via the storage proxy using `requests`.
-          Environment variables are pre-configured: `STORAGE_PROXY_URL`, `STORAGE_TOKEN`, and `S3_USER_PREFIX`.
-          The proxy enforces user-scoped access; you cannot access other users' data.
+        - Storage: Use the pre-installed `storage_client` module for persistent file storage.
+          The storage is user-scoped; you cannot access other users' data.
           Example:
           ```python
-          import requests, os
-          url = os.environ["STORAGE_PROXY_URL"]
-          token = os.environ["STORAGE_TOKEN"]
-          headers = {"Authorization": f"Bearer {token}"}
+          from storage_client import StorageClient
+          client = StorageClient()  # Auto-configured from environment
           # Upload a file
-          requests.put(f"{url}/objects/my_data.txt", data="content", headers=headers)
+          client.put("data/output.csv", csv_content, content_type="text/csv")
           # Download a file
-          resp = requests.get(f"{url}/objects/my_data.txt", headers=headers)
+          content = client.get("data/input.txt")
+          text = client.get_text("data/input.txt")  # As string
           # List files
-          resp = requests.get(f"{url}/objects", headers=headers)
+          files = client.list(prefix="data/")
           # Delete a file
-          requests.delete(f"{url}/objects/my_data.txt", headers=headers)
+          client.delete("data/temp.txt")
+          # Check existence
+          if client.exists("data/file.txt"):
+              ...
           ```
 
         Available Libraries:
+            * Storage: storage_client (for persistent user-scoped file storage)
             * Web/HTTP: requests, httpx, aiohttp
             * Scraping: beautifulsoup4, lxml, html5lib, cssselect
             * Data Science: pandas, numpy, scipy, scikit-learn, statsmodels, sympy, networkx

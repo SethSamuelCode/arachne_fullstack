@@ -164,6 +164,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Download NLTK data (common corpora)
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt stopwords averaged_perceptron_tagger
 
+# Add storage client library for secure S3 proxy access
+COPY backend/app/sandbox_lib/storage_client.py /usr/local/lib/python3.13/site-packages/storage_client.py
+
 # Set working directory
 WORKDIR /sandbox
 

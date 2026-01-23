@@ -239,24 +239,29 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
         title = obj.get("title")
         description = obj.get("description", "")
 
-        if title and title.lower() != description.lower()[:len(title)]:
-            parts.append(title + ".")
+        # Only process if title/description are strings (not nested schema objects)
+        if isinstance(title, str) and isinstance(description, str):
+            if title and title.lower() != description.lower()[:len(title)]:
+                parts.append(title + ".")
 
-        if description:
+            if description:
+                parts.append(description)
+        elif isinstance(description, str) and description:
             parts.append(description)
 
         # Add examples - very valuable for LLM tool understanding
         examples = obj.get("examples")
-        if examples:
-            if len(examples) == 1:
-                parts.append(f"Example: {examples[0]!r}")
-            else:
-                example_strs = [repr(ex) for ex in examples[:3]]  # Limit to 3
-                parts.append(f"Examples: {', '.join(example_strs)}")
+        if examples and isinstance(examples, list):
+            # Filter to only string/primitive examples, skip complex objects
+            str_examples = [repr(ex) for ex in examples[:3] if not isinstance(ex, dict)]
+            if len(str_examples) == 1:
+                parts.append(f"Example: {str_examples[0]}")
+            elif str_examples:
+                parts.append(f"Examples: {', '.join(str_examples)}")
 
-        # Add default value hint
+        # Add default value hint (only for primitives)
         default = obj.get("default")
-        if default is not None:
+        if default is not None and not isinstance(default, dict):
             parts.append(f"Default: {default!r}")
 
         return " ".join(parts) if parts else None
@@ -277,6 +282,20 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
                 logger.warning(f"Could not resolve $ref: {ref_path}")
                 return {"type": "object"}
 
+            # Handle anyOf - Gemini doesn't support JSON Schema union types
+            # Convert to the first non-null type (Pydantic generates anyOf for Optional)
+            if "anyOf" in obj:
+                any_of = obj["anyOf"]
+                # Find first non-null type
+                for variant in any_of:
+                    if isinstance(variant, dict) and variant.get("type") != "null":
+                        # Merge the variant with other fields (like description)
+                        merged = {k: v for k, v in obj.items() if k != "anyOf"}
+                        merged.update(variant)
+                        return resolve_refs(merged)
+                # If all variants are null, just return string type
+                return {"type": "string", "nullable": True}
+
             # Build enriched description before removing fields
             enriched_desc = _enrich_description(obj)
 
@@ -288,6 +307,10 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
                 "title",              # JSON Schema title
                 "default",            # JSON Schema default value
                 "additionalProperties",  # JSON Schema additionalProperties
+                "minimum",            # JSON Schema numeric constraints (not in Gemini)
+                "maximum",            # JSON Schema numeric constraints
+                "minLength",          # JSON Schema string constraints
+                "maxLength",          # JSON Schema string constraints
             }
             result: dict[str, Any] = {}
 
