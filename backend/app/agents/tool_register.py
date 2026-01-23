@@ -798,31 +798,44 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
         Use this tool to run Python scripts for data analysis, scraping, or complex calculations.
 
+        ARGS:
+            code: The Python code to execute. Must be valid Python 3.13 syntax.
+            timeout: Maximum execution time in seconds (default: 600). Use higher values
+                     for long-running tasks like web scraping or large data processing.
+
         Environment & Storage:
-        - Internet access: Enabled.
-        - Persistence: Ephemeral (reset after each call).
-        - Storage: Use the pre-installed `storage_client` module for persistent file storage.
-          The storage is user-scoped; you cannot access other users' data.
-          Example:
-          ```python
-          from storage_client import StorageClient
-          client = StorageClient()  # Auto-configured from environment
-          # Upload a file
-          client.put("data/output.csv", csv_content, content_type="text/csv")
-          # Download a file
-          content = client.get("data/input.txt")
-          text = client.get_text("data/input.txt")  # As string
-          # List files
-          files = client.list(prefix="data/")
-          # Delete a file
-          client.delete("data/temp.txt")
-          # Check existence
-          if client.exists("data/file.txt"):
-              ...
-          ```
+        - Internet access: Enabled (can fetch URLs, APIs, etc.).
+        - Persistence: Ephemeral (filesystem resets after each call).
+        - Storage: Use `storage_client` module for persistent file storage (auto-installed).
+          Storage is user-scoped; you cannot access other users' data.
+
+        StorageClient API:
+        ```python
+        from storage_client import StorageClient
+        client = StorageClient()  # Auto-configured from environment
+
+        # Upload content (string or bytes)
+        client.put("data/output.csv", csv_content, content_type="text/csv")
+
+        # Download as bytes or text
+        content = client.get("data/input.txt")       # Returns bytes
+        text = client.get_text("data/input.txt")     # Returns string (UTF-8)
+
+        # List files (returns list of dicts with key, size, last_modified, content_type)
+        files = client.list(prefix="data/")
+        for f in files:
+            print(f["key"], f["size"])
+
+        # Delete a file
+        client.delete("data/temp.txt")
+
+        # Check existence
+        if client.exists("data/file.txt"):
+            ...
+        ```
 
         Available Libraries:
-            * Storage: storage_client (for persistent user-scoped file storage)
+            * Storage: storage_client (persistent user-scoped file storage)
             * Web/HTTP: requests, httpx, aiohttp
             * Scraping: beautifulsoup4, lxml, html5lib, cssselect
             * Data Science: pandas, numpy, scipy, scikit-learn, statsmodels, sympy, networkx
@@ -837,7 +850,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             * Date/Time: python-dateutil, pytz, arrow, pendulum
             * Data Formats: pyyaml, toml, xmltodict, defusedxml, jsonschema
             * Network: paramiko (SSH), dnspython, websockets
-            * Cloud: boto3 (AWS - for non-user-scoped external services only)
+            * Cloud: boto3 (AWS - for external services only, not user storage)
             * Archives: py7zr
             * Media: mutagen, pydub, av (video)
             * Validation: pydantic, marshmallow, email-validator, phonenumbers
@@ -845,10 +858,14 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             * Search: whoosh
             * Utilities: tqdm, cachetools, diskcache, joblib, faker, loguru, colorama
 
+        RETURNS:
+            Dict with 'output' (stdout as string) and 'error' (stderr or error message).
+            Success: {"output": "...", "error": ""}
+            Failure: {"output": "", "error": "error message..."}
+
         ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - RuntimeError: Docker container failed to start or execute.
             - TimeoutError: Code execution exceeded timeout limit.
+            - RuntimeError: Docker container failed to start.
             - DockerException: Docker service unavailable.
         """
         from app.api.routes.v1.storage_proxy import create_sandbox_token

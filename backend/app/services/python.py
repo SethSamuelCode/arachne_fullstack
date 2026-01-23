@@ -75,7 +75,8 @@ class PythonExecutor:
             # If storage token is provided, use the proxy-based access
             if storage_token:
                 # Determine proxy URL (use internal Docker network URL if available)
-                proxy_base_url = settings.STORAGE_PROXY_URL or f"http://host.docker.internal:{settings.PORT}/api/v1/storage"
+                # Default to port 8550 which is the production FastAPI port
+                proxy_base_url = settings.STORAGE_PROXY_URL or "http://host.docker.internal:8550/api/v1/storage"
                 env_vars.update({
                     "STORAGE_PROXY_URL": proxy_base_url,
                     "STORAGE_TOKEN": storage_token,
@@ -107,6 +108,8 @@ class PythonExecutor:
                     stderr=True,
                     stdout=True,
                     environment=env_vars,
+                    # Enable host.docker.internal on Linux (required for storage proxy)
+                    extra_hosts={"host.docker.internal": "host-gateway"},
                     # network and resource limits lifted for advanced uses
                 )
             )
