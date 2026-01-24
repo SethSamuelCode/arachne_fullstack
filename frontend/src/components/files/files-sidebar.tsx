@@ -13,6 +13,8 @@ import {
 } from "@/stores/files-store";
 import { apiClient } from "@/lib/api-client";
 import { MarkdownContent } from "@/components/chat/markdown-content";
+import { useFileTreeDnd } from "@/hooks/useFileTreeDnd";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
   File,
   Folder,
@@ -29,6 +31,7 @@ import {
   RefreshCw,
   Pencil,
   X,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -84,8 +87,31 @@ export function FilesSidebar() {
   const [previewData, setPreviewData] = useState<FilePreviewData | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [dndError, setDndError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag and drop file move functionality
+  const {
+    sensors,
+    draggedItem,
+    overFolderId,
+    isMoving,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+    handleDragCancel,
+    isValidDropTarget,
+    DragOverlayComponent,
+    DndContextComponent,
+  } = useFileTreeDnd({
+    onMoveComplete: () => {
+      fetchFiles();
+    },
+    onMoveError: (errorMsg) => {
+      setDndError(errorMsg);
+    },
+  });
 
   // Build file tree
   const fileTree = useMemo(
@@ -312,11 +338,11 @@ export function FilesSidebar() {
       />
 
       {/* Error message */}
-      {error && (
+      {(error || dndError) && (
         <div className="mx-3 mb-2 p-2 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-2 text-xs text-destructive">
           <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button onClick={clearError} className="shrink-0">
+          <span className="flex-1">{error || dndError}</span>
+          <button onClick={() => { clearError(); setDndError(null); }} className="shrink-0">
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -418,22 +444,60 @@ export function FilesSidebar() {
                   <p className="text-xs mt-1">Drop files here</p>
                 </div>
               ) : (
-                <FileTreeView
-                  node={fileTree}
-                  depth={0}
-                  expandedFolders={expandedFolders}
-                  selectedFile={selectedFile}
-                  onToggleFolder={toggleFolder}
-                  onSelectFile={setSelectedFile}
-                  onDownload={handleDownload}
-                  onDelete={handleDelete}
-                  onDeleteFolder={handleDeleteFolder}
-                  onRenameFile={renameFile}
-                  onRenameFolder={renameFolder}
-                  onRemoveEmptyFolder={removeEmptyFolder}
-                  emptyFolderPaths={emptyFolderPaths}
-                  disabled={isRenaming}
-                />
+                <DndContextComponent
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragEnd={handleDragEnd}
+                  onDragCancel={handleDragCancel}
+                >
+                  <div className="space-y-0.5">
+                    {/* Root folder drop target */}
+                    <RootDropTarget 
+                      isValidTarget={draggedItem ? isValidDropTarget("", true) : false}
+                      isOver={overFolderId === ""}
+                    />
+                    <FileTreeView
+                      node={fileTree}
+                      depth={0}
+                      expandedFolders={expandedFolders}
+                      selectedFile={selectedFile}
+                      onToggleFolder={toggleFolder}
+                      onSelectFile={setSelectedFile}
+                      onDownload={handleDownload}
+                      onDelete={handleDelete}
+                      onDeleteFolder={handleDeleteFolder}
+                      onRenameFile={renameFile}
+                      onRenameFolder={renameFolder}
+                      onRemoveEmptyFolder={removeEmptyFolder}
+                      emptyFolderPaths={emptyFolderPaths}
+                      disabled={isRenaming}
+                      draggedItemId={draggedItem?.id}
+                      overFolderId={overFolderId}
+                      isValidDropTarget={isValidDropTarget}
+                    />
+                  </div>
+                  <DragOverlayComponent>
+                    {draggedItem && (
+                      <div className="flex items-center gap-2 px-2 py-1 bg-background border rounded-md shadow-lg text-xs">
+                        {draggedItem.isFolder ? (
+                          <Folder className="h-3 w-3 text-muted-foreground" />
+                        ) : (
+                          <File className="h-3 w-3 text-muted-foreground" />
+                        )}
+                        <span>{draggedItem.name}</span>
+                      </div>
+                    )}
+                  </DragOverlayComponent>
+                </DndContextComponent>
+              )}
+              {isMoving && (
+                <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Moving...</span>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -513,6 +577,92 @@ export function FilesSidebar() {
   );
 }
 
+/**
+ * Root drop target for moving items to root level
+ */
+function RootDropTarget({ isValidTarget, isOver }: { isValidTarget: boolean; isOver: boolean }) {
+  const { setNodeRef, isOver: localIsOver } = useDroppable({
+    id: "",
+    data: { isFolder: true, path: "" },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "py-1 px-2 rounded-md border-2 border-dashed text-xs text-muted-foreground text-center transition-colors mb-0.5",
+        (isOver || localIsOver) && isValidTarget
+          ? "border-primary bg-primary/10"
+          : "border-transparent"
+      )}
+    >
+      {(isOver || localIsOver) && isValidTarget && "Drop here to move to root"}
+    </div>
+  );
+}
+
+/**
+ * Draggable wrapper for file/folder items
+ * Uses render prop pattern to pass drag handle props to children
+ */
+function DraggableItem({ 
+  id, 
+  name, 
+  isFolder, 
+  children 
+}: { 
+  id: string; 
+  name: string; 
+  isFolder: boolean; 
+  children: (dragHandleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: { name, isFolder },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(isDragging && "opacity-50")}
+    >
+      {children({ ...attributes, ...listeners })}
+    </div>
+  );
+}
+
+/**
+ * Droppable wrapper for folder items
+ */
+function DroppableFolder({
+  id,
+  isValidTarget,
+  isOver,
+  children,
+}: {
+  id: string;
+  isValidTarget: boolean;
+  isOver: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver: localIsOver } = useDroppable({
+    id,
+    data: { isFolder: true, path: id },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-md transition-colors",
+        (isOver || localIsOver) && isValidTarget && "ring-2 ring-primary ring-offset-1 bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 // File tree component
 interface FileTreeViewProps {
   node: FileTreeNode;
@@ -529,6 +679,9 @@ interface FileTreeViewProps {
   onRemoveEmptyFolder: (path: string) => void;
   emptyFolderPaths: Set<string>;
   disabled?: boolean;
+  draggedItemId?: string | null;
+  overFolderId?: string | null;
+  isValidDropTarget?: (path: string, isFolder: boolean) => boolean;
 }
 
 function FileTreeView({
@@ -546,6 +699,9 @@ function FileTreeView({
   onRemoveEmptyFolder,
   emptyFolderPaths,
   disabled,
+  draggedItemId,
+  overFolderId,
+  isValidDropTarget,
 }: FileTreeViewProps) {
   // Sort children: folders first, then files, alphabetically
   const sortedChildren = Array.from(node.children.values()).sort((a, b) => {
@@ -575,6 +731,9 @@ function FileTreeView({
             onRemoveEmptyFolder={onRemoveEmptyFolder}
             emptyFolderPaths={emptyFolderPaths}
             disabled={disabled}
+            draggedItemId={draggedItemId}
+            overFolderId={overFolderId}
+            isValidDropTarget={isValidDropTarget}
           />
         ))}
       </>
@@ -585,27 +744,37 @@ function FileTreeView({
   const isEmptyFolder = emptyFolderPaths.has(node.path);
   const hasChildren = node.children.size > 0;
   const paddingLeft = (depth - 1) * 12;
+  const isDragging = draggedItemId === node.path;
+  const isOverThis = overFolderId === node.path;
+  const isValidTarget = isValidDropTarget?.(node.path, node.isFolder) ?? false;
 
   if (node.isFolder) {
     return (
-      <FolderItem
-        node={node}
-        depth={depth}
-        isExpanded={isExpanded}
-        isEmptyFolder={isEmptyFolder}
-        hasChildren={hasChildren}
-        paddingLeft={paddingLeft}
-        onToggle={() => hasChildren && onToggleFolder(node.path)}
-        onDelete={() => onDeleteFolder(node.path)}
-        onRemoveEmpty={() => onRemoveEmptyFolder(node.path)}
-        onRename={(newName) => {
-          const pathParts = node.path.split("/");
-          pathParts[pathParts.length - 1] = newName;
-          const newPath = pathParts.join("/");
-          return onRenameFolder(node.path, newPath);
-        }}
-        disabled={disabled}
-      >
+      <DroppableFolder id={node.path} isValidTarget={isValidTarget} isOver={isOverThis}>
+        <DraggableItem id={node.path} name={node.name} isFolder={true}>
+          {(dragHandleProps) => (
+            <FolderItem
+              node={node}
+              depth={depth}
+              isExpanded={isExpanded}
+              isEmptyFolder={isEmptyFolder}
+              hasChildren={hasChildren}
+              paddingLeft={paddingLeft}
+              isDragging={isDragging}
+              onToggle={() => hasChildren && onToggleFolder(node.path)}
+              onDelete={() => onDeleteFolder(node.path)}
+              onRemoveEmpty={() => onRemoveEmptyFolder(node.path)}
+              onRename={(newName) => {
+                const pathParts = node.path.split("/");
+                pathParts[pathParts.length - 1] = newName;
+                const newPath = pathParts.join("/");
+                return onRenameFolder(node.path, newPath);
+              }}
+              disabled={disabled}
+              dragHandleProps={dragHandleProps}
+            />
+          )}
+        </DraggableItem>
         {isExpanded &&
           hasChildren &&
           sortedChildren.map((child) => (
@@ -625,29 +794,38 @@ function FileTreeView({
               onRemoveEmptyFolder={onRemoveEmptyFolder}
               emptyFolderPaths={emptyFolderPaths}
               disabled={disabled}
+              draggedItemId={draggedItemId}
+              overFolderId={overFolderId}
+              isValidDropTarget={isValidDropTarget}
             />
           ))}
-      </FolderItem>
+      </DroppableFolder>
     );
   }
 
   // File node
   return (
-    <FileItem
-      node={node}
-      paddingLeft={paddingLeft}
-      isSelected={selectedFile === node.path}
-      onSelect={() => onSelectFile(node.path)}
-      onDownload={() => onDownload(node.path)}
-      onDelete={() => onDelete(node.path)}
-      onRename={(newName) => {
-        const pathParts = node.path.split("/");
-        pathParts[pathParts.length - 1] = newName;
-        const newPath = pathParts.join("/");
-        return onRenameFile(node.path, newPath);
-      }}
-      disabled={disabled}
-    />
+    <DraggableItem id={node.path} name={node.name} isFolder={false}>
+      {(dragHandleProps) => (
+        <FileItem
+          node={node}
+          paddingLeft={paddingLeft}
+          isSelected={selectedFile === node.path}
+          isDragging={isDragging}
+          onSelect={() => onSelectFile(node.path)}
+          onDownload={() => onDownload(node.path)}
+          onDelete={() => onDelete(node.path)}
+          onRename={(newName) => {
+            const pathParts = node.path.split("/");
+            pathParts[pathParts.length - 1] = newName;
+            const newPath = pathParts.join("/");
+            return onRenameFile(node.path, newPath);
+          }}
+          disabled={disabled}
+          dragHandleProps={dragHandleProps}
+        />
+      )}
+    </DraggableItem>
   );
 }
 
@@ -659,12 +837,13 @@ interface FolderItemProps {
   isEmptyFolder: boolean;
   hasChildren: boolean;
   paddingLeft: number;
+  isDragging?: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onRemoveEmpty: () => void;
   onRename: (newName: string) => Promise<boolean>;
   disabled?: boolean;
-  children?: React.ReactNode;
+  dragHandleProps?: React.HTMLAttributes<HTMLElement>;
 }
 
 function FolderItem({
@@ -673,12 +852,13 @@ function FolderItem({
   isEmptyFolder,
   hasChildren,
   paddingLeft,
+  isDragging,
   onToggle,
   onDelete,
   onRemoveEmpty,
   onRename,
   disabled,
-  children,
+  dragHandleProps,
 }: FolderItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(node.name);
@@ -696,25 +876,28 @@ function FolderItem({
   };
 
   return (
-    <div>
-      <div
-        className={cn(
-          "flex items-center gap-1 py-1 px-1 rounded-md hover:bg-accent/50 cursor-pointer transition-colors group",
-          isEmptyFolder && "border border-dashed border-muted-foreground/30",
-          disabled && "opacity-50 pointer-events-none"
-        )}
-        style={{ paddingLeft }}
-        onClick={onToggle}
-      >
-        {hasChildren ? (
-          isExpanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-          )
+    <div
+      className={cn(
+        "flex items-center gap-1 py-1 px-1 rounded-md hover:bg-accent/50 cursor-pointer transition-colors group",
+        isEmptyFolder && "border border-dashed border-muted-foreground/30",
+        isDragging && "opacity-50",
+        disabled && "opacity-50 pointer-events-none"
+      )}
+      style={{ paddingLeft }}
+      onClick={onToggle}
+    >
+      <span {...dragHandleProps} onClick={(e) => e.stopPropagation()}>
+        <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground/50 cursor-grab" />
+      </span>
+      {hasChildren ? (
+        isExpanded ? (
+          <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
         ) : (
-          <span className="w-3" />
-        )}
+          <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+        )
+      ) : (
+        <span className="w-3" />
+      )}
         <Folder className="h-3 w-3 shrink-0 text-muted-foreground" />
 
         {isEditing ? (
@@ -783,8 +966,6 @@ function FolderItem({
             </Button>
           </div>
         )}
-      </div>
-      {children}
     </div>
   );
 }
@@ -794,22 +975,26 @@ interface FileItemProps {
   node: FileTreeNode;
   paddingLeft: number;
   isSelected: boolean;
+  isDragging?: boolean;
   onSelect: () => void;
   onDownload: () => void;
   onDelete: () => void;
   onRename: (newName: string) => Promise<boolean>;
   disabled?: boolean;
+  dragHandleProps?: React.HTMLAttributes<HTMLElement>;
 }
 
 function FileItem({
   node,
   paddingLeft,
   isSelected,
+  isDragging,
   onSelect,
   onDownload,
   onDelete,
   onRename,
   disabled,
+  dragHandleProps,
 }: FileItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(node.name);
@@ -831,11 +1016,15 @@ function FileItem({
       className={cn(
         "flex items-center gap-1 py-1 px-1 rounded-md hover:bg-accent/50 transition-colors group cursor-pointer",
         isSelected && "bg-accent",
+        isDragging && "opacity-50",
         disabled && "opacity-50 pointer-events-none"
       )}
-      style={{ paddingLeft: paddingLeft + 15 }}
+      style={{ paddingLeft: paddingLeft + 12 }}
       onClick={onSelect}
     >
+      <span {...dragHandleProps} onClick={(e) => e.stopPropagation()}>
+        <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground/50 cursor-grab" />
+      </span>
       <File className="h-3 w-3 shrink-0 text-muted-foreground" />
 
       {isEditing ? (
