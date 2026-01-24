@@ -4,9 +4,12 @@ import { useState, useCallback, useRef, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogBody } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { apiClient } from "@/lib/api-client";
 import { MarkdownContent } from "@/components/chat/markdown-content";
+import { useFileTreeDnd } from "@/hooks/useFileTreeDnd";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { 
   FolderOpen, 
   Upload, 
@@ -20,8 +23,11 @@ import {
   FolderUp,
   ChevronRight,
   ChevronDown,
-  Eye
+  Eye,
+  FolderPlus,
+  GripVertical,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface FileInfo {
   key: string;
@@ -196,6 +202,9 @@ export function FileBrowser({ children }: FileBrowserProps) {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [previewFile, setPreviewFile] = useState<FilePreviewData | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -207,6 +216,28 @@ export function FileBrowser({ children }: FileBrowserProps) {
     () => buildFileTree(files, emptyFolders),
     [files, emptyFolders]
   );
+
+  // Drag and drop file move functionality
+  const {
+    sensors,
+    draggedItem,
+    overFolderId,
+    isMoving,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+    handleDragCancel,
+    isValidDropTarget,
+    DragOverlayComponent,
+    DndContextComponent,
+  } = useFileTreeDnd({
+    onMoveComplete: () => {
+      fetchFiles();
+    },
+    onMoveError: (errorMsg) => {
+      setError(errorMsg);
+    },
+  });
 
   const toggleFolder = useCallback((path: string) => {
     setCollapsedFolders((prev) => {
@@ -237,6 +268,48 @@ export function FileBrowser({ children }: FileBrowserProps) {
     setIsOpen(true);
     fetchFiles();
   }, [fetchFiles]);
+
+  /**
+   * Create a new folder by uploading a placeholder file
+   */
+  const createFolder = async (folderName: string) => {
+    if (!folderName.trim()) return;
+
+    setIsCreatingFolder(true);
+    setError(null);
+    try {
+      // Create folder by uploading a .gitkeep placeholder
+      const folderPath = `${folderName.trim()}/.gitkeep`;
+      const presigned = await apiClient.post<PresignedUploadResponse>("/files/presign", {
+        filename: folderPath,
+        content_type: "text/plain",
+      });
+
+      // Upload empty file
+      const formData = new FormData();
+      Object.entries(presigned.fields).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      formData.append("file", new Blob([""], { type: "text/plain" }), ".gitkeep");
+
+      const uploadResponse = await fetch(presigned.url, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to create folder");
+      }
+
+      await fetchFiles();
+      setNewFolderName("");
+      setShowNewFolderInput(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create folder");
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
 
   /**
    * Upload a single file to S3 using presigned POST
@@ -542,12 +615,12 @@ export function FileBrowser({ children }: FileBrowserProps) {
     }
   };
 
-  const handleDragOver = (event: React.DragEvent) => {
+  const handleNativeDragOver = (event: React.DragEvent) => {
     event.preventDefault();
     setDragOver(true);
   };
 
-  const handleDragLeave = () => {
+  const handleNativeDragLeave = () => {
     setDragOver(false);
   };
 
@@ -682,8 +755,8 @@ export function FileBrowser({ children }: FileBrowserProps) {
                   : "border-muted-foreground/25 hover:border-muted-foreground/50"
               }`}
               onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDragOver={handleNativeDragOver}
+              onDragLeave={handleNativeDragLeave}
             >
               <input
                 type="file"
@@ -765,16 +838,70 @@ export function FileBrowser({ children }: FileBrowserProps) {
                 {files.length} file{files.length !== 1 ? "s" : ""}
                 {emptyFolders.length > 0 && `, ${emptyFolders.length} empty folder${emptyFolders.length !== 1 ? "s" : ""}`}
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={fetchFiles}
-                disabled={isLoading}
-                title="Refresh"
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowNewFolderInput(true)}
+                  disabled={isCreatingFolder}
+                  title="New Folder"
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={fetchFiles}
+                  disabled={isLoading}
+                  title="Refresh"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
             </div>
+
+            {/* New Folder Input */}
+            {showNewFolderInput && (
+              <div className="mx-4 mb-2 flex gap-2">
+                <Input
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="Folder name"
+                  disabled={isCreatingFolder}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      createFolder(newFolderName);
+                    } else if (e.key === "Escape") {
+                      setShowNewFolderInput(false);
+                      setNewFolderName("");
+                    }
+                  }}
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  onClick={() => createFolder(newFolderName)}
+                  disabled={isCreatingFolder || !newFolderName.trim()}
+                >
+                  {isCreatingFolder ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setShowNewFolderInput(false);
+                    setNewFolderName("");
+                  }}
+                  disabled={isCreatingFolder}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
 
             {/* File List */}
             <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -789,21 +916,57 @@ export function FileBrowser({ children }: FileBrowserProps) {
                   <p className="text-xs">Upload files to get started</p>
                 </div>
               ) : (
-                <div className="space-y-1">
-                  <FileTreeView
-                    node={fileTree}
-                    depth={0}
-                    collapsedFolders={collapsedFolders}
-                    onToggleFolder={toggleFolder}
-                    onDownload={downloadFile}
-                    onDelete={deleteFile}
-                    onDeleteFolder={deleteFolder}
-                    onPreview={loadFilePreview}
-                    onRemoveEmptyFolder={(path) =>
-                      setEmptyFolders((prev) => prev.filter((f) => f.path !== path))
-                    }
-                    emptyFolderPaths={new Set(emptyFolders.map((f) => f.path))}
-                  />
+                <DndContextComponent
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragEnd={handleDragEnd}
+                  onDragCancel={handleDragCancel}
+                >
+                  <div className="space-y-1">
+                    {/* Root folder drop target */}
+                    <RootDropTarget 
+                      isValidTarget={draggedItem ? isValidDropTarget("", true) : false}
+                      isOver={overFolderId === ""}
+                    />
+                    <FileTreeView
+                      node={fileTree}
+                      depth={0}
+                      collapsedFolders={collapsedFolders}
+                      onToggleFolder={toggleFolder}
+                      onDownload={downloadFile}
+                      onDelete={deleteFile}
+                      onDeleteFolder={deleteFolder}
+                      onPreview={loadFilePreview}
+                      onRemoveEmptyFolder={(path) =>
+                        setEmptyFolders((prev) => prev.filter((f) => f.path !== path))
+                      }
+                      emptyFolderPaths={new Set(emptyFolders.map((f) => f.path))}
+                      draggedItemId={draggedItem?.id}
+                      overFolderId={overFolderId}
+                      isValidDropTarget={isValidDropTarget}
+                    />
+                  </div>
+                  <DragOverlayComponent>
+                    {draggedItem && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-background border rounded-md shadow-lg">
+                        {draggedItem.isFolder ? (
+                          <Folder className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <File className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="text-sm">{draggedItem.name}</span>
+                      </div>
+                    )}
+                  </DragOverlayComponent>
+                </DndContextComponent>
+              )}
+              {isMoving && (
+                <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Moving...</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -896,6 +1059,95 @@ interface FileTreeViewProps {
   onPreview: (key: string) => void;
   onRemoveEmptyFolder: (path: string) => void;
   emptyFolderPaths: Set<string>;
+  draggedItemId?: string | null;
+  overFolderId?: string | null;
+  isValidDropTarget?: (path: string, isFolder: boolean) => boolean;
+}
+
+/**
+ * Root drop target for moving items to root level
+ */
+function RootDropTarget({ isValidTarget, isOver }: { isValidTarget: boolean; isOver: boolean }) {
+  const { setNodeRef, isOver: localIsOver } = useDroppable({
+    id: "",
+    data: { isFolder: true, path: "" },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "py-1.5 px-2 rounded-md border-2 border-dashed text-xs text-muted-foreground text-center transition-colors mb-1",
+        (isOver || localIsOver) && isValidTarget
+          ? "border-primary bg-primary/10"
+          : "border-transparent"
+      )}
+    >
+      {(isOver || localIsOver) && isValidTarget && "Drop here to move to root"}
+    </div>
+  );
+}
+
+/**
+ * Draggable wrapper for file/folder items
+ * Uses render prop pattern to pass drag handle props to children
+ */
+function DraggableItem({ 
+  id, 
+  name, 
+  isFolder, 
+  children 
+}: { 
+  id: string; 
+  name: string; 
+  isFolder: boolean; 
+  children: (dragHandleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: { name, isFolder },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(isDragging && "opacity-50")}
+    >
+      {children({ ...attributes, ...listeners })}
+    </div>
+  );
+}
+
+/**
+ * Droppable wrapper for folder items
+ */
+function DroppableFolder({
+  id,
+  isValidTarget,
+  isOver,
+  children,
+}: {
+  id: string;
+  isValidTarget: boolean;
+  isOver: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver: localIsOver } = useDroppable({
+    id,
+    data: { isFolder: true, path: id },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-md transition-colors",
+        (isOver || localIsOver) && isValidTarget && "ring-2 ring-primary ring-offset-1 bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 function FileTreeView({
@@ -909,6 +1161,9 @@ function FileTreeView({
   onPreview,
   onRemoveEmptyFolder,
   emptyFolderPaths,
+  draggedItemId,
+  overFolderId,
+  isValidDropTarget,
 }: FileTreeViewProps) {
   // Sort children: folders first, then files, alphabetically
   const sortedChildren = Array.from(node.children.values()).sort((a, b) => {
@@ -934,6 +1189,9 @@ function FileTreeView({
             onPreview={onPreview}
             onRemoveEmptyFolder={onRemoveEmptyFolder}
             emptyFolderPaths={emptyFolderPaths}
+            draggedItemId={draggedItemId}
+            overFolderId={overFolderId}
+            isValidDropTarget={isValidDropTarget}
           />
         ))}
       </>
@@ -944,61 +1202,73 @@ function FileTreeView({
   const isEmptyFolder = emptyFolderPaths.has(node.path);
   const hasChildren = node.children.size > 0;
   const paddingLeft = (depth - 1) * 16;
+  const isDragging = draggedItemId === node.path;
+  const isOverThis = overFolderId === node.path;
+  const isValidTarget = isValidDropTarget?.(node.path, node.isFolder) ?? false;
 
   if (node.isFolder) {
     return (
-      <div>
-        <div
-          className={`flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors group ${
-            isEmptyFolder ? "border border-dashed border-muted-foreground/30" : ""
-          }`}
-          style={{ paddingLeft }}
-          onClick={() => hasChildren && onToggleFolder(node.path)}
-        >
-          {hasChildren ? (
-            isCollapsed ? (
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )
-          ) : (
-            <span className="w-4" />
-          )}
-          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm truncate flex-1" title={node.path}>
-            {node.name}
-          </span>
-          {isEmptyFolder ? (
-            <>
-              <span className="text-xs text-muted-foreground">(empty)</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-destructive hover:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveEmptyFolder(node.path);
-                }}
-                title="Remove from list"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteFolder(node.path);
-              }}
-              title="Delete folder"
+      <DroppableFolder id={node.path} isValidTarget={isValidTarget} isOver={isOverThis}>
+        <DraggableItem id={node.path} name={node.name} isFolder={true}>
+          {(dragHandleProps) => (
+            <div
+              className={cn(
+                "flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors group",
+                isEmptyFolder && "border border-dashed border-muted-foreground/30",
+                isDragging && "opacity-50"
+              )}
+              style={{ paddingLeft }}
+              onClick={() => hasChildren && onToggleFolder(node.path)}
             >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+              <span {...dragHandleProps} onClick={(e) => e.stopPropagation()}>
+                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
+              </span>
+              {hasChildren ? (
+                isCollapsed ? (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )
+              ) : (
+                <span className="w-4" />
+              )}
+              <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="text-sm truncate flex-1" title={node.path}>
+                {node.name}
+              </span>
+              {isEmptyFolder ? (
+                <>
+                  <span className="text-xs text-muted-foreground">(empty)</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveEmptyFolder(node.path);
+                    }}
+                    title="Remove from list"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteFolder(node.path);
+                  }}
+                  title="Delete folder"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
           )}
-        </div>
+        </DraggableItem>
         {!isCollapsed && hasChildren && (
           <div>
             {sortedChildren.map((child) => (
@@ -1014,60 +1284,73 @@ function FileTreeView({
                 onPreview={onPreview}
                 onRemoveEmptyFolder={onRemoveEmptyFolder}
                 emptyFolderPaths={emptyFolderPaths}
+                draggedItemId={draggedItemId}
+                overFolderId={overFolderId}
+                isValidDropTarget={isValidDropTarget}
               />
             ))}
           </div>
         )}
-      </div>
+      </DroppableFolder>
     );
   }
 
   // File node
   return (
-    <div
-      className="flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group"
-      style={{ paddingLeft: paddingLeft + 20 }}
-    >
-      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <div className="flex-1 min-w-0">
-        <span className="text-sm truncate block" title={node.path}>
-          {node.name}
-        </span>
-        {node.file && (
-          <span className="text-xs text-muted-foreground">
-            {formatFileSize(node.file.size)}
+    <DraggableItem id={node.path} name={node.name} isFolder={false}>
+      {(dragHandleProps) => (
+        <div
+          className={cn(
+            "flex items-center gap-1 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group",
+            isDragging && "opacity-50"
+          )}
+          style={{ paddingLeft: paddingLeft + 20 }}
+        >
+          <span {...dragHandleProps}>
+            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
           </span>
-        )}
-      </div>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => onPreview(node.path)}
-          title="Preview"
-        >
-          <Eye className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => onDownload(node.path)}
-          title="Download"
-        >
-          <Download className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-destructive hover:text-destructive"
-          onClick={() => onDelete(node.path)}
-          title="Delete"
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
+          <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="flex-1 min-w-0">
+            <span className="text-sm truncate block" title={node.path}>
+              {node.name}
+            </span>
+            {node.file && (
+              <span className="text-xs text-muted-foreground">
+                {formatFileSize(node.file.size)}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => onPreview(node.path)}
+              title="Preview"
+            >
+              <Eye className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => onDownload(node.path)}
+              title="Download"
+            >
+              <Download className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive hover:text-destructive"
+              onClick={() => onDelete(node.path)}
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </DraggableItem>
   );
 }

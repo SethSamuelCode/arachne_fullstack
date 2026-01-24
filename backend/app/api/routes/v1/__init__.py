@@ -14,6 +14,7 @@ from app.api.routes.v1 import agent
 from app.api.routes.v1 import files
 from app.api.routes.v1 import admin_settings
 from app.api.routes.v1 import storage_proxy
+from app.api.routes.v1 import plans
 
 v1_router = APIRouter()
 
@@ -49,6 +50,9 @@ v1_router.include_router(files.router, prefix="/files", tags=["files"])
 
 # Admin settings routes
 v1_router.include_router(admin_settings.router, prefix="/admin/settings", tags=["admin"])
+
+# Plan routes
+v1_router.include_router(plans.router, prefix="/plans", tags=["plans"])
 
 # Storage proxy for sandbox containers (uses sandbox tokens, not user auth)
 v1_router.include_router(storage_proxy.router, prefix="/storage", tags=["storage"])

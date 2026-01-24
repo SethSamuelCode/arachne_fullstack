@@ -35,6 +35,7 @@ from app.services.webhook import WebhookService
 from app.services.item import ItemService
 from app.services.conversation import ConversationService
 from app.services.settings import RuntimeSettingsService
+from app.services.plan import PlanService
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -81,6 +82,14 @@ def get_runtime_settings_service(redis: Redis) -> RuntimeSettingsService:
 
 
 RuntimeSettingsSvc = Annotated[RuntimeSettingsService, Depends(get_runtime_settings_service)]
+
+
+def get_plan_service(db: DBSession) -> PlanService:
+    """Create PlanService instance with database session."""
+    return PlanService(db)
+
+
+PlanSvc = Annotated[PlanService, Depends(get_plan_service)]
 
 # === Authentication Dependencies ===
 

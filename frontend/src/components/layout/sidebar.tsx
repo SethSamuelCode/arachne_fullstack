@@ -13,6 +13,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 import { useSidebarStore, useAuthStore } from "@/stores";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose, Button } from "@/components/ui";
@@ -23,6 +24,7 @@ const navigation = [
   { name: "Dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { name: "Chat", href: ROUTES.CHAT, icon: MessageSquare },
   { name: "Files", href: ROUTES.FILES, icon: FolderOpen },
+  { name: "Plans", href: ROUTES.PLANS, icon: ClipboardList },
 ];
 
 const adminNavigation = [

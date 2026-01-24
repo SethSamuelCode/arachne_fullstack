@@ -27,6 +27,8 @@ from app.schemas.file import (
     FileListResponse,
     FolderDeleteResponse,
     FolderRenameProgress,
+    MoveRequest,
+    MoveResponse,
     PresignedDownloadResponse,
     PresignedUploadRequest,
     PresignedUploadResponse,
@@ -280,6 +282,123 @@ async def rename_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to rename file: {e!s}",
+        ) from e
+
+
+def _is_path_nested(parent: str, child: str) -> bool:
+    """Check if child path is nested under parent path.
+
+    Used to prevent moving a folder into itself or its descendants.
+    """
+    # Normalize paths: remove trailing slashes and ensure consistent format
+    parent_normalized = parent.rstrip("/")
+    child_normalized = child.rstrip("/")
+
+    # Check if child starts with parent path followed by /
+    return child_normalized.startswith(parent_normalized + "/") or child_normalized == parent_normalized
+
+
+@router.post("/move", response_model=MoveResponse)
+async def move_file_or_folder(
+    request: MoveRequest,
+    current_user: CurrentUser,
+) -> MoveResponse:
+    """Move a file or folder to a new location.
+
+    Supports moving:
+    - Single files to a new path/name
+    - Entire folders (all contents moved recursively)
+
+    Validates:
+    - Source must exist
+    - Destination must not exist
+    - Cannot move a folder into itself or its descendants
+    """
+    s3 = get_s3_service()
+    user_id = str(current_user.id)
+
+    source_path = request.source_path.rstrip("/")
+    dest_path = request.destination_path.rstrip("/")
+
+    # Check if trying to move folder into itself
+    if _is_path_nested(source_path, dest_path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot move a folder into itself or its subdirectories",
+        )
+
+    source_full_key = _get_user_path(user_id, source_path)
+    dest_full_key = _get_user_path(user_id, dest_path)
+
+    try:
+        # Check if source is a file (exact match)
+        all_objects = s3.list_objs()
+        is_file = source_full_key in all_objects
+
+        if is_file:
+            # Moving a single file
+            if dest_full_key in all_objects:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Destination already exists: {dest_path}",
+                )
+
+            s3.copy_file(source_full_key, dest_full_key)
+            s3.delete_obj(source_full_key)
+
+            return MoveResponse(
+                success=True,
+                source_path=source_path,
+                destination_path=dest_path,
+                is_folder=False,
+                files_moved=1,
+            )
+
+        # Check if source is a folder (prefix match)
+        source_prefix = source_full_key + "/"
+        source_files = [k for k in all_objects if k.startswith(source_prefix)]
+
+        if not source_files:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File or folder not found: {source_path}",
+            )
+
+        # Moving a folder
+        dest_prefix = dest_full_key + "/"
+
+        # Check if destination folder already has contents
+        dest_files = [k for k in all_objects if k.startswith(dest_prefix)]
+        if dest_files:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Destination folder already exists: {dest_path}",
+            )
+
+        # Move all files in the folder
+        files_moved = 0
+        for source_key in source_files:
+            relative_path = source_key[len(source_prefix):]
+            dest_key = dest_prefix + relative_path
+
+            s3.copy_file(source_key, dest_key)
+            s3.delete_obj(source_key)
+            files_moved += 1
+
+        return MoveResponse(
+            success=True,
+            source_path=source_path,
+            destination_path=dest_path,
+            is_folder=True,
+            files_moved=files_moved,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to move: {e!s}",
         ) from e
 
 

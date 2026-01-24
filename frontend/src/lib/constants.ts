@@ -32,6 +32,7 @@ export const ROUTES = {
   DASHBOARD: "/dashboard",
   CHAT: "/chat",
   FILES: "/files",
+  PLANS: "/plans",
   PROFILE: "/profile",
   SETTINGS: "/settings",
   ADMIN_USERS: "/admin/users",

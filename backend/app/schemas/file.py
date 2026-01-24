@@ -125,3 +125,20 @@ class FolderRenameProgress(BaseSchema):
     old_path: str = Field(description="Original folder path")
     new_path: str = Field(description="New folder path")
     error: str | None = Field(default=None, description="Error message if event is 'error'")
+
+
+class MoveRequest(BaseSchema):
+    """Request to move a file or folder to a new location."""
+
+    source_path: str = Field(description="Current path of the file or folder to move")
+    destination_path: str = Field(description="New path (including new name) for the file or folder")
+
+
+class MoveResponse(BaseSchema):
+    """Response for a successful move operation."""
+
+    success: bool = Field(default=True, description="Whether move was successful")
+    source_path: str = Field(description="Original path")
+    destination_path: str = Field(description="New path")
+    is_folder: bool = Field(default=False, description="Whether a folder was moved")
+    files_moved: int = Field(default=1, description="Number of files moved (>1 for folders)")

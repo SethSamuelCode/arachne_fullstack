@@ -13,3 +13,4 @@ export { Badge, badgeVariants } from "./badge";
 export { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "./sheet";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 export { Progress } from "./progress";
+export { Checkbox } from "./checkbox";
