@@ -32,8 +32,18 @@ import {
   Pencil,
   X,
   GripVertical,
+  FolderPlus,
+  FilePlus,
+  Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Types for file content upload
+interface PresignedUploadResponse {
+  url: string;
+  fields: Record<string, string>;
+  key: string;
+}
 
 // Types for file preview
 interface FilePreviewData {
@@ -90,6 +100,19 @@ export function FilesSidebar() {
   const [dndError, setDndError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Create folder/file state
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [showNewFileInput, setShowNewFileInput] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   // Drag and drop file move functionality
   const {
@@ -309,6 +332,144 @@ export function FilesSidebar() {
   const handleDeleteFolder = async (path: string) => {
     if (!confirm(`Delete folder "${path}" and all its contents?`)) return;
     await deleteFolder(path);
+  };
+
+  // Create a new folder
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    
+    setIsCreatingFolder(true);
+    try {
+      // Create folder by uploading a .gitkeep placeholder
+      const folderPath = `${newFolderName.trim()}/.gitkeep`;
+      const presigned = await apiClient.post<PresignedUploadResponse>("/files/presign", {
+        filename: folderPath,
+        content_type: "text/plain",
+      });
+
+      const formData = new FormData();
+      Object.entries(presigned.fields).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      formData.append("file", new Blob([""], { type: "text/plain" }), ".gitkeep");
+
+      const uploadResponse = await fetch(presigned.url, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to create folder");
+      }
+
+      await fetchFiles();
+      setNewFolderName("");
+      setShowNewFolderInput(false);
+    } catch (err) {
+      console.error("Failed to create folder:", err);
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  // Create a new blank file
+  const handleCreateFile = async () => {
+    if (!newFileName.trim()) return;
+    
+    setIsCreatingFile(true);
+    try {
+      const filename = newFileName.trim();
+      const ext = filename.split(".").pop()?.toLowerCase() || "txt";
+      const contentType = ext === "json" ? "application/json" : "text/plain";
+      
+      const presigned = await apiClient.post<PresignedUploadResponse>("/files/presign", {
+        filename,
+        content_type: contentType,
+      });
+
+      const formData = new FormData();
+      Object.entries(presigned.fields).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      formData.append("file", new Blob([""], { type: contentType }), filename);
+
+      const uploadResponse = await fetch(presigned.url, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to create file");
+      }
+
+      await fetchFiles();
+      setNewFileName("");
+      setShowNewFileInput(false);
+      // Select the newly created file
+      setSelectedFile(presigned.key);
+    } catch (err) {
+      console.error("Failed to create file:", err);
+    } finally {
+      setIsCreatingFile(false);
+    }
+  };
+
+  // Save edited file content
+  const handleSaveFile = async () => {
+    if (!selectedFile || !previewData) return;
+    
+    setIsSaving(true);
+    try {
+      const ext = selectedFile.split(".").pop()?.toLowerCase() || "txt";
+      const contentType = ext === "json" ? "application/json" : "text/plain";
+      
+      const presigned = await apiClient.post<PresignedUploadResponse>("/files/presign", {
+        filename: selectedFile,
+        content_type: contentType,
+      });
+
+      const formData = new FormData();
+      Object.entries(presigned.fields).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      formData.append("file", new Blob([editContent], { type: contentType }), selectedFile.split("/").pop() || "file");
+
+      const uploadResponse = await fetch(presigned.url, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to save file");
+      }
+
+      // Update preview with new content
+      setPreviewData({
+        ...previewData,
+        content: editContent,
+        size: editContent.length,
+      });
+      setIsEditing(false);
+      await fetchFiles();
+    } catch (err) {
+      console.error("Failed to save file:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Start editing
+  const handleStartEdit = () => {
+    if (previewData && typeof previewData.content === "string") {
+      setEditContent(previewData.content);
+      setIsEditing(true);
+    }
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditContent("");
   };
 
   const emptyFolderPaths = useMemo(
@@ -532,7 +693,119 @@ export function FilesSidebar() {
               >
                 <FolderUp className="h-4 w-4" />
               </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 rounded-full shadow-lg"
+                onClick={() => setShowNewFolderInput(true)}
+                disabled={isCreatingFolder}
+                title="New folder"
+              >
+                <FolderPlus className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 rounded-full shadow-lg"
+                onClick={() => setShowNewFileInput(true)}
+                disabled={isCreatingFile}
+                title="New file"
+              >
+                <FilePlus className="h-4 w-4" />
+              </Button>
             </div>
+
+            {/* New folder input modal */}
+            {showNewFolderInput && (
+              <div className="absolute inset-0 bg-background/80 flex items-center justify-center z-10">
+                <div className="bg-background border rounded-lg shadow-lg p-4 w-64">
+                  <h3 className="text-sm font-medium mb-2">New Folder</h3>
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="Folder name"
+                    className="mb-3"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreateFolder();
+                      if (e.key === "Escape") {
+                        setShowNewFolderInput(false);
+                        setNewFolderName("");
+                      }
+                    }}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowNewFolderInput(false);
+                        setNewFolderName("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleCreateFolder}
+                      disabled={!newFolderName.trim() || isCreatingFolder}
+                    >
+                      {isCreatingFolder ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Create"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* New file input modal */}
+            {showNewFileInput && (
+              <div className="absolute inset-0 bg-background/80 flex items-center justify-center z-10">
+                <div className="bg-background border rounded-lg shadow-lg p-4 w-64">
+                  <h3 className="text-sm font-medium mb-2">New File</h3>
+                  <Input
+                    value={newFileName}
+                    onChange={(e) => setNewFileName(e.target.value)}
+                    placeholder="filename.txt"
+                    className="mb-3"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreateFile();
+                      if (e.key === "Escape") {
+                        setShowNewFileInput(false);
+                        setNewFileName("");
+                      }
+                    }}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowNewFileInput(false);
+                        setNewFileName("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleCreateFile}
+                      disabled={!newFileName.trim() || isCreatingFile}
+                    >
+                      {isCreatingFile ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Create"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </Panel>
 
@@ -543,32 +816,84 @@ export function FilesSidebar() {
         <Panel defaultSize={50} minSize={20}>
           <div className="h-full flex flex-col">
             {/* Preview header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b min-h-[41px]">
+            <div className="flex items-center justify-between px-3 py-2 border-b min-h-10">
               <span className="text-xs font-medium truncate">
                 {selectedFile ? selectedFile.split("/").pop() : "Preview"}
+                {isEditing && " (editing)"}
               </span>
               {selectedFile && (
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => handleDownload(selectedFile)}
-                    title="Download"
-                  >
-                    <Download className="h-3 w-3" />
-                  </Button>
+                  {isEditing ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={handleCancelEdit}
+                        title="Cancel"
+                        disabled={isSaving}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-primary"
+                        onClick={handleSaveFile}
+                        title="Save"
+                        disabled={isSaving}
+                      >
+                        {isSaving ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Save className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {previewData && !previewData.is_binary && previewData.content !== undefined && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={handleStartEdit}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => handleDownload(selectedFile)}
+                        title="Download"
+                      >
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Preview content */}
+            {/* Preview/Edit content */}
             <div className="flex-1 overflow-auto p-3">
-              <FilePreview
-                data={previewData}
-                isLoading={isLoadingPreview}
-                selectedFile={selectedFile}
-              />
+              {isEditing ? (
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full h-full min-h-[300px] p-2 text-xs font-mono bg-muted rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  spellCheck={false}
+                />
+              ) : (
+                <FilePreview
+                  data={previewData}
+                  isLoading={isLoadingPreview}
+                  selectedFile={selectedFile}
+                />
+              )}
             </div>
           </div>
         </Panel>
