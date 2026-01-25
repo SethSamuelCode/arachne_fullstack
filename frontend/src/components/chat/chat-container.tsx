@@ -126,6 +126,7 @@ function AuthenticatedChatContainer() {
           role: msg.role,
           content: msg.content,
           timestamp: new Date(msg.created_at),
+          thinkingContent: msg.thinking_content || undefined,
           toolCalls: msg.tool_calls?.map((tc) => ({
             id: tc.tool_call_id,
             name: tc.tool_name,

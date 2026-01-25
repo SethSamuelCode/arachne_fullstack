@@ -85,8 +85,23 @@ export function useChat(options: UseChatOptions = {}) {
             content: "",
             timestamp: new Date(),
             isStreaming: true,
+            isThinkingStreaming: false,
+            thinkingContent: "",
             toolCalls: [],
           });
+          break;
+        }
+
+        case "thinking_delta": {
+          // Append thinking delta to current message
+          if (currentMessageId) {
+            const content = (wsEvent.data as { index: number; content: string }).content;
+            updateMessage(currentMessageId, (msg) => ({
+              ...msg,
+              thinkingContent: (msg.thinkingContent || "") + content,
+              isThinkingStreaming: true,
+            }));
+          }
           break;
         }
 
@@ -142,6 +157,7 @@ export function useChat(options: UseChatOptions = {}) {
             updateMessage(currentMessageId, (msg) => ({
               ...msg,
               isStreaming: false,
+              isThinkingStreaming: false,
             }));
           }
           setIsProcessing(false);

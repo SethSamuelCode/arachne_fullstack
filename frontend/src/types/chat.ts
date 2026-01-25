@@ -53,6 +53,10 @@ export interface ChatMessage {
   isStreaming?: boolean;
   /** Attachments (images) included with this message */
   attachments?: ChatAttachment[];
+  /** Model's thinking/reasoning content (for models with thinking mode) */
+  thinkingContent?: string;
+  /** Whether thinking content is currently streaming */
+  isThinkingStreaming?: boolean;
 }
 
 // Tool result content parts - can be text or images
@@ -84,6 +88,7 @@ export type WSEventType =
   | "model_request_start"
   | "part_start"
   | "text_delta"
+  | "thinking_delta"
   | "tool_call_delta"
   | "call_tools_start"
   | "tool_call"

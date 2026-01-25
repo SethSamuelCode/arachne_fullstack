@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, BinaryContent, UsageLimits
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -21,6 +21,7 @@ from pydantic_ai.models.google import GoogleModelSettings
 from app.agents.cached_google_model import CachedContentGoogleModel
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tool_register import register_tools
+from app.core.config import settings
 from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
 
@@ -86,7 +87,8 @@ class AssistantAgent:
         agent_kwargs: dict[str, Any] = {
             "model": model,
             "deps_type": Deps,
-            "retries": 3,  # Allow more retries for tool calls and output validation
+            "retries": settings.AGENT_TOOL_RETRIES,
+            "output_retries": settings.AGENT_OUTPUT_RETRIES,
         }
         if self.system_prompt:
             agent_kwargs["system_prompt"] = self.system_prompt
@@ -198,6 +200,10 @@ class AssistantAgent:
             user_input,
             deps=agent_deps,
             message_history=model_history,
+            usage_limits=UsageLimits(
+                request_limit=settings.AGENT_MAX_REQUESTS,
+                tool_calls_limit=settings.AGENT_MAX_TOOL_CALLS,
+            ),
         ) as run:
             async for event in run:
                 yield event

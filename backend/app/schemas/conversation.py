@@ -60,6 +60,7 @@ class MessageBase(BaseSchema):
 
     role: Literal["user", "assistant", "system"] = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
+    thinking_content: str | None = Field(default=None, description="Model's thinking/reasoning content")
 
 
 class MessageCreate(MessageBase):

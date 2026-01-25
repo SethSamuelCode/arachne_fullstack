@@ -8,3 +8,4 @@ export { LocalConversationSidebar, ChatSidebarToggle } from "./local-conversatio
 export { CopyButton } from "./copy-button";
 export { MarkdownContent } from "./markdown-content";
 export { ConversationSidebar } from "./conversation-sidebar";
+export { ThinkingBlock } from "./thinking-block";

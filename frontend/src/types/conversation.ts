@@ -22,6 +22,8 @@ export interface ConversationMessage {
   model_name?: string;
   tokens_used?: number;
   tool_calls?: ConversationToolCall[];
+  /** Model's thinking/reasoning content (for models with thinking mode) */
+  thinking_content?: string;
 }
 
 export interface ConversationToolCall {

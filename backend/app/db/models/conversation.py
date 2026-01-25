@@ -80,6 +80,7 @@ class Message(TimestampMixin, SQLModel, table=True):
     )
     role: str = Field(max_length=20)  # user, assistant, system
     content: str = Field(sa_column=Column(Text, nullable=False))
+    thinking_content: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     model_name: str | None = Field(default=None, max_length=100)
     tokens_used: int | None = Field(default=None)
 

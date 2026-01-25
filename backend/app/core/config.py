@@ -225,6 +225,14 @@ class Settings(BaseSettings):
     AI_FRAMEWORK: str = "pydantic_ai"
     LLM_PROVIDER: str = "openai"
 
+    # === Agent Execution Limits ===
+    # These control how the agent can chain tool calls and iterate
+    AGENT_MAX_REQUESTS: int = 100  # Max model requests per agent run
+    AGENT_MAX_TOOL_CALLS: int = 200  # Max tool calls per agent run
+    AGENT_OUTPUT_RETRIES: int = 50  # Retries for output validation (allows tool chaining)
+    AGENT_TOOL_RETRIES: int = 3  # Retries for individual tool failures
+    AGENT_STREAM_THINKING: bool = True  # Send thinking traces to client
+
     # === Image Generation (Google Gemini / Imagen) ===
     GOOGLE_API_KEY: str = ""
     GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image-preview"

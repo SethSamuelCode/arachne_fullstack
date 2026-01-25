@@ -6,6 +6,7 @@ import type { ChatMessage } from "@/types";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownContent } from "./markdown-content";
 import { CopyButton } from "./copy-button";
+import { ThinkingBlock } from "./thinking-block";
 import { User, Bot, X } from "lucide-react";
 
 interface MessageItemProps {
@@ -107,6 +108,14 @@ export function MessageItem({ message }: MessageItemProps) {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Thinking Block - shown above message content for assistant messages */}
+          {!isUser && (message.thinkingContent || message.isThinkingStreaming) && (
+            <ThinkingBlock
+              content={message.thinkingContent || ""}
+              isStreaming={message.isThinkingStreaming}
+            />
           )}
 
           {/* Only show message bubble if there's content or if it's streaming without tool calls */}

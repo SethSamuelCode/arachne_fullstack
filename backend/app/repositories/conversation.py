@@ -170,6 +170,7 @@ async def create_message(
     conversation_id: UUID,
     role: str,
     content: str,
+    thinking_content: str | None = None,
     model_name: str | None = None,
     tokens_used: int | None = None,
 ) -> Message:
@@ -178,6 +179,7 @@ async def create_message(
         conversation_id=conversation_id,
         role=role,
         content=content,
+        thinking_content=thinking_content,
         model_name=model_name,
         tokens_used=tokens_used,
     )
@@ -209,11 +211,15 @@ async def update_message_content(
     db: AsyncSession,
     message_id: UUID,
     content: str,
+    *,
+    thinking_content: str | None = None,
 ) -> Message | None:
-    """Update message content by ID."""
+    """Update message content and optionally thinking_content by ID."""
     message = await get_message_by_id(db, message_id)
     if message:
         message.content = content
+        if thinking_content is not None:
+            message.thinking_content = thinking_content
         db.add(message)
         await db.flush()
         await db.refresh(message)

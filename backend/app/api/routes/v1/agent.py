@@ -17,6 +17,7 @@ from pydantic_ai import (
     PartDeltaEvent,
     PartStartEvent,
     TextPartDelta,
+    ThinkingPartDelta,
     ToolCallPartDelta,
 )
 from pydantic_ai.messages import (
@@ -24,6 +25,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     SystemPromptPart,
     TextPart,
+    ThinkingPart,
     UserPromptPart,
 )
 
@@ -33,6 +35,7 @@ from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.clients.redis import RedisClient
+from app.core.config import settings
 from app.core.utils import serialize_tool_result_for_db
 from app.db.models.user import User
 from app.db.session import get_db_context
@@ -518,6 +521,7 @@ async def agent_websocket(
                 # Track assistant message and tool call mapping for persistence
                 assistant_message_id: UUID | None = None
                 tool_call_mapping: dict[str, UUID] = {}  # Maps PydanticAI tool_call_id to DB UUID
+                thinking_content_buffer: list[str] = []  # Accumulate thinking content
 
                 # Use iter() on the underlying PydanticAI agent to stream all events
                 # Wrap in db context so plan tools can access the database
@@ -525,10 +529,17 @@ async def agent_websocket(
                     # Update deps with the db session for this agent run
                     deps.db = agent_db
 
+                    # Import UsageLimits for controlling tool call chains
+                    from pydantic_ai import UsageLimits
+
                     async with assistant.agent.iter(
                         agent_input,
                         deps=deps,
                         message_history=model_history,
+                        usage_limits=UsageLimits(
+                            request_limit=settings.AGENT_MAX_REQUESTS,
+                            tool_calls_limit=settings.AGENT_MAX_TOOL_CALLS,
+                        ),
                     ) as agent_run:
                         async for node in agent_run:
                             if Agent.is_user_prompt_node(node):
@@ -563,6 +574,18 @@ async def agent_websocket(
                                                         "content": event.part.content,
                                                     },
                                                 )
+                                            # Handle ThinkingPart - stream to client and accumulate
+                                            elif isinstance(event.part, ThinkingPart) and event.part.content:
+                                                thinking_content_buffer.append(event.part.content)
+                                                if settings.AGENT_STREAM_THINKING:
+                                                    await manager.send_event(
+                                                        websocket,
+                                                        "thinking_delta",
+                                                        {
+                                                            "index": event.index,
+                                                            "content": event.part.content,
+                                                        },
+                                                    )
     
                                         elif isinstance(event, PartDeltaEvent):
                                             if isinstance(event.delta, TextPartDelta):
@@ -574,6 +597,18 @@ async def agent_websocket(
                                                         "content": event.delta.content_delta,
                                                     },
                                                 )
+                                            # Handle ThinkingPartDelta - stream to client and accumulate
+                                            elif isinstance(event.delta, ThinkingPartDelta) and event.delta.content_delta:
+                                                thinking_content_buffer.append(event.delta.content_delta)
+                                                if settings.AGENT_STREAM_THINKING:
+                                                    await manager.send_event(
+                                                        websocket,
+                                                        "thinking_delta",
+                                                        {
+                                                            "index": event.index,
+                                                            "content": event.delta.content_delta,
+                                                        },
+                                                    )
                                             elif isinstance(event.delta, ToolCallPartDelta):
                                                 await manager.send_event(
                                                     websocket,
@@ -715,19 +750,23 @@ async def agent_websocket(
 
                 # Save or update assistant response to database
                 if current_conversation_id and agent_run.result:
+                    # Combine thinking content if any was captured
+                    final_thinking_content = "".join(thinking_content_buffer) if thinking_content_buffer else None
+                    
                     try:
                         async with get_db_context() as db:
                             conv_service = get_conversation_service(db)
 
                             # If assistant message was created for tool calls, update it
                             if assistant_message_id is not None:
-                                # Update the existing message with final content
+                                # Update the existing message with final content and thinking
                                 from app.repositories.conversation import update_message_content
 
                                 await update_message_content(
                                     db,
                                     assistant_message_id,
                                     agent_run.result.output,
+                                    thinking_content=final_thinking_content,
                                 )
                             else:
                                 # No tools were used, create new message
@@ -736,6 +775,7 @@ async def agent_websocket(
                                     MessageCreate(
                                         role="assistant",
                                         content=agent_run.result.output,
+                                        thinking_content=final_thinking_content,
                                         model_name=assistant.model_name
                                         if hasattr(assistant, "model_name")
                                         else None,
