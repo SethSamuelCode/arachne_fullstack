@@ -1,8 +1,9 @@
 import logging
-from typing import Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar
 from uuid import UUID, uuid4
 
 from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
+from pydantic import Field
 from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from tavily import TavilyClient
@@ -46,7 +47,6 @@ PERMISSIVE_SAFETY_SETTINGS: list[dict[str, Any]] = [
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
-
 def _stringify(output: Any) -> str:
     """Convert various output types to a string representation."""
     if isinstance(output, str):
@@ -56,31 +56,40 @@ def _stringify(output: Any) -> str:
     else:
         return repr(output)
 
-
 def register_tools(agent: Agent[TDeps, str]) -> None:
     """Register tools to the given agent."""
 
     @agent.tool
     @safe_tool
     async def search_web(
-        ctx: RunContext[TDeps], query: str, max_results: int = 5
+        ctx: RunContext[TDeps],
+        query: Annotated[str, Field(description="Search query string. Be specific and include relevant keywords.")],
+        max_results: Annotated[int, Field(description="Maximum number of results to return. Higher values provide more context but increase latency.")] = 5,
     ) -> str | dict[str, Any]:
-        """Search the web for information using Tavily.
+        """
+        <tool_def>
+            <intent>
+                Search the web for current information, news, or general queries using Tavily.
+            </intent>
 
-        Use this tool to search the web for current information, news, or general queries.
+            <constraints>
+                <rule>Use for real-time information needs (news, current events, recent data).</rule>
+                <rule>Do NOT use for static knowledge already in your training data.</rule>
+                <rule>Prefer extract_webpage if you already have a specific URL.</rule>
+            </constraints>
 
-        ARGS:
-            query: Search query string.
-            max_results: Maximum number of results to return (default: 5).
+            <error_handling>
+                <error code="InvalidAPIKey">Tavily API key is missing or invalid.</error>
+                <error code="RateLimitExceeded">Too many requests, wait and retry.</error>
+                <error code="NetworkError">Connection issue, retry after a moment.</error>
+            </error_handling>
 
-        RETURNS:
-            Formatted search results with titles, URLs, and content snippets.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - InvalidAPIKey: Tavily API key is missing or invalid.
-            - RateLimitExceeded: Too many requests, wait and retry.
-            - NetworkError: Connection issue, retry after a moment.
+            <returns>
+                Formatted search results separated by "---", each containing title, URL, and content snippet.
+                Returns "No search results found." if no matches.
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         client = TavilyClient(api_key=settings.TAVILY_API_KEY)
         response = client.search(query=query, search_depth="basic", max_results=max_results)
@@ -94,38 +103,69 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
     @agent.tool
     async def current_datetime(ctx: RunContext[TDeps]) -> str:
-        """Get the current date and time.
+        """
+        <tool_def>
+            <intent>
+                Get the current date and time in ISO format with timezone.
+            </intent>
 
-        Use this tool when you need to know the current date or time.
+            <constraints>
+                <rule>Use when temporal context is needed for calculations or comparisons.</rule>
+                <rule>Do NOT use repeatedly in the same conversation—cache the result.</rule>
+            </constraints>
+
+            <returns>
+                ISO 8601 formatted datetime string with timezone (e.g., "2026-01-26T14:30:00+00:00").
+            </returns>
+        </tool_def>
         """
         return get_current_datetime()
 
     @agent.tool
     async def spawn_agent(
         ctx: RunContext[TDeps],
-        user_input: str,
-        system_prompt: str | None = None,
-        model_name: GeminiModelName | None = None,
+        user_input: Annotated[str, Field(
+            description="The specific instructions or question for the sub-agent. Must be fully self-contained as sub-agents have no conversation history."
+        )],
+        system_prompt: Annotated[str | None, Field(
+            description="Define the sub-agent's role and expertise (e.g., 'You are a Python security expert'). Defaults to generic assistant."
+        )] = None,
+        model_name: Annotated[GeminiModelName | None, Field(
+            description="Model to use. 'gemini-2.5-flash' for standard tasks, 'gemini-2.5-pro' for complex reasoning, 'gemini-3-pro-preview' for MAX reasoning on architecture/security/hard problems."
+        )] = None,
     ) -> str:
-        """Delegate a sub-task to a new agent with a fresh context window the new agent has the same tools available as you do.
+        """
+        <tool_def>
+            <intent>
+                Delegate a sub-task to a new agent with a fresh context window.
+                The sub-agent has the same tools available as you do.
+            </intent>
 
-        Use this tool to:
-        1. Isolate complex reasoning steps to prevent context pollution.
-        2. Overcome context window limits by offloading work.
-        3. Switch to a stronger model for difficult tasks.
+            <logic>
+                <step>Determine if task requires isolated reasoning or a stronger model.</step>
+                <step>Ensure user_input is fully self-contained (sub-agents have no history).</step>
+                <step>Select model based on task complexity.</step>
+            </logic>
 
-        ARGS:
-        - user_input: The specific instructions or question for the sub-agent. Be explicit and self-contained.
-        - system_prompt: Define the sub-agent's role (e.g., "You are a Python expert"). Defaults to "You are a helpful AI assistant."
-        - model_name: Select based on task difficulty:
-            * 'gemini-2.5-flash-lite': Simple lookups, formatting, low latency.
-            * 'gemini-2.5-flash': Standard tasks, summarization.
-            * 'gemini-2.5-pro': Complex reasoning, coding, creative writing.
-            * 'gemini-3-flash-preview': High speed, moderate reasoning.
-            * 'gemini-3-pro-preview': MAX REASONING. Use for architecture, security analysis, or very hard problems.
+            <model_guide>
+                <model name="gemini-2.5-flash-lite">Simple lookups, formatting, low latency.</model>
+                <model name="gemini-2.5-flash">Standard tasks, summarization, general Q&amp;A.</model>
+                <model name="gemini-2.5-pro">Complex reasoning, coding, creative writing.</model>
+                <model name="gemini-3-flash-preview">High speed with moderate reasoning.</model>
+                <model name="gemini-3-pro-preview">MAX REASONING. Architecture, security analysis, very hard problems.</model>
+            </model_guide>
 
-        RETURNS:
-        The sub-agent's final text response.
+            <constraints>
+                <rule>Max recursion depth is 10.</rule>
+                <rule>Do NOT use for simple arithmetic or basic lookups.</rule>
+                <rule>Do NOT spawn agents recursively for trivial sub-tasks.</rule>
+            </constraints>
+
+            <returns>
+                The sub-agent's final text response as a string.
+                On depth limit: "Error: spawn depth limit reached ({depth})."
+            </returns>
+        </tool_def>
         """
         import logging
 
@@ -205,26 +245,30 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return _stringify(result.output)
 
     @agent.tool
-    async def create_plan(ctx: RunContext[TDeps], plan: PlanCreate) -> str:
-        """Create a new plan.
+    async def create_plan(
+        ctx: RunContext[TDeps],
+        plan: Annotated[PlanCreate, Field(
+            description="The plan object with name, description, optional notes, and initial tasks."
+        )],
+    ) -> str:
+        """
+        <tool_def>
+            <intent>
+                Create a new structured plan with a list of tasks.
+                Plans are user-scoped—only the creating user can access them.
+            </intent>
 
-        Use this tool to create a structured plan with a list of tasks.
-        Plans are user-scoped - only you can access your plans.
+            <constraints>
+                <rule>Plans require a name and description.</rule>
+                <rule>Tasks can be added at creation or later via add_task_to_plan.</rule>
+                <rule>User ID is required (auto-provided from context).</rule>
+            </constraints>
 
-        Args:
-            plan: The plan object containing:
-                - name: Plan name
-                - description: Plan description
-                - notes: Optional additional notes
-                - is_completed: Whether the plan is completed (default: false)
-                - tasks: List of initial tasks, each with:
-                    - description: Task description
-                    - notes: Optional task notes
-                    - status: 'pending', 'in_progress', or 'completed'
-                    - is_completed: Whether task is done
-
-        Returns:
-            The UUID of the created plan.
+            <returns>
+                On success: The UUID of the created plan (string).
+                On error: "Error: ..." message describing the failure.
+            </returns>
+        </tool_def>
         """
         from app.db.session import get_db_context
         from app.services.plan import PlanService
@@ -245,17 +289,26 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             return f"Error creating plan: {e}"
 
     @agent.tool
-    async def get_plan(ctx: RunContext[TDeps], plan_id: str) -> PlanRead | str:
-        """Retrieve a plan by its ID.
+    async def get_plan(
+        ctx: RunContext[TDeps],
+        plan_id: Annotated[str, Field(description="The UUID of the plan to retrieve.")],
+    ) -> PlanRead | str:
+        """
+        <tool_def>
+            <intent>
+                Retrieve a plan by its ID, including all tasks and status information.
+            </intent>
 
-        Use this tool to fetch the details of an existing plan, including its tasks and status.
-        You can only access your own plans.
+            <constraints>
+                <rule>You can only access your own plans.</rule>
+                <rule>Returns error message if plan not found or unauthorized.</rule>
+            </constraints>
 
-        Args:
-            plan_id: The UUID of the plan to retrieve.
-
-        Returns:
-            The Plan object if found, or an error message.
+            <returns>
+                On success: PlanRead object with id, name, description, notes, is_completed, tasks[], timestamps.
+                On error: "Plan not found: {id}" or "Invalid plan ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -282,26 +335,32 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             return f"Error getting plan: {e}"
 
     @agent.tool
-    async def update_plan(ctx: RunContext[TDeps], plan_id: str, plan_data: PlanUpdate) -> str:
-        """Update an existing plan with partial update semantics.
+    async def update_plan(
+        ctx: RunContext[TDeps],
+        plan_id: Annotated[str, Field(description="The UUID of the plan to update.")],
+        plan_data: Annotated[PlanUpdate, Field(
+            description="Partial update data. Only include fields you want to change (name, description, notes, is_completed)."
+        )],
+    ) -> str:
+        """
+        <tool_def>
+            <intent>
+                Update an existing plan with partial update semantics.
+                Only fields explicitly provided will be updated.
+            </intent>
 
-        Use this tool to modify a plan's details. Only fields you explicitly provide
-        will be updated - missing fields retain their existing values.
+            <constraints>
+                <rule>This tool updates the PLAN itself, NOT tasks.</rule>
+                <rule>To update tasks, use update_task.</rule>
+                <rule>To add tasks, use add_task_to_plan.</rule>
+                <rule>To remove tasks, use remove_task_from_plan.</rule>
+            </constraints>
 
-        IMPORTANT: This tool updates the plan itself, not tasks. To update tasks,
-        use update_task. To add new tasks, use add_task_to_plan.
-        To remove tasks, use remove_task_from_plan.
-
-        Args:
-            plan_id: The UUID of the plan to update.
-            plan_data: The partial update data. Only include fields you want to change.
-                - name: New plan name (optional)
-                - description: New plan description (optional)
-                - notes: New plan notes (optional)
-                - is_completed: Mark plan as completed (optional)
-
-        Returns:
-            A confirmation message or error if plan not found.
+            <returns>
+                On success: "Plan {plan_id} updated successfully."
+                On error: "Plan not found: {id}" or "Invalid plan ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -328,17 +387,26 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             return f"Error updating plan: {e}"
 
     @agent.tool
-    async def delete_plan(ctx: RunContext[TDeps], plan_id: str) -> str:
-        """Delete a plan.
+    async def delete_plan(
+        ctx: RunContext[TDeps],
+        plan_id: Annotated[str, Field(description="The UUID of the plan to delete.")],
+    ) -> str:
+        """
+        <tool_def>
+            <intent>
+                Permanently delete a plan and all its tasks.
+            </intent>
 
-        Use this tool to remove a plan when it is no longer needed.
-        You can only delete your own plans.
+            <constraints>
+                <rule>You can only delete your own plans.</rule>
+                <rule>This action is IRREVERSIBLE.</rule>
+            </constraints>
 
-        Args:
-            plan_id: The UUID of the plan to delete.
-
-        Returns:
-            A confirmation message indicating the result of the deletion.
+            <returns>
+                On success: "Plan {plan_id} deleted successfully."
+                On error: "Plan not found: {id}" or "Invalid plan ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -368,13 +436,24 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def get_all_plans(
         ctx: RunContext[TDeps],
     ) -> list | str:
-        """Retrieve a summary of all your plans.
+        """
+        <tool_def>
+            <intent>
+                Retrieve a summary of all your plans with IDs, names, descriptions,
+                completion status, and task counts.
+            </intent>
 
-        Use this tool to get a list of all your existing plans with their IDs, names, and descriptions.
-        Only your own plans are returned.
+            <constraints>
+                <rule>Only your own plans are returned.</rule>
+                <rule>Use get_plan for full details of a specific plan.</rule>
+            </constraints>
 
-        Returns:
-            A list of plan summaries with ID, name, description, completion status, and task counts.
+            <returns>
+                On success: List of dicts with {id, name, description, is_completed, task_count, completed_task_count}.
+                Empty list if no plans exist.
+                On error: "Error listing plans: ...".
+            </returns>
+        </tool_def>
         """
         from app.db.session import get_db_context
         from app.services.plan import PlanService
@@ -405,23 +484,30 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             return f"Error listing plans: {e}"
 
     @agent.tool
-    async def add_task_to_plan(ctx: RunContext[TDeps], plan_id: str, task: PlanTaskCreate) -> str:
-        """Add a new task to an existing plan.
+    async def add_task_to_plan(
+        ctx: RunContext[TDeps],
+        plan_id: Annotated[str, Field(description="The UUID of the plan to add the task to.")],
+        task: Annotated[PlanTaskCreate, Field(
+            description="The task to add with description, optional notes, status ('pending'/'in_progress'/'completed'), and optional position."
+        )],
+    ) -> str:
+        """
+        <tool_def>
+            <intent>
+                Add a new task to an existing plan.
+                If position is not specified, the task is appended at the end.
+            </intent>
 
-        Use this tool to add a new task to a plan. If position is not specified,
-        the task will be appended at the end.
+            <constraints>
+                <rule>Plan must exist and belong to you.</rule>
+                <rule>Task description is required.</rule>
+            </constraints>
 
-        Args:
-            plan_id: The UUID of the plan to add the task to.
-            task: The new task to add, containing:
-                - description: Description of what needs to be done
-                - notes: Optional additional notes
-                - status: Initial status ('pending', 'in_progress', 'completed')
-                - is_completed: Whether task is done (default: false)
-                - position: Position in the task list (optional, appends at end if not specified)
-
-        Returns:
-            A confirmation message with the new task ID, or an error if the plan is not found.
+            <returns>
+                On success: "Task {task_id} added to plan {plan_id}."
+                On error: "Plan not found: {id}" or "Invalid plan ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -449,20 +535,28 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
     @agent.tool
     async def update_task(
-        ctx: RunContext[TDeps], task_id: str, task_update: PlanTaskUpdate
+        ctx: RunContext[TDeps],
+        task_id: Annotated[str, Field(description="The UUID of the task to update.")],
+        task_update: Annotated[PlanTaskUpdate, Field(
+            description="Partial update with fields: description, notes, status, is_completed, position."
+        )],
     ) -> str:
-        """Update an existing task.
+        """
+        <tool_def>
+            <intent>
+                Update an existing task's properties (description, notes, status, completion state).
+            </intent>
 
-        Use this tool to modify a task's properties such as description, notes,
-        status, or completion state.
+            <constraints>
+                <rule>Task must exist and belong to one of your plans.</rule>
+                <rule>Only provided fields are updated (partial update semantics).</rule>
+            </constraints>
 
-        Args:
-            task_id: The UUID of the task to update.
-            task_update: The fields to update on the task.
-
-        Returns:
-            A confirmation message with the updated task details,
-            or an error if the task is not found or unauthorized.
+            <returns>
+                On success: "Task {task_id} updated: status={status}, completed={is_completed}".
+                On error: "Task not found or unauthorized: {id}" or "Invalid task ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -492,16 +586,26 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             return f"Error updating task: {e}"
 
     @agent.tool
-    async def remove_task_from_plan(ctx: RunContext[TDeps], task_id: str) -> str:
-        """Remove a task from its plan.
+    async def remove_task_from_plan(
+        ctx: RunContext[TDeps],
+        task_id: Annotated[str, Field(description="The UUID of the task to remove.")],
+    ) -> str:
+        """
+        <tool_def>
+            <intent>
+                Remove a task from its plan. The task's plan is determined automatically.
+            </intent>
 
-        Use this tool to remove a task by its ID. The task's plan is determined automatically.
+            <constraints>
+                <rule>Task must exist and belong to one of your plans.</rule>
+                <rule>This action is IRREVERSIBLE.</rule>
+            </constraints>
 
-        Args:
-            task_id: The UUID of the task to remove.
-
-        Returns:
-            A confirmation message, or an error if the task is not found.
+            <returns>
+                On success: "Task {task_id} removed successfully."
+                On error: "Task not found: {id}" or "Invalid task ID format: {id}" or "Error: ...".
+            </returns>
+        </tool_def>
         """
         from app.core.exceptions import NotFoundError
         from app.db.session import get_db_context
@@ -530,19 +634,29 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_list_objects(ctx: RunContext[TDeps]) -> list[str] | dict[str, Any]:
-        """List all objects currently stored in your S3 storage.
+        """
+        <tool_def>
+            <intent>
+                List all objects in your S3 storage. Use to discover available files
+                or verify existence before download/overwrite operations.
+            </intent>
 
-        Use this tool to see what files are available or to verify if a file exists
-        before performing operations like download or overwrite.
+            <constraints>
+                <rule>Returns relative paths (user prefix stripped).</rule>
+                <rule>Call this BEFORE s3_read_string_content if unsure of exact filename.</rule>
+            </constraints>
 
-        RETURNS:
-            A list of strings, where each string is the key (name) of an object in your storage.
-            Note: File paths are relative to your storage space.
+            <error_handling>
+                <error code="ClientError">S3 connection or permission issue.</error>
+                <error code="EndpointConnectionError">S3 service unavailable.</error>
+            </error_handling>
 
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - ClientError: S3 connection or permission issue.
-            - EndpointConnectionError: S3 service unavailable.
+            <returns>
+                On success: List of object keys (strings) relative to your user prefix.
+                Empty list if no files exist.
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -557,24 +671,32 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_upload_file(
-        ctx: RunContext[TDeps], file_name: str, object_name: str
+        ctx: RunContext[TDeps],
+        file_name: Annotated[str, Field(description="Absolute or relative path to the local file to upload.")],
+        object_name: Annotated[str, Field(description="The key (name) to assign to the object in your storage.")],
     ) -> str | dict[str, Any]:
-        """Upload a local file from the server's filesystem to your S3 storage.
+        """
+        <tool_def>
+            <intent>
+                Upload a local file from the server's filesystem to your S3 storage.
+                Use when a file exists on disk and needs to be persisted.
+            </intent>
 
-        Use this tool when you have a file on disk (e.g., generated by another tool)
-        and need to persist it to S3.
+            <constraints>
+                <rule>Local file must exist on the server filesystem.</rule>
+                <rule>For string content, prefer s3_upload_string_content instead.</rule>
+            </constraints>
 
-        ARGS:
-            file_name: The absolute or relative path to the local file to upload.
-            object_name: The key (name) to assign to the object in your storage.
+            <error_handling>
+                <error code="FileNotFoundError">Local file does not exist.</error>
+                <error code="ClientError">S3 upload failed (permission denied, connection issue).</error>
+            </error_handling>
 
-        RETURNS:
-            A success message string.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - FileNotFoundError: Local file does not exist.
-            - ClientError: S3 upload failed (permission denied, connection issue).
+            <returns>
+                On success: "Successfully uploaded {file_name} to {object_name}".
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -587,25 +709,33 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_download_file(
-        ctx: RunContext[TDeps], object_name: str, file_name: str
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(description="The key (name) of the object in your storage to download.")],
+        file_name: Annotated[str, Field(description="The local path where the file should be saved.")],
     ) -> str | dict[str, Any]:
-        """Download a file from your S3 storage to the server's local filesystem.
+        """
+        <tool_def>
+            <intent>
+                Download a file from S3 to the server's local filesystem.
+                Use when other tools need the file on disk.
+            </intent>
 
-        Use this tool to retrieve a file from S3 so it can be processed or read by
-        other tools that utilize the local filesystem.
+            <constraints>
+                <rule>For text content reading, prefer s3_read_string_content instead.</rule>
+                <rule>Verify file exists first with s3_list_objects if unsure.</rule>
+            </constraints>
 
-        ARGS:
-            object_name: The key (name) of the object in your storage to download.
-            file_name: The local path where the file should be saved.
+            <error_handling>
+                <error code="NoSuchKey">The file does not exist in storage.</error>
+                <error code="ClientError">S3 connection or permission issue.</error>
+                <error code="PermissionError">Cannot write to local path.</error>
+            </error_handling>
 
-        RETURNS:
-            A success message string.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - NoSuchKey: The file does not exist in storage.
-            - ClientError: S3 connection or permission issue.
-            - PermissionError: Cannot write to local path.
+            <returns>
+                On success: "Successfully downloaded {object_name} to {file_name}".
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -618,23 +748,31 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_upload_string_content(
-        ctx: RunContext[TDeps], content: str, object_name: str
+        ctx: RunContext[TDeps],
+        content: Annotated[str, Field(description="The string content to be written to the file.")],
+        object_name: Annotated[str, Field(description="The key (name) to assign to the object in your storage.")],
     ) -> str | dict[str, Any]:
-        """Upload a string directly as a file to your S3 storage.
+        """
+        <tool_def>
+            <intent>
+                Upload text/string content directly to S3 without creating a local file.
+                Ideal for saving reports, logs, generated text, or configuration.
+            </intent>
 
-        Use this tool to save text data, reports, or logs directly to S3 without
-        creating a local file first.
+            <constraints>
+                <rule>Content is UTF-8 encoded before upload.</rule>
+                <rule>For binary data, use s3_upload_file instead.</rule>
+            </constraints>
 
-        ARGS:
-            content: The string content to be written to the file.
-            object_name: The key (name) to assign to the object in your storage.
+            <error_handling>
+                <error code="ClientError">S3 upload failed (permission denied, connection issue).</error>
+            </error_handling>
 
-        RETURNS:
-            A success message string.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - ClientError: S3 upload failed (permission denied, connection issue).
+            <returns>
+                On success: "Successfully uploaded content to {object_name}".
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -647,24 +785,33 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_read_string_content(
-        ctx: RunContext[TDeps], object_name: str
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(description="The key (name) of the object in your storage to read.")],
     ) -> str | dict[str, Any]:
-        """Read the content of a file from your S3 storage directly into a string.
+        """
+        <tool_def>
+            <intent>
+                Read a text file from S3 directly into a string.
+                Ideal for logs, config files, notes, and other text content.
+            </intent>
 
-        Use this tool to read text files (logs, config, notes) from S3 without
-        saving them to disk.
+            <constraints>
+                <rule>File must be valid UTF-8 text.</rule>
+                <rule>For binary files, use s3_download_file instead.</rule>
+                <rule>Call s3_list_objects first if unsure of exact filename.</rule>
+            </constraints>
 
-        ARGS:
-            object_name: The key (name) of the object in your storage to read.
+            <error_handling>
+                <error code="NoSuchKey">File does not exist. Use s3_list_objects to see available files.</error>
+                <error code="UnicodeDecodeError">File is not valid UTF-8 (may be binary).</error>
+                <error code="ClientError">S3 connection or permission issue.</error>
+            </error_handling>
 
-        RETURNS:
-            The UTF-8 decoded content of the file.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - NoSuchKey: The file does not exist in storage. Use s3_list_objects to see available files.
-            - UnicodeDecodeError: The file is not valid UTF-8 text (may be binary).
-            - ClientError: S3 connection or permission issue.
+            <returns>
+                On success: The file contents as a UTF-8 decoded string.
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -676,22 +823,31 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
     @agent.tool
     @safe_tool
-    async def s3_delete_object(ctx: RunContext[TDeps], object_name: str) -> str | dict[str, Any]:
-        """Delete an object from your S3 storage.
+    async def s3_delete_object(
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(description="The key (name) of the object to delete.")],
+    ) -> str | dict[str, Any]:
+        """
+        <tool_def>
+            <intent>
+                Delete an object from your S3 storage.
+            </intent>
 
-        Use this tool to remove files that are no longer needed.
-        Warning: This action is permanent.
+            <constraints>
+                <rule>This action is PERMANENT and IRREVERSIBLE.</rule>
+                <rule>Verify correct file before deletion.</rule>
+            </constraints>
 
-        ARGS:
-            object_name: The key (name) of the object to delete.
+            <error_handling>
+                <error code="NoSuchKey">The file does not exist in storage.</error>
+                <error code="ClientError">S3 connection or permission issue.</error>
+            </error_handling>
 
-        RETURNS:
-            A success message string.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - NoSuchKey: The file does not exist in storage.
-            - ClientError: S3 connection or permission issue.
+            <returns>
+                On success: "Successfully deleted object {object_name}".
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -704,23 +860,31 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_generate_presigned_download_url(
-        ctx: RunContext[TDeps], object_name: str, expiration: int = 3600
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(description="The key (name) of the object in your storage.")],
+        expiration: Annotated[int, Field(description="Validity duration in seconds.")] = 3600,
     ) -> str | dict[str, Any]:
-        """Generate a temporary public URL to access a private S3 object.
+        """
+        <tool_def>
+            <intent>
+                Generate a temporary public URL to access a private S3 object.
+                Use to share files with users or external systems.
+            </intent>
 
-        Use this tool when you need to share a file link with a user or an external system.
-        Note: The URL will work even if the object doesn't exist (error occurs on access).
+            <constraints>
+                <rule>URL works even if object doesn't exist (error on access).</rule>
+                <rule>Default expiration is 1 hour (3600 seconds).</rule>
+            </constraints>
 
-        ARGS:
-            object_name: The key (name) of the object in your storage.
-            expiration: Validity duration in seconds (default: 3600).
+            <error_handling>
+                <error code="ClientError">S3 connection or permission issue.</error>
+            </error_handling>
 
-        RETURNS:
-            A string containing the presigned URL.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - ClientError: S3 connection or permission issue.
+            <returns>
+                On success: HTTPS presigned URL string (valid for {expiration} seconds).
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -732,25 +896,31 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_generate_presigned_upload_post_url(
-        ctx: RunContext[TDeps], object_name: str, expiration: int = 3600
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(description="The key (name) for the object to be uploaded.")],
+        expiration: Annotated[int, Field(description="Validity duration in seconds.")] = 3600,
     ) -> str | dict[str, Any]:
-        """Generate a presigned POST URL and fields for uploading a file to your S3 storage.
+        """
+        <tool_def>
+            <intent>
+                Generate a presigned POST URL for client-side file uploads directly to S3.
+                Returns URL and form fields required for authentication.
+            </intent>
 
-        Use this tool when you need to enable a client/user to upload a file directly
-        to S3 via a POST request. The returned dictionary contains the 'url' and
-        specific 'fields' that MUST be included in the form data of the POST request.
+            <constraints>
+                <rule>Returned 'fields' MUST be included in the POST form data.</rule>
+                <rule>Default expiration is 1 hour (3600 seconds).</rule>
+            </constraints>
 
-        ARGS:
-            object_name: The key (name) of the object in your storage.
-            expiration: Validity duration in seconds (default: 3600).
+            <error_handling>
+                <error code="ClientError">S3 connection or permission issue.</error>
+            </error_handling>
 
-        RETURNS:
-            A dictionary (as a string) with keys 'url' (the upload endpoint) and
-            'fields' (a dictionary of form fields required for authentication).
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - ClientError: S3 connection or permission issue.
+            <returns>
+                On success: dict with 'url' (string) and 'fields' (dict of form fields).
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -762,23 +932,31 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def s3_copy_file(
-        ctx: RunContext[TDeps], source_object_name: str, dest_object_name: str
+        ctx: RunContext[TDeps],
+        source_object_name: Annotated[str, Field(description="The key (name) of the existing object to copy.")],
+        dest_object_name: Annotated[str, Field(description="The key (name) for the new copy.")],
     ) -> str | dict[str, Any]:
-        """Copy a file from one location to another within your S3 storage.
+        """
+        <tool_def>
+            <intent>
+                Copy a file within S3 storage. Use for duplication, renaming (copy + delete), or backups.
+            </intent>
 
-        Use this tool to duplicate files, rename them (copy + delete), or create backups.
+            <constraints>
+                <rule>Source file must exist.</rule>
+                <rule>To rename, copy then delete the source.</rule>
+            </constraints>
 
-        ARGS:
-            source_object_name: The key (name) of the existing object.
-            dest_object_name: The key (name) for the new copy.
+            <error_handling>
+                <error code="NoSuchKey">The source file does not exist in storage.</error>
+                <error code="ClientError">S3 connection or permission issue.</error>
+            </error_handling>
 
-        RETURNS:
-            A success message string.
-
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - NoSuchKey: The source file does not exist in storage.
-            - ClientError: S3 connection or permission issue.
+            <returns>
+                On success: "Successfully copied {source_object_name} to {dest_object_name}".
+                On error: dict with 'error' key and details.
+            </returns>
+        </tool_def>
         """
         from app.services.s3 import get_s3_service
 
@@ -792,81 +970,71 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     @safe_tool
     async def python_execute_code(
-        ctx: RunContext[TDeps], code: str, timeout: int = 600
+        ctx: RunContext[TDeps],
+        code: Annotated[str, Field(description="The Python code to execute. Must be valid Python 3.13 syntax.")],
+        timeout: Annotated[int, Field(description="Maximum execution time in seconds. Use higher values for long-running tasks.")] = 600,
     ) -> dict[str, Any]:
-        """Execute Python code in an ephemeral Docker container.
+        """
+        <tool_def>
+            <intent>
+                Execute Python code in an ephemeral Docker container for data analysis,
+                scraping, calculations, or any Python task.
+            </intent>
 
-        Use this tool to run Python scripts for data analysis, scraping, or complex calculations.
+            <environment>
+                <persistence>Ephemeral - filesystem resets after each call.</persistence>
+                <internet>Enabled - can fetch URLs, APIs, etc.</internet>
+                <python_version>3.13</python_version>
+                <storage_api>
+                    Use `storage_client` module for persistent file storage:
+                    ```python
+                    from storage_client import StorageClient
+                    client = StorageClient()
+                    client.put("data/output.csv", content)
+                    content = client.get_text("data/input.txt")
+                    files = client.list(prefix="data/")
+                    client.delete("data/temp.txt")
+                    ```
+                </storage_api>
+                <libs category="Web/HTTP">requests, httpx, aiohttp</libs>
+                <libs category="Scraping">beautifulsoup4, lxml, html5lib, cssselect</libs>
+                <libs category="Data Science">pandas, numpy, scipy, scikit-learn, statsmodels, sympy, networkx</libs>
+                <libs category="Visualization">matplotlib, seaborn, plotly, imageio</libs>
+                <libs category="Documents">pypdf, python-docx, python-pptx, openpyxl, xlrd, ebooklib, reportlab, weasyprint</libs>
+                <libs category="Text/NLP">nltk, textblob, markdown, regex, html2text, inscriptis, unidecode, ftfy, chardet</libs>
+                <libs category="Finance">yfinance, fredapi</libs>
+                <libs category="Databases">psycopg2-binary, pymysql, pymongo, redis</libs>
+                <libs category="APIs">pyjwt, authlib, cryptography, ecdsa, graphql-core, grpcio, protobuf</libs>
+                <libs category="Geo">geopy, shapely</libs>
+                <libs category="Image">opencv-python-headless, pytesseract, Pillow, qrcode, python-barcode, pyzbar</libs>
+                <libs category="Date/Time">python-dateutil, pytz, arrow, pendulum</libs>
+                <libs category="Data Formats">pyyaml, toml, xmltodict, defusedxml, jsonschema</libs>
+                <libs category="Network">paramiko, dnspython, websockets</libs>
+                <libs category="Archives">py7zr</libs>
+                <libs category="Media">mutagen, pydub, av</libs>
+                <libs category="Validation">pydantic, marshmallow, email-validator, phonenumbers</libs>
+                <libs category="Utilities">tqdm, cachetools, diskcache, joblib, faker, loguru, colorama</libs>
+            </environment>
 
-        ARGS:
-            code: The Python code to execute. Must be valid Python 3.13 syntax.
-            timeout: Maximum execution time in seconds (default: 600). Use higher values
-                     for long-running tasks like web scraping or large data processing.
+            <constraints>
+                <rule>Default timeout is 600s (10 min). Increase for long tasks.</rule>
+                <rule>Storage is user-scoped; cannot access other users' data.</rule>
+            </constraints>
 
-        Environment & Storage:
-        - Internet access: Enabled (can fetch URLs, APIs, etc.).
-        - Persistence: Ephemeral (filesystem resets after each call).
-        - Storage: Use `storage_client` module for persistent file storage (auto-installed).
-          Storage is user-scoped; you cannot access other users' data.
+            <error_handling>
+                <error code="TimeoutError">Code execution exceeded timeout limit.</error>
+                <error code="RuntimeError">Docker container failed to start.</error>
+                <error code="DockerException">Docker service unavailable.</error>
+            </error_handling>
 
-        StorageClient API:
-        ```python
-        from storage_client import StorageClient
-        client = StorageClient()  # Auto-configured from environment
-
-        # Upload content (string or bytes)
-        client.put("data/output.csv", csv_content, content_type="text/csv")
-
-        # Download as bytes or text
-        content = client.get("data/input.txt")       # Returns bytes
-        text = client.get_text("data/input.txt")     # Returns string (UTF-8)
-
-        # List files (returns list of dicts with key, size, last_modified, content_type)
-        files = client.list(prefix="data/")
-        for f in files:
-            print(f["key"], f["size"])
-
-        # Delete a file
-        client.delete("data/temp.txt")
-
-        # Check existence
-        if client.exists("data/file.txt"):
-            ...
-        ```
-
-        Available Libraries:
-            * Storage: storage_client (persistent user-scoped file storage)
-            * Web/HTTP: requests, httpx, aiohttp
-            * Scraping: beautifulsoup4, lxml, html5lib, cssselect
-            * Data Science: pandas, numpy, scipy, scikit-learn, statsmodels, sympy, networkx
-            * Visualization: matplotlib, seaborn, plotly, imageio
-            * Documents: pypdf, python-docx, python-pptx, openpyxl, xlrd, ebooklib, reportlab, weasyprint
-            * Text/NLP: nltk, textblob, markdown, regex, html2text, inscriptis, unidecode, ftfy, chardet
-            * Finance: yfinance (stock data), fredapi (economic data)
-            * Databases: psycopg2-binary (PostgreSQL), pymysql (MySQL), pymongo (MongoDB), redis
-            * APIs: pyjwt, authlib, cryptography, ecdsa, graphql-core, grpcio, protobuf
-            * Geo: geopy, shapely
-            * Image: opencv-python-headless, pytesseract (OCR), Pillow, qrcode, python-barcode, pyzbar
-            * Date/Time: python-dateutil, pytz, arrow, pendulum
-            * Data Formats: pyyaml, toml, xmltodict, defusedxml, jsonschema
-            * Network: paramiko (SSH), dnspython, websockets
-            * Cloud: boto3 (AWS - for external services only, not user storage)
-            * Archives: py7zr
-            * Media: mutagen, pydub, av (video)
-            * Validation: pydantic, marshmallow, email-validator, phonenumbers
-            * Fuzzy Matching: fuzzywuzzy, python-Levenshtein
-            * Search: whoosh
-            * Utilities: tqdm, cachetools, diskcache, joblib, faker, loguru, colorama
-
-        RETURNS:
-            Dict with 'output' (stdout as string) and 'error' (stderr or error message).
-            Success: {"output": "...", "error": ""}
-            Failure: {"output": "", "error": "error message..."}
-
-        ERRORS:
-            - TimeoutError: Code execution exceeded timeout limit.
-            - RuntimeError: Docker container failed to start.
-            - DockerException: Docker service unavailable.
+            <returns>
+                dict with keys:
+                - 'stdout': Standard output from execution (string).
+                - 'stderr': Standard error from execution (string).
+                - 'exit_code': Process exit code (0 = success).
+                - 'timed_out': Boolean indicating timeout.
+            </returns>
+        </tool_def>
         """
         from app.api.routes.v1.storage_proxy import create_sandbox_token
         from app.services.python import get_python_executor
@@ -888,31 +1056,43 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def extract_webpage(
         ctx: RunContext[TDeps],
-        url: str,
-        extract_text: bool = True,
-        max_length: int = 20000,
+        url: Annotated[str, Field(description="The full URL to fetch (e.g., 'https://docs.python.org/3/').")],
+        extract_text: Annotated[bool, Field(
+            description="True: Returns parsed readable text (best for reasoning). False: Returns raw HTML (for layout analysis)."
+        )] = True,
+        max_length: Annotated[int, Field(description="Maximum characters to return. Content is truncated if longer.")] = 20000,
     ) -> dict[str, Any]:
-        """Fetch and extract content from a webpage.
+        """
+        <tool_def>
+            <intent>
+                Fetch and extract content from a specific webpage URL.
+                Returns parsed text or raw HTML with title and metadata.
+            </intent>
 
-        Use this tool to read the content of a specific URL.
-        - Prefer `search_web` first if you don't have a specific URL.
-        - Use this to read documentation, articles, or reference material found via search.
+            <selector>
+                <case condition="Don't have a specific URL">Use search_web first to find URLs.</case>
+                <case condition="Have a specific URL">Use this tool directly.</case>
+            </selector>
 
-        ARGS:
-            url: The full URL to fetch (e.g. "https://docs.python.org/3/").
-            extract_text:
-                - True (Default): Returns parsed, readable text. Best for reasoning and summarization.
-                - False: Returns raw HTML. Use only if layout/structure analysis is required.
-            max_length: Maximum characters to return (def: 20000). Content is truncated if longer.
+            <constraints>
+                <rule>Prefer search_web if you don't have a specific URL.</rule>
+                <rule>Use extract_text=False only when HTML structure analysis is needed.</rule>
+            </constraints>
 
-        RETURNS:
-            Dict containing 'content', 'title', and metadata.
+            <error_handling>
+                <error code="HTTPError">Failed to fetch URL (404, 500, etc.).</error>
+                <error code="ConnectionError">Network issue or URL unreachable.</error>
+                <error code="Timeout">Request took too long.</error>
+            </error_handling>
 
-        ERRORS:
-            Returns {"error": True, "message": "...", "code": "..."} on failure:
-            - HTTPError: Failed to fetch URL (404, 500, etc.).
-            - ConnectionError: Network issue or URL unreachable.
-            - Timeout: Request took too long.
+            <returns>
+                dict with keys:
+                - 'url': The fetched URL.
+                - 'title': Page title (if found).
+                - 'content': Extracted text or raw HTML (based on extract_text param).
+                - 'content_type': MIME type of the response.
+            </returns>
+        </tool_def>
         """
 
         response = await extract_url(
@@ -923,107 +1103,118 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         return response.model_dump()
 
     @agent.tool
-    async def s3_fetch_image(ctx: RunContext[TDeps], object_name: str) -> ToolReturn:
-        """Fetch an image from S3 storage and load it for visual analysis.
+    async def s3_fetch_image(
+        ctx: RunContext[TDeps],
+        object_name: Annotated[str, Field(
+            description="The key (name) of the image in storage (e.g., 'photos/receipt.png'). Do NOT include 'users/<id>/' prefix."
+        )],
+    ) -> ToolReturn:
+        """
+        <tool_def>
+            <intent>
+                Fetch an image from S3 storage and load it into context for visual analysis.
+                Use when user asks to look at, analyze, describe, or extract from an image.
+            </intent>
 
-        Use this tool when the user asks you to look at, analyze, describe, read,
-        extract information from, or understand an image stored in their S3 storage.
+            <selector>
+                <case condition="User wants visual analysis of stored image">Use this tool.</case>
+                <case condition="Non-image file (text, CSV, JSON)">Use s3_read_string_content instead.</case>
+                <case condition="Image already attached to message">Already in context, no tool needed.</case>
+                <case condition="Don't know exact filename">Call s3_list_objects first.</case>
+            </selector>
 
-        WHEN TO USE:
-        - User says "look at", "analyze", "describe", "read", "extract from",
-          "what's in", "explain", or "understand" an image/photo/screenshot/picture
-        - User references a file with image extension (.png, .jpg, .jpeg, .webp,
-          .heic, .heif) and wants visual analysis
-        - User asks about contents of an image file they've uploaded
+            <workflow>
+                <step>If filename unknown, call s3_list_objects first.</step>
+                <step>Call this tool with the image filename.</step>
+                <step>Analyze the returned image and respond.</step>
+            </workflow>
 
-        WHEN NOT TO USE:
-        - For non-image files (text, CSV, JSON, etc.) — use s3_read_string_content instead
-        - When the user has already attached images to the current message (they're
-          already in your context)
-        - For listing files — use s3_list_objects first if you don't know the exact filename
+            <constraints>
+                <rule>Supported formats: PNG, JPEG, WebP, HEIC, HEIF.</rule>
+                <rule>Maximum size: 20MB per image.</rule>
+            </constraints>
 
-        WORKFLOW:
-        1. If user doesn't provide exact filename, call s3_list_objects first to find it
-        2. Call this tool with the image filename
-        3. Analyze the returned image and respond to user's question
-
-        SUPPORTED FORMATS:
-        PNG (.png), JPEG (.jpg, .jpeg), WebP (.webp), HEIC (.heic), HEIF (.heif)
-
-        SIZE LIMIT: Maximum 20MB per image
-
-        ARGS:
-            object_name: The key (name) of the image in the user's storage
-                         (e.g., 'photos/receipt.png', 'screenshots/error.jpg').
-                         Do NOT include 'users/<id>/' prefix — it's added automatically.
-
-        RETURNS:
-            The image loaded into your context for visual analysis. You can then
-            describe, analyze, or extract information from the image.
+            <returns>
+                ToolReturn with:
+                - return_value: Confirmation message with image path.
+                - content: The binary image data loaded into your visual context.
+                - metadata: {success, object_name, media_type, size_bytes}.
+                On error: ToolReturn with error message and success=False.
+            </returns>
+        </tool_def>
         """
         return await s3_fetch_image_impl(ctx, object_name)
 
     @agent.tool
     async def generate_image(
         ctx: RunContext[TDeps],
-        prompt: str,
-        model: ImageModelName = "imagen-4.0-generate-001",
-        aspect_ratio: str = "1:1",
-        image_size: str = "2K",
-        number_of_images: int = 1,
-        negative_prompt: str | None = None,
-        filename: str | None = None,
+        prompt: Annotated[str, Field(
+            description="Detailed description of the image to generate. Be specific about subject, style, lighting, composition, colors, and mood."
+        )],
+        model: Annotated[ImageModelName, Field(
+            description="Model to use for generation. See model_guide for selection criteria."
+        )] = "imagen-4.0-generate-001",
+        aspect_ratio: Annotated[str, Field(
+            description="Image dimensions ratio. Options: '1:1' (square), '16:9'/'4:3'/'3:2' (landscape), '9:16'/'3:4'/'2:3' (portrait), '21:9' (ultra-wide, Gemini only)."
+        )] = "1:1",
+        image_size: Annotated[str, Field(
+            description="Resolution: '1K' (fastest), '2K' (balanced), '4K' (highest, Gemini only)."
+        )] = "2K",
+        number_of_images: Annotated[int, Field(
+            description="Number of images to generate, 1-4 (Imagen models only)."
+        )] = 1,
+        negative_prompt: Annotated[str | None, Field(
+            description="What to avoid in the image (Imagen only). Example: 'blurry, low quality, distorted, watermark'."
+        )] = None,
+        filename: Annotated[str | None, Field(
+            description="Custom filename without extension. Defaults to auto-generated UUID. Saved as PNG."
+        )] = None,
     ) -> ToolReturn:
-        """Generate images using Google's Gemini or Imagen models.
+        """
+        <tool_def>
+            <intent>
+                Generate images from text descriptions using Google's Gemini or Imagen models.
+                Images are saved to S3 and loaded into context for immediate inspection.
+            </intent>
 
-        Use this tool to create images from text descriptions. You have full control
-        over model selection and generation parameters.
+            <model_guide>
+                <model name="gemini-3-pro-image-preview">
+                    Best for iterative refinement, conversational edits, and 4K output.
+                    Supports back-and-forth editing. Generates 1 image per call.
+                </model>
+                <model name="imagen-4.0-generate-001">
+                    Standard Imagen 4. Great balance of quality and speed for photorealism.
+                    Supports 1-4 images per call.
+                </model>
+                <model name="imagen-4.0-ultra-generate-001">
+                    Highest quality Imagen. Best for professional product photos, portraits,
+                    and detailed scenes. Slower but superior results. Supports 1-4 images.
+                </model>
+                <model name="imagen-4.0-fast-generate-001">
+                    Fastest Imagen 4. Use for quick iterations or drafts.
+                    Supports 1-4 images per call.
+                </model>
+            </model_guide>
 
-        MODEL SELECTION GUIDE:
-        - `gemini-3-pro-image-preview`: Best for iterative refinement, conversational
-          edits, and when you need 4K output. Supports back-and-forth image editing.
-          Generates 1 image per call.
-        - `imagen-4.0-generate-001`: Standard Imagen 4. Great balance of quality and
-          speed for photorealistic images. Supports 1-4 images per call.
-        - `imagen-4.0-ultra-generate-001`: Highest quality Imagen model. Best for
-          professional-grade product photos, portraits, and detailed scenes where
-          quality is paramount. Slower but superior results. Supports 1-4 images.
-        - `imagen-4.0-fast-generate-001`: Fastest Imagen 4 variant. Use for quick
-          iterations, drafts, or when speed matters more than maximum quality.
-          Supports 1-4 images per call.
+            <constraints>
+                <rule>number_of_images only applies to Imagen models (1-4).</rule>
+                <rule>negative_prompt only applies to Imagen models.</rule>
+                <rule>4K resolution only available with Gemini model.</rule>
+                <rule>Ultra-wide 21:9 aspect ratio only available with Gemini.</rule>
+            </constraints>
 
-        ASPECT RATIOS:
-        - Square: "1:1" (default, good for profile pics, icons)
-        - Landscape: "16:9" (widescreen), "4:3" (standard), "3:2" (photo)
-        - Portrait: "9:16" (mobile/stories), "3:4", "2:3"
-        - Ultra-wide: "21:9" (cinematic, Gemini only)
+            <error_handling>
+                <error code="SafetyFilter">Generation blocked by safety filters. Modify prompt and retry.</error>
+            </error_handling>
 
-        IMAGE SIZES:
-        - "1K": Fastest generation, smaller file size
-        - "2K": Good balance of quality and speed (default)
-        - "4K": Highest quality (Gemini only, slower)
-
-        ARGS:
-            prompt: Detailed description of the image to generate. Be specific about
-                    subject, style, lighting, composition, colors, and mood.
-            model: Model to use (see guide above). Options:
-                   "gemini-3-pro-image-preview", "imagen-4.0-generate-001",
-                   "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001"
-            aspect_ratio: Image dimensions ratio (default: "1:1").
-            image_size: Resolution - "1K", "2K", or "4K" (default: "2K").
-            number_of_images: How many images to generate, 1-4 (Imagen only, default: 1).
-            negative_prompt: What to avoid in the image (Imagen only).
-                             Example: "blurry, low quality, distorted, watermark"
-            filename: Custom filename without extension (default: auto-generated UUID).
-                      Images are saved as PNG.
-
-        RETURNS:
-            Generated image(s) saved to S3 with presigned download URLs. The images
-            are also loaded into your context for immediate visual inspection.
-
-        ERRORS:
-            If generation is blocked by safety filters, returns the rejection reason
-            so you can modify your prompt and retry.
+            <returns>
+                ToolReturn with:
+                - return_value: Success message with S3 paths and presigned URLs (valid 1 hour).
+                - content: Generated image(s) loaded into visual context for immediate inspection.
+                - metadata: {success, model, prompt, s3_keys[], urls[], aspect_ratio, image_size, rai_reasons}.
+                On failure: ToolReturn with error message, success=False, and rai_reasons if filtered.
+            </returns>
+        </tool_def>
         """
         from google import genai
         from google.genai import types
@@ -1202,92 +1393,66 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_openalex(
         ctx: RunContext[TDeps],
-        query: str,
-        search_field: Literal["all", "title", "abstract", "fulltext", "title_and_abstract"] = "all",
-        year_from: int | None = None,
-        year_to: int | None = None,
-        min_citations: int | None = None,
-        open_access_only: bool = False,
-        oa_status: Literal["gold", "green", "hybrid", "bronze", "closed"] | None = None,
-        publication_type: str | None = None,
-        institution_id: str | None = None,
-        author_id: str | None = None,
-        concept_id: str | None = None,
-        language: str | None = None,
-        sort_by: Literal["relevance", "cited_by_count", "publication_date", "display_name"] = "relevance",
-        sort_order: Literal["asc", "desc"] = "desc",
-        page: int = 1,
-        per_page: int = 25,
-        include_abstract: bool = True,
-        include_authors: bool = True,
+        query: Annotated[str, Field(description="Search terms. Natural language queries work well.")],
+        search_field: Annotated[
+            Literal["all", "title", "abstract", "fulltext", "title_and_abstract"],
+            Field(description="Which fields to search: 'all' (broadest), 'title', 'abstract', 'fulltext', 'title_and_abstract'.")
+        ] = "all",
+        year_from: Annotated[int | None, Field(description="Minimum publication year (inclusive).")] = None,
+        year_to: Annotated[int | None, Field(description="Maximum publication year (inclusive).")] = None,
+        min_citations: Annotated[int | None, Field(description="Only papers with at least this many citations.")] = None,
+        open_access_only: Annotated[bool, Field(description="If True, only return papers with free full text.")] = False,
+        oa_status: Annotated[
+            Literal["gold", "green", "hybrid", "bronze", "closed"] | None,
+            Field(description="Filter by OA status: 'gold' (OA journal), 'green' (repository), 'hybrid', 'bronze' (free on publisher), 'closed'.")
+        ] = None,
+        publication_type: Annotated[str | None, Field(description="Filter by type: 'article', 'book', 'dataset', etc.")] = None,
+        institution_id: Annotated[str | None, Field(description="OpenAlex institution ID (e.g., 'I27837315' for MIT).")] = None,
+        author_id: Annotated[str | None, Field(description="OpenAlex author ID (e.g., 'A5023888391').")] = None,
+        concept_id: Annotated[str | None, Field(description="Research concept ID (e.g., 'C41008148' for AI).")] = None,
+        language: Annotated[str | None, Field(description="ISO 639-1 language code (e.g., 'en', 'zh', 'de').")] = None,
+        sort_by: Annotated[
+            Literal["relevance", "cited_by_count", "publication_date", "display_name"],
+            Field(description="Sort by: 'relevance', 'cited_by_count', 'publication_date', 'display_name'.")
+        ] = "relevance",
+        sort_order: Annotated[Literal["asc", "desc"], Field(description="Sort order: 'asc' or 'desc'.")] = "desc",
+        page: Annotated[int, Field(description="Page number (1-indexed).")] = 1,
+        per_page: Annotated[int, Field(description="Results per page, 1-200.")] = 25,
+        include_abstract: Annotated[bool, Field(description="Include paper abstracts.")] = True,
+        include_authors: Annotated[bool, Field(description="Include author information.")] = True,
     ) -> dict[str, Any]:
-        """Search OpenAlex academic database for scholarly works.
+        """
+        <tool_def>
+            <intent>
+                Search OpenAlex academic database (250M+ scholarly works) for papers with
+                comprehensive metadata including citations, open access status, and affiliations.
+            </intent>
 
-        OpenAlex is an open catalog of 250M+ scholarly works, authors, venues, and
-        institutions. It provides comprehensive metadata including citations, open
-        access status, and institutional affiliations.
+            <selector>
+                <case condition="Large-scale search across disciplines">Use this tool.</case>
+                <case condition="Need citation metrics and OA info">Use this tool.</case>
+                <case condition="Filter by institution, author, or concept">Use this tool.</case>
+                <case condition="Need AI-generated summaries/TLDR">Use search_semantic_scholar instead.</case>
+                <case condition="Need preprints not yet indexed">Use search_arxiv instead.</case>
+                <case condition="Need paper embeddings">Use search_semantic_scholar instead.</case>
+            </selector>
 
-        WHEN TO USE:
-        - Large-scale academic searches across all disciplines
-        - Need citation metrics and open access information
-        - Want to filter by institution, author, or concept
-        - Need structured metadata (DOIs, ORCIDs, publication dates)
-        - Looking for open access versions of papers
-        - Searching by specific journal, conference, or publisher
+            <constraints>
+                <rule>Results per page max is 200.</rule>
+                <rule>Use page parameter for pagination (1-indexed).</rule>
+            </constraints>
 
-        WHEN NOT TO USE:
-        - Need AI-generated paper summaries (use search_semantic_scholar)
-        - Looking for preprints not yet indexed (use search_arxiv)
-        - Need paper embeddings for similarity search
+            <error_handling>
+                <error code="Timeout">OpenAlex may be slow during peak times.</error>
+                <error code="InvalidFilter">Check parameter values match allowed options.</error>
+            </error_handling>
 
-        SEARCH FIELD OPTIONS:
-        - "all": Search title, abstract, and fulltext (default, broadest)
-        - "title": Search only paper titles (precise)
-        - "abstract": Search only abstracts
-        - "fulltext": Search full paper text (subset of works)
-        - "title_and_abstract": Search both title and abstract
-
-        OPEN ACCESS STATUS:
-        - "gold": Published in an OA journal
-        - "green": Free copy in a repository
-        - "hybrid": OA in a subscription journal
-        - "bronze": Free to read on publisher site
-        - "closed": No free version available
-
-        SORTING OPTIONS:
-        - "relevance": Best match for search terms (default)
-        - "cited_by_count": Most cited papers first
-        - "publication_date": Newest or oldest papers
-        - "display_name": Alphabetical by title
-
-        ARGS:
-            query: Search terms. Natural language queries work well.
-            search_field: Which fields to search (default: "all").
-            year_from: Minimum publication year (inclusive), e.g., 2020.
-            year_to: Maximum publication year (inclusive), e.g., 2024.
-            min_citations: Only return papers with at least this many citations.
-            open_access_only: If True, only return papers with free full text.
-            oa_status: Filter by specific OA status.
-            publication_type: Filter by type - "article", "book", "dataset", etc.
-            institution_id: Filter by institution OpenAlex ID (e.g., "I27837315" for MIT).
-            author_id: Filter by author OpenAlex ID (e.g., "A5023888391").
-            concept_id: Filter by research concept ID (e.g., "C41008148" for AI).
-            language: Filter by ISO 639-1 language code (e.g., "en", "zh", "de").
-            sort_by: How to sort results.
-            sort_order: "desc" for descending, "asc" for ascending.
-            page: Page number (1-indexed). First page = 1.
-            per_page: Results per page, 1-200 (default: 25).
-            include_abstract: Include paper abstracts in results.
-            include_authors: Include author information.
-
-        RETURNS:
-            Dictionary with total_count, page, per_page, and results list containing
-            papers with id, doi, title, publication_year, cited_by_count, is_oa,
-            oa_status, pdf_url, abstract, authors, and source_name.
-
-        ERRORS:
-            - API timeout: OpenAlex may be slow during peak times
-            - Invalid filter: Check parameter values match allowed options
+            <returns>
+                dict with:
+                - 'results': List of papers with title, authors, abstract, doi, citations, oa_url, etc.
+                - 'meta': {count, page, per_page, total_pages}.
+            </returns>
+        </tool_def>
         """
         return await search_openalex_impl(
             query,
@@ -1313,78 +1478,61 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_semantic_scholar(
         ctx: RunContext[TDeps],
-        query: str,
-        year: str | None = None,
-        venue: str | None = None,
-        fields_of_study: list[str] | None = None,
-        publication_types: list[str] | None = None,
-        open_access_only: bool = False,
-        min_citation_count: int | None = None,
-        offset: int = 0,
-        limit: int = 20,
-        include_abstract: bool = True,
-        include_tldr: bool = True,
-        include_authors: bool = True,
-        include_venue: bool = True,
-        include_embedding: bool = False,
+        query: Annotated[str, Field(description="Plain-text search query. No special syntax supported.")],
+        year: Annotated[str | None, Field(description="Year or range: '2020', '2016-2020', '2010-' (onwards), '-2015' (before).")] = None,
+        venue: Annotated[str | None, Field(description="Comma-separated venue names (e.g., 'Nature,Science,ICML').")] = None,
+        fields_of_study: Annotated[list[str] | None, Field(
+            description="List of fields: 'Computer Science', 'Medicine', 'Physics', 'Biology', 'Chemistry', 'Mathematics', etc."
+        )] = None,
+        publication_types: Annotated[list[str] | None, Field(
+            description="List of types: 'JournalArticle', 'Conference', 'Review', 'Book', 'Dataset', 'ClinicalTrial'."
+        )] = None,
+        open_access_only: Annotated[bool, Field(description="If True, only return papers with free PDFs.")] = False,
+        min_citation_count: Annotated[int | None, Field(description="Minimum number of citations required.")] = None,
+        offset: Annotated[int, Field(description="Starting index (0-based) for pagination.")] = 0,
+        limit: Annotated[int, Field(description="Number of results (1-100).")] = 20,
+        include_abstract: Annotated[bool, Field(description="Include full paper abstracts.")] = True,
+        include_tldr: Annotated[bool, Field(description="Include AI-generated TLDR summaries (RECOMMENDED).")] = True,
+        include_authors: Annotated[bool, Field(description="Include author names and IDs.")] = True,
+        include_venue: Annotated[bool, Field(description="Include publication venue info.")] = True,
+        include_embedding: Annotated[bool, Field(description="Include SPECTER v2 paper embeddings.")] = False,
     ) -> dict[str, Any]:
-        """Search Semantic Scholar for academic papers with AI-enhanced features.
+        """
+        <tool_def>
+            <intent>
+                Search Semantic Scholar for papers with AI-enhanced features including
+                TLDR summaries, influential citation tracking, and paper embeddings.
+            </intent>
 
-        Semantic Scholar provides AI-powered paper search with unique features like
-        TLDR summaries (AI-generated paper summaries), influential citation tracking,
-        and paper embeddings for similarity search.
+            <selector>
+                <case condition="Need AI-generated paper summaries/TLDR">Use this tool.</case>
+                <case condition="Want influential citation tracking">Use this tool.</case>
+                <case condition="CS/AI papers (excellent coverage)">Use this tool.</case>
+                <case condition="Need paper embeddings for similarity">Use this tool.</case>
+                <case condition="Need boolean query syntax">Use search_semantic_scholar_bulk instead.</case>
+                <case condition="Need &gt;1000 results">Use search_semantic_scholar_bulk instead.</case>
+                <case condition="Need institution filtering">Use search_openalex instead.</case>
+                <case condition="Need very recent preprints">Use search_arxiv instead.</case>
+            </selector>
 
-        WHEN TO USE:
-        - Need AI-generated paper summaries (TLDR) for quick understanding
-        - Want to identify influential citations (not just citation count)
-        - Looking for CS/AI papers (excellent coverage)
-        - Need paper embeddings for building similarity features
-        - Want to filter by specific publication types or venues
+            <constraints>
+                <rule>Max 100 results per request via limit parameter.</rule>
+                <rule>Use offset for pagination.</rule>
+                <rule>TLDR summaries highly recommended for quick paper understanding.</rule>
+            </constraints>
 
-        WHEN NOT TO USE:
-        - Need boolean query syntax (use search_semantic_scholar_bulk)
-        - Want more than 1000 results (use bulk search)
-        - Need institution/affiliation filtering (use search_openalex)
-        - Looking for very recent preprints (use search_arxiv)
+            <error_handling>
+                <error code="RateLimit">429 error - wait and retry. Consider API key.</error>
+                <error code="NoResults">Try broader terms or fewer filters.</error>
+            </error_handling>
 
-        YEAR FILTER FORMATS:
-        - Single year: "2020"
-        - Range: "2016-2020"
-        - From year onwards: "2010-" (2010 to present)
-        - Up to year: "-2015" (papers before 2015)
-
-        FIELDS OF STUDY (common values):
-        "Computer Science", "Medicine", "Physics", "Biology", "Chemistry",
-        "Mathematics", "Engineering", "Psychology", "Economics"
-
-        PUBLICATION TYPES:
-        "JournalArticle", "Conference", "Review", "Book", "Dataset", "ClinicalTrial"
-
-        ARGS:
-            query: Plain-text search query. No special syntax supported.
-            year: Year or range. Examples: "2020", "2016-2020", "2010-", "-2015".
-            venue: Comma-separated venue names (e.g., "Nature,Science,ICML").
-            fields_of_study: List of fields like ["Computer Science", "Medicine"].
-            publication_types: List of types like ["JournalArticle", "Conference"].
-            open_access_only: If True, only return papers with free PDFs.
-            min_citation_count: Minimum number of citations required.
-            offset: Starting index (0-based) for pagination.
-            limit: Number of results (1-100, default: 20).
-            include_abstract: Include full paper abstracts.
-            include_tldr: Include AI-generated TLDR summaries (RECOMMENDED).
-            include_authors: Include author names and IDs.
-            include_venue: Include publication venue info.
-            include_embedding: Include SPECTER v2 paper embeddings.
-
-        RETURNS:
-            Dictionary with total, offset, next_offset, and data list containing
-            papers with paper_id, title, abstract, year, citation_count,
-            influential_citation_count, is_open_access, open_access_pdf, tldr,
-            authors, venue, fields_of_study, publication_types, and external_ids.
-
-        ERRORS:
-            - Rate limit (429): Wait and retry. Consider adding API key.
-            - No results: Try broader search terms or fewer filters.
+            <returns>
+                dict with:
+                - 'total': Total number of matching papers.
+                - 'offset': Current offset for pagination.
+                - 'data': List of papers with paperId, title, abstract, tldr, authors, venue, citations, etc.
+            </returns>
+        </tool_def>
         """
         return await search_semantic_scholar_impl(
             query,
@@ -1406,74 +1554,58 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_semantic_scholar_bulk(
         ctx: RunContext[TDeps],
-        query: str,
-        year: str | None = None,
-        venue: str | None = None,
-        fields_of_study: list[str] | None = None,
-        publication_types: list[str] | None = None,
-        open_access_only: bool = False,
-        min_citation_count: int | None = None,
-        sort_by: Literal["paperId", "publicationDate", "citationCount"] = "paperId",
-        sort_order: Literal["asc", "desc"] = "asc",
-        token: str | None = None,
-        include_abstract: bool = True,
-        include_tldr: bool = False,
+        query: Annotated[str, Field(
+            description="Boolean query string. Supports: AND, OR ('|'), NOT ('-'), phrases ('\"exact\"'), wildcards ('neuro*'), fuzzy ('word~2')."
+        )],
+        year: Annotated[str | None, Field(description="Year or range filter (same as relevance search).")] = None,
+        venue: Annotated[str | None, Field(description="Comma-separated venue names.")] = None,
+        fields_of_study: Annotated[list[str] | None, Field(description="List of fields to filter by.")] = None,
+        publication_types: Annotated[list[str] | None, Field(description="List of publication types.")] = None,
+        open_access_only: Annotated[bool, Field(description="Only papers with free PDFs.")] = False,
+        min_citation_count: Annotated[int | None, Field(description="Minimum citation count.")] = None,
+        sort_by: Annotated[
+            Literal["paperId", "publicationDate", "citationCount"],
+            Field(description="Sort by: 'paperId' (stable), 'publicationDate', 'citationCount'.")
+        ] = "paperId",
+        sort_order: Annotated[Literal["asc", "desc"], Field(description="Sort order.")] = "asc",
+        token: Annotated[str | None, Field(description="Continuation token from previous response for pagination.")] = None,
+        include_abstract: Annotated[bool, Field(description="Include paper abstracts.")] = True,
+        include_tldr: Annotated[bool, Field(description="Include TLDR summaries (adds latency).")] = False,
     ) -> dict[str, Any]:
-        """Bulk search Semantic Scholar with boolean query support and pagination.
+        """
+        <tool_def>
+            <intent>
+                Bulk search Semantic Scholar with boolean query support and pagination tokens.
+                Can access up to 10 million results for systematic reviews and dataset building.
+            </intent>
 
-        This endpoint supports boolean query syntax and can access up to 10 million
-        results through pagination tokens. Use this for systematic reviews, dataset
-        building, or when you need precise query control.
+            <selector>
+                <case condition="Need boolean operators (AND, OR, NOT)">Use this tool.</case>
+                <case condition="Need &gt;1000 results">Use this tool.</case>
+                <case condition="Building datasets or systematic reviews">Use this tool.</case>
+                <case condition="Need exact phrase matching or prefix search">Use this tool.</case>
+                <case condition="Simple search with quick TLDR">Use search_semantic_scholar instead.</case>
+                <case condition="Need paper embeddings">Use search_semantic_scholar instead.</case>
+            </selector>
 
-        WHEN TO USE:
-        - Need boolean query operators (AND, OR, NOT)
-        - Want to retrieve more than 1000 results
-        - Building datasets or doing systematic literature reviews
-        - Need exact phrase matching or prefix search
-        - Want to sort by citation count or publication date
+            <workflow>
+                <step>First call: Don't pass token.</step>
+                <step>Check response for token field.</step>
+                <step>If token is not None, call again with that token.</step>
+                <step>Repeat until token is None.</step>
+            </workflow>
 
-        WHEN NOT TO USE:
-        - Simple searches (use search_semantic_scholar instead)
-        - Need quick results with TLDR summaries (bulk is slower)
-        - Need paper embeddings (not available in bulk)
+            <constraints>
+                <rule>Boolean syntax: AND implicit, OR '|', NOT '-', phrases '\"\"', wildcards '*', fuzzy '~2'.</rule>
+                <rule>TLDR adds latency in bulk mode.</rule>
+            </constraints>
 
-        BOOLEAN QUERY SYNTAX:
-        - AND: "machine AND learning" or "machine learning" (implicit)
-        - OR: "machine | learning" (either term)
-        - NOT: "-excluded_term" (prefix with minus)
-        - Phrase: '"exact phrase"' (wrap in double quotes)
-        - Prefix: "neuro*" (matches neuroscience, neural, etc.)
-        - Grouping: "(neural | deep) AND learning"
-        - Fuzzy: "word~2" (edit distance of 2)
-
-        SORTING OPTIONS:
-        - "paperId": Default, stable ordering for pagination
-        - "publicationDate": Newest or oldest first
-        - "citationCount": Most or least cited first
-
-        ARGS:
-            query: Boolean query string. Supports AND, OR, NOT, phrases, wildcards.
-            year: Year or range filter (same as relevance search).
-            venue: Comma-separated venue names.
-            fields_of_study: List of fields to filter by.
-            publication_types: List of publication types.
-            open_access_only: Only papers with free PDFs.
-            min_citation_count: Minimum citation count.
-            sort_by: Sort field - "paperId", "publicationDate", or "citationCount".
-            sort_order: "asc" or "desc".
-            token: Continuation token from previous response for pagination.
-            include_abstract: Include paper abstracts.
-            include_tldr: Include TLDR summaries (adds latency).
-
-        RETURNS:
-            Dictionary with total, token (for next page), and data list.
-            When token is None, there are no more results.
-
-        PAGINATION:
-            1. First call: Don't pass token
-            2. Check response for token field
-            3. If token is not None, call again with that token
-            4. Repeat until token is None
+            <returns>
+                dict with:
+                - 'token': Continuation token for next page (None when exhausted).
+                - 'data': List of papers with paperId, title, abstract, tldr, authors, venue, citations.
+            </returns>
+        </tool_def>
         """
         return await search_semantic_scholar_bulk_impl(
             query,
@@ -1493,82 +1625,70 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_arxiv(
         ctx: RunContext[TDeps],
-        query: str | None = None,
-        id_list: list[str] | None = None,
-        search_field: Literal["all", "title", "abstract", "author", "category", "comment", "journal_ref"] = "all",
-        categories: list[str] | None = None,
-        submitted_after: str | None = None,
-        submitted_before: str | None = None,
-        sort_by: Literal["relevance", "lastUpdatedDate", "submittedDate"] = "relevance",
-        sort_order: Literal["ascending", "descending"] = "descending",
-        start: int = 0,
-        max_results: int = 20,
+        query: Annotated[str | None, Field(
+            description="Search terms. Can use inline prefixes like 'ti:quantum AND au:smith'."
+        )] = None,
+        id_list: Annotated[list[str] | None, Field(
+            description="List of specific arXiv IDs (e.g., ['2301.00001', 'cs/0001001'])."
+        )] = None,
+        search_field: Annotated[
+            Literal["all", "title", "abstract", "author", "category", "comment", "journal_ref"],
+            Field(description="Limit search to: 'all', 'title', 'abstract', 'author', 'category', 'comment', 'journal_ref'.")
+        ] = "all",
+        categories: Annotated[list[str] | None, Field(
+            description="Filter by arXiv category codes (e.g., ['cs.AI', 'cs.LG']). Use list_arxiv_categories for valid codes."
+        )] = None,
+        submitted_after: Annotated[str | None, Field(description="Only papers after this date (YYYYMMDD format).")] = None,
+        submitted_before: Annotated[str | None, Field(description="Only papers before this date (YYYYMMDD format).")] = None,
+        sort_by: Annotated[
+            Literal["relevance", "lastUpdatedDate", "submittedDate"],
+            Field(description="Sort by: 'relevance', 'lastUpdatedDate', 'submittedDate'.")
+        ] = "relevance",
+        sort_order: Annotated[
+            Literal["ascending", "descending"],
+            Field(description="Sort order: 'ascending' or 'descending'.")
+        ] = "descending",
+        start: Annotated[int, Field(description="Starting index for pagination (0-based).")] = 0,
+        max_results: Annotated[int, Field(description="Number of results (max 2000 per request).")] = 20,
     ) -> dict[str, Any]:
-        """Search arXiv preprint repository for scientific papers.
+        """
+        <tool_def>
+            <intent>
+                Search arXiv preprint repository for cutting-edge scientific papers.
+                Papers available immediately upon submission, often months before peer review.
+                Always free full PDFs.
+            </intent>
 
-        arXiv is a free, open-access repository of preprints in physics, mathematics,
-        computer science, quantitative biology, quantitative finance, statistics,
-        electrical engineering, and economics. Papers are available immediately upon
-        submission, often months before peer-reviewed publication.
+            <selector>
+                <case condition="Cutting-edge research before peer review">Use this tool.</case>
+                <case condition="Physics, math, CS, stats, quant papers">Use this tool.</case>
+                <case condition="Need immediate free PDF access">Use this tool.</case>
+                <case condition="Looking for specific arXiv IDs">Use this tool.</case>
+                <case condition="Track recent submissions in a field">Use this tool.</case>
+                <case condition="Need AI summaries/TLDR">Use search_semantic_scholar instead.</case>
+                <case condition="Need citation counts">Use search_openalex or search_semantic_scholar.</case>
+                <case condition="Biology, medicine, social science">Limited coverage—try other tools.</case>
+            </selector>
 
-        WHEN TO USE:
-        - Finding cutting-edge research before peer review
-        - Physics, mathematics, CS, statistics, or quantitative papers
-        - Need immediate access to full PDFs (always free)
-        - Looking for specific arXiv IDs
-        - Want to track recent submissions in a field
-        - Need papers by exact arXiv category
+            <constraints>
+                <rule>Max 2000 results per request.</rule>
+                <rule>3-second delays between requests (automatic).</rule>
+                <rule>Query too broad errors at 30000 total results.</rule>
+                <rule>Use list_arxiv_categories to find valid category codes.</rule>
+            </constraints>
 
-        WHEN NOT TO USE:
-        - Need AI summaries (use search_semantic_scholar)
-        - Need citation counts (use search_openalex or search_semantic_scholar)
-        - Looking for biology, medicine, or social science (limited coverage)
-        - Need institution or author affiliation filters
+            <error_handling>
+                <error code="QueryTooBroad">arXiv limits to 30000 results total.</error>
+                <error code="InvalidCategory">Use list_arxiv_categories to check valid codes.</error>
+            </error_handling>
 
-        SEARCH FIELD OPTIONS:
-        - "all": Search all fields (default)
-        - "title": Paper titles only
-        - "abstract": Abstracts only
-        - "author": Author names
-        - "category": Category codes
-        - "comment": Author comments
-        - "journal_ref": Journal references
-
-        COMMON CATEGORY CODES:
-        Computer Science: cs.AI, cs.CL (NLP), cs.CV, cs.LG (ML), cs.NE, cs.RO
-        Statistics: stat.ML, stat.TH, stat.ME
-        Physics: quant-ph, hep-th, cond-mat.*, astro-ph.*
-        Math: math.OC (optimization), math.PR (probability)
-
-        Use list_arxiv_categories to see all valid category codes.
-
-        DATE FORMAT:
-        Use YYYYMMDD (e.g., "20230101") for date filters.
-
-        ARGS:
-            query: Search terms. Can use inline field prefixes like "ti:quantum AND au:smith".
-            id_list: List of specific arXiv IDs (e.g., ["2301.00001", "cs/0001001"]).
-            search_field: Limit search to specific field.
-            categories: Filter by arXiv category codes (e.g., ["cs.AI", "cs.LG"]).
-            submitted_after: Only papers submitted after this date (YYYYMMDD).
-            submitted_before: Only papers submitted before this date (YYYYMMDD).
-            sort_by: Sort by "relevance", "lastUpdatedDate", or "submittedDate".
-            sort_order: "ascending" or "descending".
-            start: Starting index for pagination (0-based).
-            max_results: Number of results (max 2000 per request).
-
-        RETURNS:
-            Dictionary with total_results, start_index, items_per_page, and entries
-            list containing papers with id, title, summary, authors, published,
-            updated, categories, primary_category, pdf_url, abs_url, doi,
-            journal_ref, and comment.
-
-        RATE LIMITING:
-            arXiv requires 3-second delays between requests (automatic).
-
-        ERRORS:
-            - Query too broad: arXiv limits to 30000 results total
-            - Invalid category: Use list_arxiv_categories to check valid codes
+            <returns>
+                dict with:
+                - 'total_results': Total matching papers.
+                - 'start_index': Current offset.
+                - 'entries': List with arxiv_id, title, summary, authors[], categories[], published, pdf_url.
+            </returns>
+        </tool_def>
         """
         return await search_arxiv_impl(
             query,
@@ -1585,36 +1705,29 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
     @agent.tool
     async def list_arxiv_categories(ctx: RunContext[TDeps]) -> dict[str, Any]:
-        """List all arXiv category codes with their names and groups.
+        """
+        <tool_def>
+            <intent>
+                List all valid arXiv category codes with names and groups.
+                Use to discover correct category codes for filtering search_arxiv.
+            </intent>
 
-        Use this tool to discover valid arXiv category codes for filtering searches.
-        arXiv uses a hierarchical category system organized by research discipline.
+            <selector>
+                <case condition="Need correct category code for a research area">Use this tool.</case>
+                <case condition="Want to see all categories in a discipline">Use this tool.</case>
+                <case condition="Unsure which category code to use">Use this tool first.</case>
+            </selector>
 
-        WHEN TO USE:
-        - Need to find the correct category code for a research area
-        - Want to see all categories in a discipline (e.g., all CS categories)
-        - Unsure which category code to use in search_arxiv
+            <constraints>
+                <rule>Returns categories grouped by discipline.</rule>
+                <rule>Common groups: Computer Science (cs.*), Statistics (stat.*), Mathematics (math.*), Physics, etc.</rule>
+            </constraints>
 
-        RETURNS:
-            Dictionary with:
-            - categories: Dict mapping code to {"name": ..., "group": ...}
-            - by_group: Dict mapping group name to list of {"code": ..., "name": ...}
-
-        CATEGORY GROUPS:
-        - Computer Science (cs.*): 40+ categories including AI, ML, NLP, CV
-        - Statistics (stat.*): ML, methodology, theory, applications
-        - Mathematics (math.*): 30+ categories including optimization, probability
-        - Physics: Multiple archives (physics.*, quant-ph, hep-*, cond-mat.*)
-        - Quantitative Biology (q-bio.*): Genomics, neuroscience, etc.
-        - Quantitative Finance (q-fin.*): Pricing, risk management, etc.
-        - Electrical Engineering (eess.*): Signal processing, image/video, audio
-        - Economics (econ.*): Econometrics, general economics, theory
-
-        EXAMPLES:
-            # Get all categories
-            categories = list_arxiv_categories()
-
-            # Use in search
-            search_arxiv("neural network", categories=["cs.LG", "cs.NE", "stat.ML"])
+            <returns>
+                dict with discipline groups as keys, each containing:
+                - List of {code, name} objects for categories in that group.
+                Example: {'Computer Science': [{'code': 'cs.AI', 'name': 'Artificial Intelligence'}, ...]}.
+            </returns>
+        </tool_def>
         """
         return list_arxiv_categories_impl()
