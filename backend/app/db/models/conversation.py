@@ -2,8 +2,9 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, SQLModel
@@ -45,6 +46,10 @@ class Conversation(TimestampMixin, SQLModel, table=True):
     messages: list["Message"] = Relationship(
         back_populates="conversation",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "Message.created_at"},
+    )
+    pinned_content: Optional["ConversationPinnedContent"] = Relationship(
+        back_populates="conversation",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False},
     )
 
     def __repr__(self) -> str:
@@ -146,3 +151,58 @@ class ToolCall(SQLModel, table=True):
 
     def __repr__(self) -> str:
         return f"<ToolCall(id={self.id}, tool_name={self.tool_name}, status={self.status})>"
+
+
+class ConversationPinnedContent(TimestampMixin, SQLModel, table=True):
+    """Pinned content for context caching - files/media cached for reduced cost.
+
+    Stores metadata about pinned files for a conversation. The actual content
+    is cached via Gemini's CachedContent API. Content hash enables automatic
+    cache reuse across conversations with identical pinned content.
+
+    Attributes:
+        id: Unique identifier
+        conversation_id: The conversation this pinned content belongs to
+        content_hash: Hash of serialized content (for cache key derivation)
+        file_paths: List of file paths that were pinned (JSONB)
+        file_hashes: Dict mapping file path to SHA256 hash (for staleness detection)
+        total_tokens: Estimated token count for the pinned content
+        pinned_at: When the content was pinned
+    """
+
+    __tablename__ = "conversation_pinned_content"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", name="uq_pinned_content_conversation"),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PG_UUID(as_uuid=True), primary_key=True),
+    )
+    conversation_id: uuid.UUID = Field(
+        sa_column=Column(
+            PG_UUID(as_uuid=True),
+            ForeignKey("conversations.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    content_hash: str = Field(max_length=64)  # SHA256 hash for cache key derivation
+    file_paths: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, default=list),
+    )
+    file_hashes: dict[str, str] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, default=dict),
+    )
+    total_tokens: int = Field(default=0)
+    pinned_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+    # Relationships
+    conversation: "Conversation" = Relationship(back_populates="pinned_content")
+
+    def __repr__(self) -> str:
+        return f"<ConversationPinnedContent(id={self.id}, tokens={self.total_tokens})>"

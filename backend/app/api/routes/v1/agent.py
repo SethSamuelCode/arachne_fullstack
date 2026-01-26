@@ -46,6 +46,7 @@ from app.schemas.conversation import (
     ToolCallComplete,
     ToolCallCreate,
 )
+from app.services.pinned_content import PinnedContentService
 from app.services.s3 import get_s3_service
 
 logger = logging.getLogger(__name__)
@@ -486,6 +487,24 @@ async def agent_websocket(
                 # Get tool definitions for caching (system prompt + tools cached together)
                 tool_definitions = get_tool_definitions()
 
+                # Check for pinned content in this conversation
+                pinned_content_hash: str | None = None
+                pinned_content_tokens: int = 0
+                if current_conversation_id and redis_client:
+                    async with get_db_context() as db:
+                        pinned_service = PinnedContentService(db, redis_client)
+                        pinned_content_hash = await pinned_service.get_pinned_content_hash(
+                            UUID(current_conversation_id)
+                        )
+                        pinned_content_tokens = await pinned_service.get_pinned_tokens(
+                            UUID(current_conversation_id)
+                        )
+                        if pinned_content_hash:
+                            logger.info(
+                                f"Found pinned content for conversation {current_conversation_id}: "
+                                f"hash={pinned_content_hash}, tokens={pinned_content_tokens}"
+                            )
+
                 # Optimize context window with tiered memory management
                 # Uses 85% of model's context limit for better responsiveness
                 optimized: OptimizedContext = await optimize_context_window(
@@ -494,6 +513,8 @@ async def agent_websocket(
                     system_prompt=system_prompt,
                     tool_definitions=tool_definitions,
                     redis_client=redis_client,
+                    pinned_content_hash=pinned_content_hash,
+                    pinned_content_tokens=pinned_content_tokens,
                 )
                 model_history = optimized["history"]
                 logger.debug(

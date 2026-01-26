@@ -367,11 +367,14 @@ async def get_cached_content(
     tool_definitions: list[dict[str, Any]] | None = None,
     redis_client: Any | None = None,
     extend_on_use: bool = True,
+    pinned_parts: list[genai_types.Part] | None = None,
+    pinned_content_hash: str | None = None,
 ) -> str | None:
-    """Get or create cached content (system prompt + tools) for reduced cost.
+    """Get or create cached content (system prompt + tools + pinned content) for reduced cost.
 
-    Uses Gemini's CachedContent API to cache both system prompt and tool definitions
-    server-side. This provides ~75% cost reduction on input tokens.
+    Uses Gemini's CachedContent API to cache system prompt, tool definitions, and
+    optionally pinned content (files, images, audio, video) server-side.
+    This provides ~75% cost reduction on input tokens.
 
     Gemini requires that if you use CachedContent with tools, you cannot send
     tools/tool_config in the GenerateContent request. The CachedContentGoogleModel
@@ -386,6 +389,8 @@ async def get_cached_content(
         tool_definitions: List of tool definition dicts from get_tool_definitions().
         redis_client: Redis client for cache key storage.
         extend_on_use: Whether to extend TTL on cache hit.
+        pinned_parts: Optional list of Gemini Parts for pinned content (text/binary).
+        pinned_content_hash: Optional hash of pinned content for cache key derivation.
 
     Returns:
         The cache name for use in requests, or None if caching failed/unavailable.
@@ -398,9 +403,17 @@ async def get_cached_content(
         logger.warning("No tool definitions provided, skipping content caching")
         return None
 
-    # Cache key includes both prompt hash and tools hash
+    # Cache key includes prompt hash, tools hash, and optional pinned content hash
     tools_hash = _hash_tools(tool_definitions)
-    cache_key = f"arachne:cached_content:{model_name}:{_hash_prompt(prompt)}:{tools_hash}"
+    cache_key_parts = [
+        "arachne:cached_content",
+        model_name,
+        _hash_prompt(prompt),
+        tools_hash,
+    ]
+    if pinned_content_hash:
+        cache_key_parts.append(pinned_content_hash)
+    cache_key = ":".join(cache_key_parts)
 
     try:
         cached_name = await redis_client.get(cache_key)
@@ -423,7 +436,7 @@ async def get_cached_content(
             logger.debug(f"Using cached content: {cached_name}")
             return cached_name
 
-        # Cache miss - create new cached content with system prompt + tools
+        # Cache miss - create new cached content with system prompt + tools + pinned content
         client = _get_genai_client()
 
         # Convert tool definitions to Gemini format (sanitized)
@@ -436,20 +449,29 @@ async def get_cached_content(
             )
         )
 
+        # Build cache config
+        cache_config: dict[str, Any] = {
+            "system_instruction": prompt,
+            "tools": tools,
+            "tool_config": tool_config,
+            "ttl": f"{CACHE_TTL_SECONDS + 300}s",  # 60 min on Gemini side
+        }
+
+        # Add pinned content if provided
+        if pinned_parts:
+            cache_config["contents"] = pinned_parts
+            logger.info(f"Including {len(pinned_parts)} pinned parts in cache")
+
         cached = await client.aio.caches.create(
             model=model_name,
-            config={
-                "system_instruction": prompt,
-                "tools": tools,
-                "tool_config": tool_config,
-                "ttl": f"{CACHE_TTL_SECONDS + 300}s",  # 60 min on Gemini side
-            },
+            config=cache_config,
         )
 
         if cached and cached.name:
             await redis_client.set(cache_key, cached.name, ttl=CACHE_TTL_SECONDS)
+            pinned_info = f" + {len(pinned_parts)} pinned parts" if pinned_parts else ""
             logger.info(
-                f"Created cached content (prompt + {len(tool_definitions)} tools): {cached.name}"
+                f"Created cached content (prompt + {len(tool_definitions)} tools{pinned_info}): {cached.name}"
             )
             return cached.name
 
@@ -463,7 +485,6 @@ async def get_cached_content(
 
 # Keep the old function name as an alias for backwards compatibility
 get_cached_system_prompt = get_cached_content
-
 
 async def invalidate_cached_content(
     prompt: str,
@@ -513,14 +534,17 @@ async def optimize_context_window(
     max_context_tokens: int | None = None,
     tokens_used_cache: dict[int, int] | None = None,
     redis_client: "RedisClient | None" = None,
+    pinned_content_hash: str | None = None,
+    pinned_content_tokens: int = 0,
 ) -> OptimizedContext:
     """Optimize context window using tiered memory management.
 
     Implements intelligent trimming with priority order:
     1. System prompt (via cached reference, accounted separately)
-    2. Latest user query (always keep)
-    3. Recent tool calls/results (last 10 if present)
-    4. Older messages (FIFO trim from oldest until within budget)
+    2. Pinned content (files/media cached with system prompt)
+    3. Latest user query (always keep)
+    4. Recent tool calls/results (last 10 if present)
+    5. Older messages (FIFO trim from oldest until within budget)
 
     When redis_client is provided, ENABLE_SYSTEM_PROMPT_CACHING is enabled,
     and tool_definitions are provided, both system prompt and tools are cached
@@ -534,6 +558,8 @@ async def optimize_context_window(
         max_context_tokens: Override default budget (for testing).
         tokens_used_cache: Optional dict mapping message index to cached token count.
         redis_client: Optional Redis client for content caching.
+        pinned_content_hash: Optional hash of pinned content for cache key derivation.
+        pinned_content_tokens: Token count of pinned content (for budget calculation).
 
     Returns:
         OptimizedContext with history, cached_prompt_name, system_prompt, and skip_tool_registration.
@@ -554,12 +580,14 @@ async def optimize_context_window(
             model_name=model_name,
             tool_definitions=tool_definitions,
             redis_client=redis_client,
+            pinned_content_hash=pinned_content_hash,
         )
         if cached_prompt_name:
-            # Content is cached (system prompt + tools); skip separate tool registration
+            # Content is cached (system prompt + tools + pinned); skip separate tool registration
             effective_system_prompt = None
             skip_tool_registration = True
-            logger.info(f"Content cache hit: {cached_prompt_name}")
+            pinned_info = f" + pinned content" if pinned_content_hash else ""
+            logger.info(f"Content cache hit{pinned_info}: {cached_prompt_name}")
         else:
             logger.debug("Content cache miss, using raw prompt and registering tools")
 
@@ -579,6 +607,10 @@ async def optimize_context_window(
     if system_prompt:
         system_prompt_tokens = _estimate_tokens(system_prompt)
         budget -= system_prompt_tokens
+
+    # Reserve space for pinned content (if any)
+    if pinned_content_tokens > 0:
+        budget -= pinned_content_tokens
 
     # Reserve space for response (at least 8K tokens)
     budget -= 8192

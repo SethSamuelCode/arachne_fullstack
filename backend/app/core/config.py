@@ -251,6 +251,15 @@ class Settings(BaseSettings):
     # Minimum 60 seconds (Gemini API constraint).
     GOOGLE_CACHE_TTL_SECONDS: int = 900
 
+    # === Pinned Content Caching ===
+    # Max percentage of model's token budget allowed for pinned content (files, images, etc.)
+    # Budget = model_max_tokens * (MAX_PINNED_CONTEXT_PERCENT / 100)
+    MAX_PINNED_CONTEXT_PERCENT: int = 40
+    # Warning threshold - show warning when pinned content exceeds this percentage
+    PINNED_CONTEXT_WARNING_PERCENT: int = 30
+    # Maximum file size for individual pinned files (100MB - Gemini limit for media)
+    MAX_PINNED_FILE_SIZE_MB: int = 100
+
     @field_validator("GOOGLE_CACHE_TTL_SECONDS")
     @classmethod
     def validate_cache_ttl_minimum(cls, v: int) -> int:
