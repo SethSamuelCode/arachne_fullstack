@@ -71,6 +71,7 @@ class AssistantAgent:
             google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
             google_thinking_config={
                 "thinking_level": ThinkingLevel.HIGH,
+                "include_thoughts": True,  # Required to get thinking content in response
             },
             # Use cached content if available (75% cost reduction)
             google_cached_content=self.cached_prompt_name if self.cached_prompt_name else None,
