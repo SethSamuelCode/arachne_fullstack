@@ -84,5 +84,21 @@
   },
   "footer": {
     "copyright": "All rights reserved"
+  },
+  "pinContent": {
+    "title": "Pin to Context Cache",
+    "noConversation": "Please select a conversation first",
+    "existingPinned": "Content already pinned",
+    "showDetails": "Show details",
+    "willReplace": "Pinning new content will replace existing pinned content",
+    "selectedFiles": "{count, plural, =1 {1 file selected} other {# files selected}}",
+    "filesCount": "{count, plural, =1 {1 file} other {# files}}",
+    "phaseFetching": "Fetching files...",
+    "phaseSerializing": "Preparing content...",
+    "phaseUploading": "Uploading to cache...",
+    "phaseComplete": "Complete",
+    "success": "Content pinned successfully!",
+    "pinButton": "Pin to Cache",
+    "pinTooltip": "Pin selected files to conversation cache"
   }
 }

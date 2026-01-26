@@ -84,5 +84,21 @@
   },
   "footer": {
     "copyright": "Wszelkie prawa zastrzeżone"
+  },
+  "pinContent": {
+    "title": "Przypnij do pamięci podręcznej",
+    "noConversation": "Najpierw wybierz konwersację",
+    "existingPinned": "Zawartość już przypięta",
+    "showDetails": "Pokaż szczegóły",
+    "willReplace": "Przypięcie nowej zawartości zastąpi istniejącą",
+    "selectedFiles": "{count, plural, =1 {1 plik wybrany} few {# pliki wybrane} other {# plików wybranych}}",
+    "filesCount": "{count, plural, =1 {1 plik} few {# pliki} other {# plików}}",
+    "phaseFetching": "Pobieranie plików...",
+    "phaseSerializing": "Przygotowywanie zawartości...",
+    "phaseUploading": "Wysyłanie do pamięci podręcznej...",
+    "phaseComplete": "Zakończono",
+    "success": "Zawartość przypięta pomyślnie!",
+    "pinButton": "Przypnij do pamięci",
+    "pinTooltip": "Przypnij wybrane pliki do pamięci konwersacji"
   }
 }

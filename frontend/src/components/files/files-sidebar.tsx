@@ -35,7 +35,9 @@ import {
   FolderPlus,
   FilePlus,
   Save,
+  Pin,
 } from "lucide-react";
+import { PinContentDialog } from "./pin-content-dialog";
 import { cn } from "@/lib/utils";
 
 // Types for file content upload
@@ -113,6 +115,9 @@ export function FilesSidebar() {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Pin to cache state
+  const [showPinDialog, setShowPinDialog] = useState(false);
 
   // Drag and drop file move functionality
   const {
@@ -713,6 +718,16 @@ export function FilesSidebar() {
               >
                 <FilePlus className="h-4 w-4" />
               </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 rounded-full shadow-lg bg-primary/10 hover:bg-primary/20"
+                onClick={() => setShowPinDialog(true)}
+                disabled={!selectedFile}
+                title="Pin to context cache"
+              >
+                <Pin className="h-4 w-4" />
+              </Button>
             </div>
 
             {/* New folder input modal */}
@@ -898,6 +913,16 @@ export function FilesSidebar() {
           </div>
         </Panel>
       </PanelGroup>
+
+      {/* Pin content dialog */}
+      <PinContentDialog
+        open={showPinDialog}
+        onOpenChange={setShowPinDialog}
+        selectedFiles={selectedFile ? [selectedFile] : []}
+        onPinComplete={() => {
+          setShowPinDialog(false);
+        }}
+      />
     </div>
   );
 }
