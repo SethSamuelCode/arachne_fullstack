@@ -2,6 +2,12 @@
 
 These schemas define the API contract for plan operations.
 Plans are user-scoped - each plan belongs to exactly one user.
+
+IMPORTANT FOR LLM TOOL USAGE:
+- Use create_plan to create a new plan with optional initial tasks
+- Use add_task_to_plan to add tasks to an existing plan
+- Use update_task to modify task status/description
+- Use update_plan to modify plan metadata (NOT tasks)
 """
 
 from datetime import datetime
@@ -22,49 +28,94 @@ class PlanTaskBase(BaseSchema):
 
     description: str = Field(
         default="",
-        description="Description of the task and what needs to be done.",
-        examples=["Write unit tests for the new feature", "Design the database schema"],
+        description=(
+            "Clear, actionable description of what needs to be done. "
+            "Be specific enough that progress can be measured. "
+            "Example: 'Implement user authentication with JWT' rather than 'Do auth'."
+        ),
+        examples=[
+            "Write unit tests for the payment processing module",
+            "Design database schema for user profiles",
+            "Review and merge PR #42 for API refactoring",
+        ],
     )
     notes: str | None = Field(
         default=None,
-        description="Additional notes or context for the task.",
-        examples=["Remember to follow coding standards", "Consider scalability"],
+        description=(
+            "Additional context, blockers, dependencies, or implementation details. "
+            "Use for information that doesn't fit in the description."
+        ),
+        examples=[
+            "Blocked by: waiting for API credentials from vendor",
+            "Dependencies: requires database migration to complete first",
+            "Note: use the new logging framework for this task",
+        ],
     )
     status: Literal["pending", "in_progress", "completed"] = Field(
         default="pending",
-        description="Current status of the task.",
+        description=(
+            "Current workflow status. "
+            "'pending' = not started, "
+            "'in_progress' = actively being worked on, "
+            "'completed' = finished (also set is_completed=True)."
+        ),
     )
     is_completed: bool = Field(
         default=False,
-        description="Indicates whether the task has been completed.",
+        description=(
+            "Whether the task is done. Set to True when status='completed'. "
+            "A plan is complete when all its tasks have is_completed=True."
+        ),
     )
 
 
 class PlanTaskCreate(PlanTaskBase):
-    """Schema for creating a new task.
+    """Schema for creating a new task within a plan.
 
-    Position is optional - if not provided, the task will be appended
-    at the end of the task list.
+    Use with add_task_to_plan tool or include in PlanCreate.tasks array.
+    Position is auto-assigned if not specified (appended to end).
     """
 
     position: int | None = Field(
         default=None,
         ge=0,
-        description="Position of the task in the list (0-indexed). If not provided, appends at end.",
+        description=(
+            "Zero-indexed position in task list. "
+            "0 = first task, None = append at end. "
+            "Use to insert tasks at specific positions for ordered workflows."
+        ),
+        examples=[0, 1, 5],
     )
 
 
 class PlanTaskUpdate(BaseSchema):
-    """Schema for updating an existing task.
+    """Schema for updating an existing task (partial update).
 
-    All fields are optional - only provided fields will be updated.
+    Only include fields you want to change - omitted fields are unchanged.
+    Use with update_task tool.
     """
 
-    description: str | None = Field(default=None)
-    notes: str | None = Field(default=None)
-    status: Literal["pending", "in_progress", "completed"] | None = Field(default=None)
-    position: int | None = Field(default=None, ge=0)
-    is_completed: bool | None = Field(default=None)
+    description: str | None = Field(
+        default=None,
+        description="New task description. Omit to keep existing.",
+    )
+    notes: str | None = Field(
+        default=None,
+        description="New notes. Omit to keep existing. Set to empty string to clear.",
+    )
+    status: Literal["pending", "in_progress", "completed"] | None = Field(
+        default=None,
+        description="New status. When setting to 'completed', also set is_completed=True.",
+    )
+    position: int | None = Field(
+        default=None,
+        ge=0,
+        description="New position in task list (0-indexed). Other tasks shift automatically.",
+    )
+    is_completed: bool | None = Field(
+        default=None,
+        description="Mark task as done (True) or reopen (False).",
+    )
 
 
 class PlanTaskRead(PlanTaskBase, TimestampSchema):
@@ -86,53 +137,95 @@ class PlanBase(BaseSchema):
     name: str = Field(
         default="",
         max_length=255,
-        description="Name of the plan.",
-        examples=["Project Launch Plan", "Marketing Strategy Plan"],
+        description=(
+            "Short, descriptive title for the plan. "
+            "Should clearly indicate the goal or project."
+        ),
+        examples=[
+            "Q1 Product Launch",
+            "Website Redesign Project",
+            "Bug Fix Sprint - Week 12",
+            "User Research Plan",
+        ],
     )
     description: str = Field(
         default="",
-        description="Detailed description of the plan and its objectives.",
-        examples=["This plan outlines the steps to successfully launch the new product."],
+        description=(
+            "Detailed explanation of the plan's purpose, scope, and success criteria. "
+            "Include context that helps understand why this plan exists."
+        ),
+        examples=[
+            "Launch the new mobile app by March 15. Success = 1000 downloads in first week.",
+            "Redesign the checkout flow to reduce cart abandonment by 20%.",
+            "Fix all P1 bugs reported in the last sprint before release.",
+        ],
     )
     notes: str | None = Field(
         default=None,
-        description="Additional notes or context for the plan.",
-        examples=["Include budget considerations.", "Outline key milestones."],
+        description=(
+            "Additional context: stakeholders, constraints, risks, or references. "
+            "Use for metadata that doesn't fit in description."
+        ),
+        examples=[
+            "Stakeholders: Product team, Marketing. Budget: $50k.",
+            "Risk: Depends on third-party API availability.",
+            "Reference: See design doc at /docs/design/checkout-v2.md",
+        ],
     )
 
 
 class PlanCreate(PlanBase):
-    """Schema for creating a new plan.
+    """Schema for creating a new plan with optional initial tasks.
 
-    Tasks can be included during creation - they will be created
-    with auto-generated UUIDs and sequential positions.
+    Use create_plan tool. You can create an empty plan and add tasks later,
+    or include tasks in the 'tasks' array for atomic creation.
     """
 
     is_completed: bool = Field(
         default=False,
-        description="Indicates whether the plan has been completed.",
+        description="Set True only if creating an already-completed plan (rare). Usually leave as False.",
     )
     tasks: list[PlanTaskCreate] = Field(
         default_factory=list,
-        description="Initial list of tasks for the plan.",
+        description=(
+            "Optional list of tasks to create with the plan. "
+            "Tasks are created in array order (position 0, 1, 2...). "
+            "You can also add tasks later with add_task_to_plan."
+        ),
     )
 
 
 class PlanUpdate(BaseSchema):
-    """Schema for updating an existing plan.
+    """Schema for updating plan metadata (NOT tasks).
 
-    All fields are optional - only provided fields will be updated.
-    To update tasks, use the dedicated task endpoints.
+    Only include fields you want to change - omitted fields unchanged.
+    Use update_plan tool. To modify tasks, use update_task or add_task_to_plan.
     """
 
-    name: str | None = Field(default=None, max_length=255)
-    description: str | None = Field(default=None)
-    notes: str | None = Field(default=None)
-    is_completed: bool | None = Field(default=None)
+    name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="New plan name. Omit to keep existing.",
+    )
+    description: str | None = Field(
+        default=None,
+        description="New description. Omit to keep existing.",
+    )
+    notes: str | None = Field(
+        default=None,
+        description="New notes. Omit to keep existing. Set to empty string to clear.",
+    )
+    is_completed: bool | None = Field(
+        default=None,
+        description=(
+            "Mark entire plan as complete (True) or reopen (False). "
+            "Usually set this after all tasks are completed."
+        ),
+    )
 
 
 class PlanRead(PlanBase, TimestampSchema):
-    """Schema for reading a plan (API response)."""
+    """Schema for reading a plan with all tasks (API response)."""
 
     id: UUID
     user_id: UUID

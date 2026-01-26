@@ -7,13 +7,16 @@ from enum import Enum
 
 
 class GeminiModelName(str, Enum):
-    """Allowed Gemini model names.
+    """Available Gemini models for agent tasks.
 
-    This enum exists to:
-    - Provide a single allow-list for request validation (Pydantic)
-    - Keep OpenAPI schemas stable and easy to consume
+    Selection guide:
+    - gemini-2.5-flash-lite: Fastest, cheapest. Simple lookups, formatting.
+    - gemini-2.5-flash: Standard tasks, summarization, general Q&A. DEFAULT.
+    - gemini-2.5-pro: Complex reasoning, coding, creative writing.
+    - gemini-3-flash-preview: Fast with moderate reasoning capability.
+    - gemini-3-pro-preview: MAXIMUM reasoning. Architecture, security, hard problems.
 
-    Note: values must match the underlying provider model identifiers.
+    Use stronger models only when task complexity requires it.
     """
 
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
