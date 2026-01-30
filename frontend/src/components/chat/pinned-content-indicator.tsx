@@ -9,7 +9,7 @@ import { usePinFiles } from "@/hooks/use-pin-files";
 import { cn } from "@/lib/utils";
 
 export interface PinnedContentIndicatorProps {
-  conversationId: string;
+  conversationId?: string | null;
 }
 
 export function PinnedContentIndicator({
@@ -22,13 +22,13 @@ export function PinnedContentIndicator({
     stalenessData,
     isPinning,
   } = usePinFiles({
-    conversationId,
-    autoFetch: true,
-    autoCheckStaleness: true,
+    conversationId: conversationId || "",
+    autoFetch: !!conversationId,
+    autoCheckStaleness: !!conversationId,
   });
 
-  // Don't show indicator if no files are pinned
-  if (!pinnedInfo && !isPinning) {
+  // Don't show indicator if no conversation or no files pinned
+  if (!conversationId || (!pinnedInfo && !isPinning)) {
     return null;
   }
 

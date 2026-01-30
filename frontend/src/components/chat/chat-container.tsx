@@ -260,9 +260,7 @@ function ChatUI({
               )}
             </div>
             <div className="flex items-center gap-1">
-                {currentConversationId && (
-                  <PinFilesButton conversationId={currentConversationId} />
-                )}
+                <PinFilesButton conversationId={currentConversationId} />
                 <FileBrowser />
                 {setSystemPrompt && (
                    <SystemPromptSettings 
