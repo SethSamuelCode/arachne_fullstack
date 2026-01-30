@@ -12,6 +12,8 @@ import { useRouter } from "@/i18n/navigation";
 
 
 import { SystemPromptSettings } from "./system-prompt-settings";
+import { PinFilesButton } from "./pin-files-button";
+import { PinnedContentIndicator } from "./pinned-content-indicator";
 import { useState } from "react";
 import { Settings2 } from "lucide-react";
 import { FileBrowser } from "@/components/files";
@@ -164,6 +166,7 @@ function AuthenticatedChatContainer() {
       systemPrompt={systemPrompt}
       setSystemPrompt={setSystemPrompt}
       onSystemPromptSave={handleSystemPromptSave}
+      currentConversationId={currentConversationId}
     />
   );
 }
@@ -180,6 +183,7 @@ interface ChatUIProps {
   systemPrompt?: string;
   setSystemPrompt?: (prompt: string) => void;
   onSystemPromptSave?: (prompt: string) => Promise<void>;
+  currentConversationId?: string | null;
 }
 
 function ChatUI({
@@ -194,6 +198,7 @@ function ChatUI({
   systemPrompt,
   setSystemPrompt,
   onSystemPromptSave,
+  currentConversationId,
 }: ChatUIProps) {
   return (
     <div className="flex flex-col h-full mx-auto w-full">
@@ -250,8 +255,14 @@ function ChatUI({
               <span className="text-xs text-muted-foreground">
                 {isConnected ? "Connected" : "Disconnected"}
               </span>
+              {currentConversationId && (
+                <PinnedContentIndicator conversationId={currentConversationId} />
+              )}
             </div>
             <div className="flex items-center gap-1">
+                {currentConversationId && (
+                  <PinFilesButton conversationId={currentConversationId} />
+                )}
                 <FileBrowser />
                 {setSystemPrompt && (
                    <SystemPromptSettings 

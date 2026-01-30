@@ -179,6 +179,52 @@ class ApiClient {
   delete<T>(endpoint: string, options?: RequestOptions) {
     return this.request<T>(endpoint, { ...options, method: "DELETE" });
   }
+
+  /**
+   * Pin files to conversation cache via SSE streaming.
+   * Returns an async generator that yields pin events (progress, warning, error, complete).
+   */
+  async *pinFiles(
+    conversationId: string,
+    request: import("@/types/pinned-content").PinContentRequest
+  ): AsyncGenerator<import("@/types/pinned-content").PinEvent, void, unknown> {
+    const { createPOSTSSEStream } = await import("./sse-client");
+    const url = `/api/conversations/${conversationId}/pin`;
+
+    yield* createPOSTSSEStream<import("@/types/pinned-content").PinEvent>(url, request);
+  }
+
+  /**
+   * Get pinned content metadata for a conversation.
+   */
+  getPinnedContent(conversationId: string) {
+    return this.get<import("@/types/pinned-content").PinnedContentInfo | null>(
+      `/conversations/${conversationId}/pinned`
+    );
+  }
+
+  /**
+   * Check if pinned content is stale (files have changed).
+   */
+  checkStaleness(conversationId: string, fileHashes: Record<string, string>) {
+    return this.post<import("@/types/pinned-content").StalenessResponse>(
+      `/conversations/${conversationId}/check-staleness`,
+      { file_hashes: fileHashes }
+    );
+  }
+
+  /**
+   * Repin stale content via SSE streaming.
+   * Returns an async generator that yields pin events (progress, warning, error, complete).
+   */
+  async *repinContent(
+    conversationId: string
+  ): AsyncGenerator<import("@/types/pinned-content").PinEvent, void, unknown> {
+    const { createSSEStream } = await import("./sse-client");
+    const url = `/api/conversations/${conversationId}/repin`;
+
+    yield* createSSEStream<import("@/types/pinned-content").PinEvent>(url);
+  }
 }
 
 export const apiClient = new ApiClient();

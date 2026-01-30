@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogBo
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { apiClient } from "@/lib/api-client";
 import { MarkdownContent } from "@/components/chat/markdown-content";
 import { useFileTreeDnd } from "@/hooks/useFileTreeDnd";
@@ -110,6 +111,16 @@ interface FileTreeNode {
 
 interface FileBrowserProps {
   children?: React.ReactNode;
+  /** Enable file selection mode */
+  selectionMode?: boolean;
+  /** Controlled selected file paths */
+  selectedFiles?: string[];
+  /** Callback when selection changes */
+  onSelectionChange?: (paths: string[]) => void;
+  /** Show pin action bar when files are selected */
+  showPinAction?: boolean;
+  /** Callback when pin action is triggered */
+  onPinFiles?: (paths: string[]) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -190,7 +201,14 @@ function buildFileTree(files: FileInfo[], emptyFolders: EmptyFolder[]): FileTree
   return root;
 }
 
-export function FileBrowser({ children }: FileBrowserProps) {
+export function FileBrowser({
+  children,
+  selectionMode = false,
+  selectedFiles: controlledSelectedFiles,
+  onSelectionChange,
+  showPinAction = false,
+  onPinFiles,
+}: FileBrowserProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [emptyFolders, setEmptyFolders] = useState<EmptyFolder[]>([]);
@@ -207,6 +225,50 @@ export function FileBrowser({ children }: FileBrowserProps) {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Selection mode state
+  const [internalSelectedFiles, setInternalSelectedFiles] = useState<string[]>([]);
+  const selectedFiles = controlledSelectedFiles ?? internalSelectedFiles;
+
+  const handleSelectionChange = useCallback((paths: string[]) => {
+    if (onSelectionChange) {
+      onSelectionChange(paths);
+    } else {
+      setInternalSelectedFiles(paths);
+    }
+  }, [onSelectionChange]);
+
+  const toggleFileSelection = useCallback((path: string, isFolder: boolean) => {
+    if (!selectionMode) return;
+
+    const isSelected = selectedFiles.includes(path);
+
+    if (isSelected) {
+      // Deselect: remove this path and any child paths
+      const newSelection = selectedFiles.filter((p) => !p.startsWith(path));
+      handleSelectionChange(newSelection);
+    } else {
+      // Select: add this path
+      if (isFolder) {
+        // For folders, collect all file paths under this folder
+        const folderFiles = files
+          .filter((f) => f.key.startsWith(path + "/"))
+          .map((f) => f.key);
+        handleSelectionChange([...selectedFiles, path, ...folderFiles]);
+      } else {
+        handleSelectionChange([...selectedFiles, path]);
+      }
+    }
+  }, [selectionMode, selectedFiles, handleSelectionChange, files]);
+
+  const selectAll = useCallback(() => {
+    const allFilePaths = files.map((f) => f.key);
+    handleSelectionChange(allFilePaths);
+  }, [files, handleSelectionChange]);
+
+  const clearSelection = useCallback(() => {
+    handleSelectionChange([]);
+  }, [handleSelectionChange]);
 
   // Concurrency limit for uploads
   const UPLOAD_CONCURRENCY = 5;
@@ -835,28 +897,59 @@ export function FileBrowser({ children }: FileBrowserProps) {
             {/* File List Header */}
             <div className="flex items-center justify-between px-4 pb-2">
               <span className="text-sm font-medium">
-                {files.length} file{files.length !== 1 ? "s" : ""}
-                {emptyFolders.length > 0 && `, ${emptyFolders.length} empty folder${emptyFolders.length !== 1 ? "s" : ""}`}
+                {selectionMode && selectedFiles.length > 0 ? (
+                  <>
+                    {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""} selected
+                  </>
+                ) : (
+                  <>
+                    {files.length} file{files.length !== 1 ? "s" : ""}
+                    {emptyFolders.length > 0 && `, ${emptyFolders.length} empty folder${emptyFolders.length !== 1 ? "s" : ""}`}
+                  </>
+                )}
               </span>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowNewFolderInput(true)}
-                  disabled={isCreatingFolder}
-                  title="New Folder"
-                >
-                  <FolderPlus className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={fetchFiles}
-                  disabled={isLoading}
-                  title="Refresh"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                </Button>
+                {selectionMode ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={selectAll}
+                      disabled={files.length === 0}
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearSelection}
+                      disabled={selectedFiles.length === 0}
+                    >
+                      Clear
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowNewFolderInput(true)}
+                      disabled={isCreatingFolder}
+                      title="New Folder"
+                    >
+                      <FolderPlus className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={fetchFiles}
+                      disabled={isLoading}
+                      title="Refresh"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -945,6 +1038,9 @@ export function FileBrowser({ children }: FileBrowserProps) {
                       draggedItemId={draggedItem?.id}
                       overFolderId={overFolderId}
                       isValidDropTarget={isValidDropTarget}
+                      selectionMode={selectionMode}
+                      selectedFiles={selectedFiles}
+                      onToggleSelection={toggleFileSelection}
                     />
                   </div>
                   <DragOverlayComponent>
@@ -970,6 +1066,35 @@ export function FileBrowser({ children }: FileBrowserProps) {
                 </div>
               )}
             </div>
+
+            {/* Selection Action Bar */}
+            {selectionMode && selectedFiles.length > 0 && (
+              <div className="sticky bottom-0 left-0 right-0 border-t bg-background p-4 flex items-center justify-between gap-2">
+                <div className="text-sm text-muted-foreground">
+                  {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""} selected
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearSelection}
+                  >
+                    Clear Selection
+                  </Button>
+                  {showPinAction && onPinFiles && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        onPinFiles(selectedFiles);
+                        setIsOpen(false);
+                      }}
+                    >
+                      Pin Selected Files ({selectedFiles.length})
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -1062,6 +1187,9 @@ interface FileTreeViewProps {
   draggedItemId?: string | null;
   overFolderId?: string | null;
   isValidDropTarget?: (path: string, isFolder: boolean) => boolean;
+  selectionMode?: boolean;
+  selectedFiles?: string[];
+  onToggleSelection?: (path: string, isFolder: boolean) => void;
 }
 
 /**
@@ -1164,6 +1292,9 @@ function FileTreeView({
   draggedItemId,
   overFolderId,
   isValidDropTarget,
+  selectionMode = false,
+  selectedFiles = [],
+  onToggleSelection,
 }: FileTreeViewProps) {
   // Sort children: folders first, then files, alphabetically
   const sortedChildren = Array.from(node.children.values()).sort((a, b) => {
@@ -1192,6 +1323,9 @@ function FileTreeView({
             draggedItemId={draggedItemId}
             overFolderId={overFolderId}
             isValidDropTarget={isValidDropTarget}
+            selectionMode={selectionMode}
+            selectedFiles={selectedFiles}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </>
@@ -1220,9 +1354,18 @@ function FileTreeView({
               style={{ paddingLeft }}
               onClick={() => hasChildren && onToggleFolder(node.path)}
             >
-              <span {...dragHandleProps} onClick={(e) => e.stopPropagation()}>
-                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
-              </span>
+              {selectionMode && onToggleSelection ? (
+                <Checkbox
+                  checked={selectedFiles.includes(node.path)}
+                  onCheckedChange={() => onToggleSelection(node.path, true)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4"
+                />
+              ) : (
+                <span {...dragHandleProps} onClick={(e) => e.stopPropagation()}>
+                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
+                </span>
+              )}
               {hasChildren ? (
                 isCollapsed ? (
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1287,6 +1430,9 @@ function FileTreeView({
                 draggedItemId={draggedItemId}
                 overFolderId={overFolderId}
                 isValidDropTarget={isValidDropTarget}
+                selectionMode={selectionMode}
+                selectedFiles={selectedFiles}
+                onToggleSelection={onToggleSelection}
               />
             ))}
           </div>
@@ -1306,9 +1452,18 @@ function FileTreeView({
           )}
           style={{ paddingLeft: paddingLeft + 20 }}
         >
-          <span {...dragHandleProps}>
-            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
-          </span>
+          {selectionMode && onToggleSelection ? (
+            <Checkbox
+              checked={selectedFiles.includes(node.path)}
+              onCheckedChange={() => onToggleSelection(node.path, false)}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4"
+            />
+          ) : (
+            <span {...dragHandleProps}>
+              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50 cursor-grab" />
+            </span>
+          )}
           <File className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0">
             <span className="text-sm truncate block" title={node.path}>
