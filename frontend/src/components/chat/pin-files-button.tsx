@@ -28,9 +28,15 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
 
   const { createConversation } = useConversations();
   const { setCurrentConversationId } = useConversationStore();
-  const { setPinProgress, setIsPinning, setPinnedContent } = usePinnedContentStore();
+  const {
+    setPinProgress,
+    setIsPinning,
+    setPinnedContent,
+    isPinning: globalIsPinning,
+    pinProgress: globalPinProgress,
+  } = usePinnedContentStore();
 
-  const { pinFiles, isPinning, pinProgress, error } = usePinFiles({
+  const { pinFiles, error } = usePinFiles({
     conversationId: conversationId || "",
     autoFetch: false,
     autoCheckStaleness: false,
@@ -75,13 +81,17 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
             const progressData = event.data as PinProgressEvent;
             setPinProgress({
               phase: progressData.phase,
-              current: progressData.current,
-              total: progressData.total,
+              current: progressData.current ?? 0,
+              total: progressData.total ?? 0,
               message: progressData.message,
+              currentFile: progressData.current_file || progressData.currentFile,
+              percentage: progressData.percentage,
+              tokens: progressData.tokens,
+              budgetUsedPercent: progressData.budget_used_pct,
             });
           } else if (event.event === "complete") {
             const completeData = event.data as PinCompleteEvent;
-            console.log("Pin complete:", completeData.message);
+            console.log("Pin complete:", completeData.message || "Files pinned successfully");
 
             // Fetch pinned content metadata from API
             const pinnedData = await apiClient.getPinnedContent(activeConversationId);
@@ -148,8 +158,8 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
       <PinProgressDialog
         open={showProgressDialog}
         onOpenChange={setShowProgressDialog}
-        progress={pinProgress}
-        isPinning={isPinning}
+        progress={globalPinProgress}
+        isPinning={globalIsPinning}
         error={error}
         onRetry={handleRetry}
         onClose={() => {

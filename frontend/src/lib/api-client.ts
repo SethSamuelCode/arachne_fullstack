@@ -209,7 +209,7 @@ class ApiClient {
   checkStaleness(conversationId: string, fileHashes: Record<string, string>) {
     return this.post<import("@/types/pinned-content").StalenessResponse>(
       `/conversations/${conversationId}/check-staleness`,
-      { file_hashes: fileHashes }
+      { current_hashes: fileHashes }
     );
   }
 

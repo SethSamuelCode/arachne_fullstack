@@ -22,6 +22,7 @@ const PHASE_LABELS: Record<string, string> = {
   hashing: "Hashing content",
   serializing: "Serializing to XML",
   estimating: "Estimating tokens",
+  uploading: "Uploading to cache",
   creating: "Creating cache",
   storing: "Storing metadata",
 };
@@ -32,6 +33,7 @@ const PHASE_ORDER = [
   "hashing",
   "serializing",
   "estimating",
+  "uploading",
   "creating",
   "storing",
 ];
@@ -99,7 +101,7 @@ export function PinProgressDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
-                    {progress.message}
+                    {progress.message || PHASE_LABELS[progress.phase] || "Processing..."}
                   </span>
                   <span className="text-muted-foreground font-medium">
                     {Math.round(progressPercentage)}%

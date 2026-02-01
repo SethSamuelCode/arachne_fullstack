@@ -27,25 +27,31 @@ export type PinPhase =
   | "hashing"
   | "serializing"
   | "estimating"
+  | "uploading"
   | "creating"
   | "storing";
 
 export interface PinProgressEvent {
   phase: PinPhase;
-  current: number;
-  total: number;
-  message: string;
+  current?: number;
+  total?: number;
+  message?: string;
+  current_file?: string;
   currentFile?: string;
   percentage?: number;
   tokens?: number;
+  content_hash?: string;
+  status?: string;
   budget_used_pct?: number;
 }
 
-export type PinWarningType = "token_budget" | "file_error" | "partial_failure";
+export type PinWarningType = "token_budget" | "budget" | "budget_exceeded" | "file_error" | "partial_failure";
 
 export interface PinWarningEvent {
   type: PinWarningType;
   message: string;
+  percent?: number;
+  path?: string;
   details?: unknown;
 }
 
@@ -59,7 +65,8 @@ export interface PinCompleteEvent {
   total_tokens: number;
   file_count: number;
   cache_name: string;
-  message: string;
+  budget_percent?: number;
+  message?: string;
 }
 
 export interface PinnedContentInfo {
@@ -81,9 +88,9 @@ export interface StalenessResponse {
 /** Progress state for UI components */
 export interface PinProgress {
   phase: PinPhase;
-  current: number;
-  total: number;
-  message: string;
+  current?: number;
+  total?: number;
+  message?: string;
   currentFile?: string;
   percentage?: number;
   tokens?: number;

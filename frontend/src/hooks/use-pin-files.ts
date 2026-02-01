@@ -130,10 +130,10 @@ export function usePinFiles({
             const progressData = event.data as PinProgressEvent;
             setPinProgress({
               phase: progressData.phase,
-              current: progressData.current,
-              total: progressData.total,
+              current: progressData.current ?? 0,
+              total: progressData.total ?? 0,
               message: progressData.message,
-              currentFile: progressData.currentFile,
+              currentFile: progressData.current_file || progressData.currentFile,
               percentage: progressData.percentage,
               tokens: progressData.tokens,
               budgetUsedPercent: progressData.budget_used_pct,
@@ -141,14 +141,12 @@ export function usePinFiles({
           } else if (event.event === "warning") {
             const warningData = event.data as PinWarningEvent;
             console.warn("Pin warning:", warningData.message);
-            // Could show toast notification here
           } else if (event.event === "error") {
             const errorData = event.data as PinErrorEvent;
             throw new Error(errorData.message || "Pin operation failed");
           } else if (event.event === "complete") {
             const completeData = event.data as PinCompleteEvent;
-            console.log("Pin complete:", completeData.message);
-            // Refresh pinned content metadata
+            console.log("Pin complete:", completeData.message || "Files pinned successfully");
             await fetchPinnedContent();
             break;
           }
@@ -181,10 +179,10 @@ export function usePinFiles({
           const progressData = event.data as PinProgressEvent;
           setPinProgress({
             phase: progressData.phase,
-            current: progressData.current,
-            total: progressData.total,
+            current: progressData.current ?? 0,
+            total: progressData.total ?? 0,
             message: progressData.message,
-            currentFile: progressData.currentFile,
+            currentFile: progressData.current_file || progressData.currentFile,
             percentage: progressData.percentage,
             tokens: progressData.tokens,
             budgetUsedPercent: progressData.budget_used_pct,
@@ -197,7 +195,7 @@ export function usePinFiles({
           throw new Error(errorData.message || "Repin operation failed");
         } else if (event.event === "complete") {
           const completeData = event.data as PinCompleteEvent;
-          console.log("Repin complete:", completeData.message);
+          console.log("Repin complete:", completeData.message || "Files repinned successfully");
           await fetchPinnedContent();
           await checkStaleness();
           break;

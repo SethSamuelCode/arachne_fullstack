@@ -99,17 +99,16 @@ export async function* createSSEStream<T>(
 /**
  * Parse a single SSE event string into typed data
  * Handles both "data:" and "event:" + "data:" formats
+ * Returns an object with { event, data } matching the SSE protocol fields
  */
 function parseSSEEvent<T>(eventString: string): T | null {
   const lines = eventString.split("\n");
-  // eventType could be used for filtering but currently not needed
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let _eventType = "message";
+  let eventType = "message";
   let data = "";
 
   for (const line of lines) {
     if (line.startsWith("event:")) {
-      _eventType = line.substring(6).trim();
+      eventType = line.substring(6).trim();
     } else if (line.startsWith("data:")) {
       data += line.substring(5).trim();
     }
@@ -120,11 +119,10 @@ function parseSSEEvent<T>(eventString: string): T | null {
   }
 
   try {
-    // Try to parse as JSON
-    return JSON.parse(data) as T;
+    const parsedData = JSON.parse(data);
+    return { event: eventType, data: parsedData } as T;
   } catch {
-    // If not JSON, return as-is (wrapped in object if needed)
-    return data as T;
+    return { event: eventType, data } as T;
   }
 }
 
