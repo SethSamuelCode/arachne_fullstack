@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildBackendHeaders } from "@/lib/server-api";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://app:8000";
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -24,7 +25,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const backendUrl = `${BACKEND_URL}/api/v1/conversations/${id}/repin`;
 
     const response = await fetch(backendUrl, {
-      headers: buildBackendHeaders(accessToken),
+      headers: {
+        ...buildBackendHeaders(accessToken),
+        ...(INTERNAL_API_KEY ? { "X-Internal-API-Key": INTERNAL_API_KEY } : {}),
+      },
     });
 
     if (!response.ok) {
