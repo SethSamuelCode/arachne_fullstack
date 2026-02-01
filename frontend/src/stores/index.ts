@@ -7,3 +7,4 @@ export { useChatSidebarStore } from "./chat-sidebar-store";
 export { useConversationStore } from "./conversation-store";
 export { useFilesStore, buildFileTree, formatFileSize, formatDate } from "./files-store";
 export type { FileInfo, FileTreeNode, EmptyFolder, UploadProgress, RenameProgress } from "./files-store";
+export { useFilesSidebarStore } from "./files-sidebar-store";
