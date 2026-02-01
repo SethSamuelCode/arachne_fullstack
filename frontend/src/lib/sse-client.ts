@@ -66,7 +66,8 @@ export async function* createSSEStream<T>(
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      // Normalize \r\n to \n (sse_starlette uses \r\n separators)
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
       // Split by double newline (SSE event separator)
       const events = buffer.split("\n\n");
@@ -176,7 +177,8 @@ export async function* createPOSTSSEStream<T>(
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      // Normalize \r\n to \n (sse_starlette uses \r\n separators)
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
       const events = buffer.split("\n\n");
       buffer = events.pop() || "";

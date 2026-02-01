@@ -79,13 +79,15 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
         for await (const event of apiClient.pinFiles(activeConversationId, request)) {
           if (event.event === "progress") {
             const progressData = event.data as PinProgressEvent;
+            const current = progressData.current ?? 0;
+            const total = progressData.total ?? 0;
             setPinProgress({
               phase: progressData.phase,
-              current: progressData.current ?? 0,
-              total: progressData.total ?? 0,
+              current,
+              total,
               message: progressData.message,
               currentFile: progressData.current_file || progressData.currentFile,
-              percentage: progressData.percentage,
+              percentage: total > 0 ? Math.round((current / total) * 100) : undefined,
               tokens: progressData.tokens,
               budgetUsedPercent: progressData.budget_used_pct,
             });
@@ -98,7 +100,13 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
             if (pinnedData) {
               setPinnedContent(activeConversationId, pinnedData);
             }
-            setPinProgress(null);
+            // Keep progress set so isComplete can detect success
+            setPinProgress({
+              phase: "storing",
+              current: completeData.file_count,
+              total: completeData.file_count,
+              tokens: completeData.total_tokens,
+            });
           } else if (event.event === "error") {
             const errorData = event.data as PinErrorEvent;
             console.error("Pin error:", errorData.message);

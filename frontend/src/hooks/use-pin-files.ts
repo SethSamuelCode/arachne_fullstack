@@ -128,13 +128,15 @@ export function usePinFiles({
         for await (const event of apiClient.pinFiles(conversationId, request)) {
           if (event.event === "progress") {
             const progressData = event.data as PinProgressEvent;
+            const current = progressData.current ?? 0;
+            const total = progressData.total ?? 0;
             setPinProgress({
               phase: progressData.phase,
-              current: progressData.current ?? 0,
-              total: progressData.total ?? 0,
+              current,
+              total,
               message: progressData.message,
               currentFile: progressData.current_file || progressData.currentFile,
-              percentage: progressData.percentage,
+              percentage: total > 0 ? Math.round((current / total) * 100) : undefined,
               tokens: progressData.tokens,
               budgetUsedPercent: progressData.budget_used_pct,
             });
@@ -147,6 +149,13 @@ export function usePinFiles({
           } else if (event.event === "complete") {
             const completeData = event.data as PinCompleteEvent;
             console.log("Pin complete:", completeData.message || "Files pinned successfully");
+            // Keep progress set so isComplete can detect success
+            setPinProgress({
+              phase: "storing",
+              current: completeData.file_count,
+              total: completeData.file_count,
+              tokens: completeData.total_tokens,
+            });
             await fetchPinnedContent();
             break;
           }
@@ -158,7 +167,6 @@ export function usePinFiles({
         throw err;
       } finally {
         setIsPinning(false);
-        setPinProgress(null);
         abortControllerRef.current = null;
       }
     },
@@ -177,13 +185,15 @@ export function usePinFiles({
       for await (const event of apiClient.repinContent(conversationId)) {
         if (event.event === "progress") {
           const progressData = event.data as PinProgressEvent;
+          const current = progressData.current ?? 0;
+          const total = progressData.total ?? 0;
           setPinProgress({
             phase: progressData.phase,
-            current: progressData.current ?? 0,
-            total: progressData.total ?? 0,
+            current,
+            total,
             message: progressData.message,
             currentFile: progressData.current_file || progressData.currentFile,
-            percentage: progressData.percentage,
+            percentage: total > 0 ? Math.round((current / total) * 100) : undefined,
             tokens: progressData.tokens,
             budgetUsedPercent: progressData.budget_used_pct,
           });
@@ -196,6 +206,12 @@ export function usePinFiles({
         } else if (event.event === "complete") {
           const completeData = event.data as PinCompleteEvent;
           console.log("Repin complete:", completeData.message || "Files repinned successfully");
+          setPinProgress({
+            phase: "storing",
+            current: completeData.file_count,
+            total: completeData.file_count,
+            tokens: completeData.total_tokens,
+          });
           await fetchPinnedContent();
           await checkStaleness();
           break;
@@ -208,7 +224,6 @@ export function usePinFiles({
       throw err;
     } finally {
       setIsPinning(false);
-      setPinProgress(null);
     }
   }, [conversationId, setIsPinning, setPinProgress, fetchPinnedContent, checkStaleness]);
 

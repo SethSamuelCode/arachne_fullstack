@@ -26,7 +26,8 @@ ENV NEXT_PUBLIC_S3_HOST=$NEXT_PUBLIC_S3_HOST
 
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN bun run build && mkdir -p .next/static
+RUN mkdir -p .next/static
+RUN bun run build
 
 # Production image
 FROM base AS runner
