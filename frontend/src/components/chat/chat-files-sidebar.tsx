@@ -724,12 +724,13 @@ function SidebarFolderItem({
       style={{ paddingLeft }}
       onClick={onToggle}
     >
-      <Checkbox
-        checked={isChecked || isIndeterminate}
-        className={cn("h-3.5 w-3.5", isIndeterminate && "opacity-60")}
-        onCheckedChange={() => onToggleSelection()}
-        onClick={(e) => e.stopPropagation()}
-      />
+      <div onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isChecked || isIndeterminate}
+          className={cn("h-3.5 w-3.5", isIndeterminate && "opacity-60")}
+          onCheckedChange={() => onToggleSelection()}
+        />
+      </div>
       {hasChildren ? (
         isExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
           : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
