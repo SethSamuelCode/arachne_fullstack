@@ -23,7 +23,7 @@ Integrate file management and context pinning into a unified, resizable sidebar 
 - **Resize**: Draggable handle between chat and sidebar panels using `react-resizable-panels`.
 - **Default size**: 40% of available width.
 - **Constraints**: Min chat panel 40%, min sidebar panel 25%.
-- **Persistence**: `react-resizable-panels` `autoSaveId` handles resize persistence. A Zustand store (`files-sidebar-store.ts`) tracks `isOpen` only, persisted to localStorage.
+- **Persistence**: `react-resizable-panels` `useDefaultLayout` hook with a stable `id` handles resize persistence. A Zustand store (`files-sidebar-store.ts`) tracks `isOpen` only, persisted to localStorage.
 - **Mobile**: Sidebar hidden below `md` breakpoint. Existing Sheet-based file browser and pin buttons remain the mobile interface.
 - **Toggle indicator**: The toggle button shows a dot badge when pinned files are stale, even when sidebar is closed.
 
@@ -45,8 +45,9 @@ Shown when the active conversation has pinned content.
 - Same tree structure as existing files sidebar: folders, files, drag-and-drop upload zone at top
 - **Pinned file indicators**: Small pin icon overlay on file icon + subtle background tint (`bg-primary/5`)
 - **Clicking filename**: Toggles file selection (checkbox)
-- **Checkboxes**: Visible on each file for multi-select
-- **Folder hover actions**: Rename, delete, create subfolder
+- **Checkboxes**: Visible on each file for multi-select. Checkboxes use `pointer-events-none` and are purely visual — the parent row's `onClick` drives selection, avoiding double-toggle bugs with the custom Checkbox component.
+- **Folder checkboxes**: Each folder has a checkbox that selects/deselects all files within it (recursively). Shows checked when all files are selected, partial opacity when some are selected.
+- **Folder hover actions**: Rename, delete
 - **File hover actions**: Eye (preview), download, rename, delete
 - No quick-pin action on hover -- all pinning goes through explicit selection flow
 
@@ -132,4 +133,10 @@ All existing API routes for files and pinning are sufficient.
 
 ## Coexistence with Existing UI
 
-The existing Sheet-based file browser (`FileBrowser`), `PinFilesButton`, and `PinnedContentIndicator` in the chat action bar remain unchanged. The sidebar is an additional, more integrated way to manage files and pinning.
+- `PinFilesButton` has been **removed** from the action bar — pinning is done exclusively through the sidebar's file selection + "Pin Selected" flow.
+- `FileBrowser` (Sheet-based) is **hidden** when the sidebar is open (redundant), but remains visible when the sidebar is closed as a fallback.
+- `PinnedContentIndicator` remains in the action bar status area.
+
+## react-resizable-panels API
+
+The library (v4.x) exports `Group`, `Panel`, and `Separator` (not `PanelGroup`/`PanelResizeHandle`). Layout persistence uses the `useDefaultLayout` hook with an `id` parameter, not an `autoSaveId` prop. The `Group` component uses `orientation` instead of `direction`.

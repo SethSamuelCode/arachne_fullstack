@@ -12,7 +12,6 @@ import { useRouter } from "@/i18n/navigation";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, useDefaultLayout } from "react-resizable-panels";
 
 import { SystemPromptSettings } from "./system-prompt-settings";
-import { PinFilesButton } from "./pin-files-button";
 import { PinnedContentIndicator } from "./pinned-content-indicator";
 import { ChatFilesSidebar } from "./chat-files-sidebar";
 import { usePinnedContentStore } from "@/stores/pinned-content-store";
@@ -274,7 +273,6 @@ function ChatUI({
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                    <PinFilesButton conversationId={currentConversationId} />
                     {!sidebarOpen && <FileBrowser />}
                     {setSystemPrompt && (
                        <SystemPromptSettings

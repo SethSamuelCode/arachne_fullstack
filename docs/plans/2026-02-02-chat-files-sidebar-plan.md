@@ -6,7 +6,7 @@
 
 **Architecture:** The `ChatUI` component gets wrapped in a `react-resizable-panels` `PanelGroup` with two panels: chat (existing) and sidebar (new). A Zustand store persists the open/closed state. The sidebar reuses `useFilesStore` and `usePinFiles` hooks, composing a file tree with pinned-file indicators, checkboxes for selection, and an inline pinned content summary.
 
-**Tech Stack:** React 19, TypeScript, react-resizable-panels ^4.4.1, Zustand (with persist), Lucide icons, shadcn/ui (Dialog, Button, Badge, Checkbox, Progress, ScrollArea, Collapsible), usePinFiles hook, useFilesStore
+**Tech Stack:** React 19, TypeScript, react-resizable-panels ^4.4.1 (exports `Group`, `Panel`, `Separator`, `useDefaultLayout`), Zustand (with persist), Lucide icons, shadcn/ui (Dialog, Button, Badge, Checkbox, Progress, ScrollArea, Collapsible), usePinFiles hook, useFilesStore
 
 ---
 
@@ -314,7 +314,9 @@ Key differences from existing file tree components:
 - Eye icon for preview (not click)
 - Pin icon overlay on pinned files
 - No drag-and-drop reorder (simplify for v1, can add later)
-- Checkboxes always visible
+- Checkboxes always visible (file checkboxes use `pointer-events-none` — purely visual; parent row `onClick` drives selection to avoid double-toggle)
+- Folder checkboxes: selects/deselects all files within the folder recursively. Shows checked when all selected, partial opacity when some selected.
+- `toggleFolderSelection` callback finds folder node in tree, collects descendant file paths, toggles all
 - "Pin Selected" action bar instead of Sheet-based selection
 
 ```typescript
@@ -738,6 +740,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
               pinnedFiles={pinnedFilePaths}
               onToggleFolder={toggleFolder}
               onToggleSelection={toggleSelection}
+              onToggleFolderSelection={toggleFolderSelection}
               onPreview={loadFilePreview}
               onDownload={handleDownload}
               onDelete={handleDelete}
@@ -874,6 +877,7 @@ interface SidebarFileTreeProps {
   pinnedFiles: Set<string>;
   onToggleFolder: (path: string) => void;
   onToggleSelection: (path: string) => void;
+  onToggleFolderSelection: (folderPath: string) => void;
   onPreview: (key: string) => void;
   onDownload: (key: string) => void;
   onDelete: (key: string) => void;
@@ -886,7 +890,7 @@ interface SidebarFileTreeProps {
 
 function SidebarFileTree({
   node, depth, expandedFolders, selectedFiles, pinnedFiles,
-  onToggleFolder, onToggleSelection, onPreview, onDownload,
+  onToggleFolder, onToggleSelection, onToggleFolderSelection, onPreview, onDownload,
   onDelete, onDeleteFolder, onRenameFile, onRenameFolder,
   emptyFolderPaths, isPinning,
 }: SidebarFileTreeProps) {
@@ -904,7 +908,9 @@ function SidebarFileTree({
             key={child.path} node={child} depth={1}
             expandedFolders={expandedFolders} selectedFiles={selectedFiles}
             pinnedFiles={pinnedFiles} onToggleFolder={onToggleFolder}
-            onToggleSelection={onToggleSelection} onPreview={onPreview}
+            onToggleSelection={onToggleSelection}
+            onToggleFolderSelection={onToggleFolderSelection}
+            onPreview={onPreview}
             onDownload={onDownload} onDelete={onDelete}
             onDeleteFolder={onDeleteFolder} onRenameFile={onRenameFile}
             onRenameFolder={onRenameFolder} emptyFolderPaths={emptyFolderPaths}
@@ -920,11 +926,26 @@ function SidebarFileTree({
   const paddingLeft = (depth - 1) * 12;
 
   if (node.isFolder) {
+    const collectFilePaths = (n: FileTreeNode): string[] => {
+      const result: string[] = [];
+      for (const child of n.children.values()) {
+        if (child.isFolder) result.push(...collectFilePaths(child));
+        else result.push(child.path);
+      }
+      return result;
+    };
+    const folderFiles = collectFilePaths(node);
+    const allSelected = folderFiles.length > 0 && folderFiles.every((f) => selectedFiles.has(f));
+    const someSelected = !allSelected && folderFiles.some((f) => selectedFiles.has(f));
+
     return (
       <>
         <SidebarFolderItem
           node={node} paddingLeft={paddingLeft} isExpanded={isExpanded}
           hasChildren={hasChildren} isEmptyFolder={emptyFolderPaths.has(node.path)}
+          isChecked={allSelected}
+          isIndeterminate={someSelected}
+          onToggleSelection={() => onToggleFolderSelection(node.path)}
           onToggle={() => hasChildren && onToggleFolder(node.path)}
           onDelete={() => onDeleteFolder(node.path)}
           onRename={(newName) => {
@@ -938,7 +959,9 @@ function SidebarFileTree({
             key={child.path} node={child} depth={depth + 1}
             expandedFolders={expandedFolders} selectedFiles={selectedFiles}
             pinnedFiles={pinnedFiles} onToggleFolder={onToggleFolder}
-            onToggleSelection={onToggleSelection} onPreview={onPreview}
+            onToggleSelection={onToggleSelection}
+            onToggleFolderSelection={onToggleFolderSelection}
+            onPreview={onPreview}
             onDownload={onDownload} onDelete={onDelete}
             onDeleteFolder={onDeleteFolder} onRenameFile={onRenameFile}
             onRenameFolder={onRenameFolder} emptyFolderPaths={emptyFolderPaths}
@@ -978,6 +1001,9 @@ interface SidebarFolderItemProps {
   isExpanded: boolean;
   hasChildren: boolean;
   isEmptyFolder: boolean;
+  isChecked: boolean;
+  isIndeterminate: boolean;
+  onToggleSelection: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onRename: (newName: string) => Promise<boolean>;
@@ -985,6 +1011,7 @@ interface SidebarFolderItemProps {
 
 function SidebarFolderItem({
   node, paddingLeft, isExpanded, hasChildren, isEmptyFolder,
+  isChecked, isIndeterminate, onToggleSelection,
   onToggle, onDelete, onRename,
 }: SidebarFolderItemProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -1009,6 +1036,12 @@ function SidebarFolderItem({
       style={{ paddingLeft }}
       onClick={onToggle}
     >
+      <Checkbox
+        checked={isChecked || isIndeterminate}
+        className={cn("h-3.5 w-3.5", isIndeterminate && "opacity-60")}
+        onCheckedChange={() => onToggleSelection()}
+        onClick={(e) => e.stopPropagation()}
+      />
       {hasChildren ? (
         isExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
           : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -1087,9 +1120,7 @@ function SidebarFileItem({
     >
       <Checkbox
         checked={isSelected}
-        onCheckedChange={() => onToggleSelection()}
-        onClick={(e) => e.stopPropagation()}
-        className="h-3.5 w-3.5"
+        className="h-3.5 w-3.5 pointer-events-none"
       />
       <div className="relative">
         <File className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -1214,48 +1245,57 @@ Wrap the `ChatUI` component in a `PanelGroup`. Add a toggle button to the action
 
 Add imports at the top:
 ```typescript
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, useDefaultLayout } from "react-resizable-panels";
 import { PanelRightOpen, PanelRightClose } from "lucide-react";
-import { useFilesSidebarStore } from "@/stores/files-sidebar-store";
+import { useFilesSidebarStore } from "@/stores";
 import { ChatFilesSidebar } from "./chat-files-sidebar";
-import { usePinFiles } from "@/hooks/use-pin-files";
+import { usePinnedContentStore } from "@/stores/pinned-content-store";
 ```
 
-Modify the `ChatUI` component to wrap in PanelGroup:
-- Add `sidebarOpen` / `toggleSidebar` from store
-- Add stale indicator logic for the toggle button
-- Wrap the existing chat div and the sidebar in a `PanelGroup`
-- The `ChatFilesSidebar` goes in the second `Panel`, conditionally rendered
+Remove `PinFilesButton` import — pinning is now done exclusively through the sidebar.
 
-In the action bar (the `<div className="flex items-center gap-1">` at line ~262), add the toggle button after the Reset button:
+Modify the `ChatUI` component to wrap in PanelGroup. Sidebar state and staleness are read directly via hooks inside `ChatUI` (no prop drilling needed):
 
 ```tsx
-{/* Sidebar toggle (desktop only) */}
+const { isOpen: sidebarOpen, toggle: toggleSidebar } = useFilesSidebarStore();
+const stalenessData = usePinnedContentStore((s) => s.stalenessData);
+const isStale = currentConversationId
+  ? stalenessData[currentConversationId]?.is_stale ?? false
+  : false;
+
+const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+  id: "chat-files-sidebar",
+});
+```
+
+In the action bar, add the sidebar toggle button (icon-only) between `SystemPromptSettings` and `Reset`. Hide `FileBrowser` when sidebar is open. Remove `PinFilesButton`:
+
+```tsx
+{!sidebarOpen && <FileBrowser />}
+{/* ... SystemPromptSettings ... */}
 <Button
   variant="ghost"
   size="sm"
   onClick={toggleSidebar}
-  className="text-xs h-8 px-3 hidden md:flex relative"
+  className="relative h-8 px-2"
   title={sidebarOpen ? "Close files sidebar" : "Open files sidebar"}
 >
   {sidebarOpen ? (
-    <PanelRightClose className="h-3.5 w-3.5 mr-1.5" />
+    <PanelRightClose className="h-3.5 w-3.5" />
   ) : (
-    <PanelRightOpen className="h-3.5 w-3.5 mr-1.5" />
+    <PanelRightOpen className="h-3.5 w-3.5" />
   )}
-  Files
-  {/* Stale indicator dot */}
-  {!sidebarOpen && isStale && (
-    <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-500" />
+  {isStale && !sidebarOpen && (
+    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
   )}
 </Button>
 ```
 
-Replace the `ChatUI` return JSX with a PanelGroup wrapper:
+Replace the `ChatUI` return JSX with a PanelGroup wrapper. Note the library uses `orientation` not `direction`:
 
 ```tsx
 return (
-  <PanelGroup direction="horizontal" autoSaveId="chat-files-sidebar">
+  <PanelGroup orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
     <Panel minSize={40}>
       {/* Existing ChatUI content */}
       <div className="flex flex-col h-full mx-auto w-full">
@@ -1264,8 +1304,8 @@ return (
     </Panel>
     {sidebarOpen && (
       <>
-        <PanelResizeHandle className="w-1.5 bg-border hover:bg-primary/50 transition-colors hidden md:block" />
-        <Panel defaultSize={40} minSize={25}>
+        <PanelResizeHandle className="hidden md:flex w-1.5 bg-border hover:bg-primary/20 transition-colors" />
+        <Panel defaultSize={40} minSize={25} className="hidden md:flex">
           <ChatFilesSidebar conversationId={currentConversationId ?? null} />
         </Panel>
       </>
@@ -1273,28 +1313,6 @@ return (
   </PanelGroup>
 );
 ```
-
-The `sidebarOpen` state and `isStale` check need to be added to the `ChatUI` props and component, or the panel wrapping can happen at the `AuthenticatedChatContainer` level. The cleanest approach is to add sidebar state to `ChatUI` since it renders the action bar.
-
-Add these to `ChatUIProps`:
-```typescript
-sidebarOpen?: boolean;
-onToggleSidebar?: () => void;
-isStale?: boolean;
-```
-
-And compute `isStale` in `AuthenticatedChatContainer`:
-```typescript
-const { isOpen: sidebarOpen, toggle: toggleSidebar } = useFilesSidebarStore();
-const { stalenessData } = usePinFiles({
-  conversationId: currentConversationId || "",
-  autoFetch: !!currentConversationId,
-  autoCheckStaleness: !!currentConversationId,
-});
-const isStale = stalenessData?.is_stale ?? false;
-```
-
-Pass these through to `ChatUI` and then construct the panel layout inside `ChatUI`.
 
 **Step 2: Run type check**
 
@@ -1352,7 +1370,9 @@ Manually verify in browser:
 - [ ] Open/closed state persists on page reload
 - [ ] Sidebar hidden on mobile
 - [ ] File tree loads and shows files
-- [ ] Checkboxes toggle on file click
+- [ ] Checkboxes toggle on file row click (checkbox is visual-only, parent row drives selection)
+- [ ] Folder checkboxes select/deselect all files within folder recursively
+- [ ] Folder checkbox shows partial opacity when some but not all files selected
 - [ ] "Pin Selected" bar appears when files are checked
 - [ ] Pinned files show pin icon overlay and tint
 - [ ] Eye icon opens preview dialog
@@ -1361,7 +1381,9 @@ Manually verify in browser:
 - [ ] Pinned content summary shows at top when content is pinned
 - [ ] Summary collapses/expands
 - [ ] Stale indicator dot on toggle button when sidebar is closed and content is stale
-- [ ] Existing Sheet file browser and pin buttons still work
+- [ ] PinFilesButton removed from action bar — pinning via sidebar only
+- [ ] FileBrowser hidden when sidebar is open, visible when closed
+- [ ] Existing Sheet file browser still works when sidebar is closed
 - [ ] Conversation switching updates pinned summary
 
 **Step 2: Fix any visual issues found**

@@ -144,6 +144,45 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
     setSelectedFiles(new Set());
   }, []);
 
+  const toggleFolderSelection = useCallback((folderPath: string) => {
+    const collectFiles = (node: FileTreeNode): string[] => {
+      const result: string[] = [];
+      for (const child of node.children.values()) {
+        if (child.isFolder) {
+          result.push(...collectFiles(child));
+        } else {
+          result.push(child.path);
+        }
+      }
+      return result;
+    };
+
+    const findNode = (node: FileTreeNode, path: string): FileTreeNode | null => {
+      if (node.path === path) return node;
+      for (const child of node.children.values()) {
+        const found = findNode(child, path);
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const folderNode = findNode(fileTree, folderPath);
+    if (!folderNode) return;
+
+    const folderFiles = collectFiles(folderNode);
+
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      const allSelected = folderFiles.every((f) => next.has(f));
+      if (allSelected) {
+        folderFiles.forEach((f) => next.delete(f));
+      } else {
+        folderFiles.forEach((f) => next.add(f));
+      }
+      return next;
+    });
+  }, [fileTree]);
+
   const handlePinSelected = useCallback(async () => {
     const paths = Array.from(selectedFiles);
     if (paths.length === 0) return;
@@ -396,6 +435,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
               pinnedFiles={pinnedFilePaths}
               onToggleFolder={toggleFolder}
               onToggleSelection={toggleSelection}
+              onToggleFolderSelection={toggleFolderSelection}
               onPreview={loadFilePreview}
               onDownload={handleDownload}
               onDelete={handleDelete}
@@ -526,6 +566,7 @@ interface SidebarFileTreeProps {
   pinnedFiles: Set<string>;
   onToggleFolder: (path: string) => void;
   onToggleSelection: (path: string) => void;
+  onToggleFolderSelection: (folderPath: string) => void;
   onPreview: (key: string) => void;
   onDownload: (key: string) => void;
   onDelete: (key: string) => void;
@@ -538,7 +579,7 @@ interface SidebarFileTreeProps {
 
 function SidebarFileTree({
   node, depth, expandedFolders, selectedFiles, pinnedFiles,
-  onToggleFolder, onToggleSelection, onPreview, onDownload,
+  onToggleFolder, onToggleSelection, onToggleFolderSelection, onPreview, onDownload,
   onDelete, onDeleteFolder, onRenameFile, onRenameFolder,
   emptyFolderPaths, isPinning,
 }: SidebarFileTreeProps) {
@@ -556,7 +597,9 @@ function SidebarFileTree({
             key={child.path} node={child} depth={1}
             expandedFolders={expandedFolders} selectedFiles={selectedFiles}
             pinnedFiles={pinnedFiles} onToggleFolder={onToggleFolder}
-            onToggleSelection={onToggleSelection} onPreview={onPreview}
+            onToggleSelection={onToggleSelection}
+            onToggleFolderSelection={onToggleFolderSelection}
+            onPreview={onPreview}
             onDownload={onDownload} onDelete={onDelete}
             onDeleteFolder={onDeleteFolder} onRenameFile={onRenameFile}
             onRenameFolder={onRenameFolder} emptyFolderPaths={emptyFolderPaths}
@@ -572,11 +615,26 @@ function SidebarFileTree({
   const paddingLeft = (depth - 1) * 12;
 
   if (node.isFolder) {
+    const collectFilePaths = (n: FileTreeNode): string[] => {
+      const result: string[] = [];
+      for (const child of n.children.values()) {
+        if (child.isFolder) result.push(...collectFilePaths(child));
+        else result.push(child.path);
+      }
+      return result;
+    };
+    const folderFiles = collectFilePaths(node);
+    const allSelected = folderFiles.length > 0 && folderFiles.every((f) => selectedFiles.has(f));
+    const someSelected = !allSelected && folderFiles.some((f) => selectedFiles.has(f));
+
     return (
       <>
         <SidebarFolderItem
           node={node} paddingLeft={paddingLeft} isExpanded={isExpanded}
           hasChildren={hasChildren} isEmptyFolder={emptyFolderPaths.has(node.path)}
+          isChecked={allSelected}
+          isIndeterminate={someSelected}
+          onToggleSelection={() => onToggleFolderSelection(node.path)}
           onToggle={() => hasChildren && onToggleFolder(node.path)}
           onDelete={() => onDeleteFolder(node.path)}
           onRename={(newName) => {
@@ -590,7 +648,9 @@ function SidebarFileTree({
             key={child.path} node={child} depth={depth + 1}
             expandedFolders={expandedFolders} selectedFiles={selectedFiles}
             pinnedFiles={pinnedFiles} onToggleFolder={onToggleFolder}
-            onToggleSelection={onToggleSelection} onPreview={onPreview}
+            onToggleSelection={onToggleSelection}
+            onToggleFolderSelection={onToggleFolderSelection}
+            onPreview={onPreview}
             onDownload={onDownload} onDelete={onDelete}
             onDeleteFolder={onDeleteFolder} onRenameFile={onRenameFile}
             onRenameFolder={onRenameFolder} emptyFolderPaths={emptyFolderPaths}
@@ -629,6 +689,9 @@ interface SidebarFolderItemProps {
   isExpanded: boolean;
   hasChildren: boolean;
   isEmptyFolder: boolean;
+  isChecked: boolean;
+  isIndeterminate: boolean;
+  onToggleSelection: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onRename: (newName: string) => Promise<boolean>;
@@ -636,6 +699,7 @@ interface SidebarFolderItemProps {
 
 function SidebarFolderItem({
   node, paddingLeft, isExpanded, hasChildren, isEmptyFolder,
+  isChecked, isIndeterminate, onToggleSelection,
   onToggle, onDelete, onRename,
 }: SidebarFolderItemProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -660,6 +724,12 @@ function SidebarFolderItem({
       style={{ paddingLeft }}
       onClick={onToggle}
     >
+      <Checkbox
+        checked={isChecked || isIndeterminate}
+        className={cn("h-3.5 w-3.5", isIndeterminate && "opacity-60")}
+        onCheckedChange={() => onToggleSelection()}
+        onClick={(e) => e.stopPropagation()}
+      />
       {hasChildren ? (
         isExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
           : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -738,9 +808,7 @@ function SidebarFileItem({
     >
       <Checkbox
         checked={isSelected}
-        onCheckedChange={() => onToggleSelection()}
-        onClick={(e) => e.stopPropagation()}
-        className="h-3.5 w-3.5"
+        className="h-3.5 w-3.5 pointer-events-none"
       />
       <div className="relative">
         <File className="h-3 w-3 shrink-0 text-muted-foreground" />
