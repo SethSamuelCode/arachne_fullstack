@@ -211,8 +211,18 @@ function ChatUI({
     id: "chat-files-sidebar",
   });
 
+  // Determine layout based on sidebar state
+  // When sidebar opens, use saved layout or default to 70/30 split
+  const effectiveLayout = sidebarOpen
+    ? (defaultLayout && defaultLayout.length === 2 ? defaultLayout : [70, 30])
+    : undefined;
+
   return (
-    <PanelGroup orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
+    <PanelGroup 
+      orientation="horizontal" 
+      defaultLayout={effectiveLayout} 
+      onLayoutChanged={sidebarOpen ? onLayoutChanged : undefined}
+    >
       <Panel minSize={40}>
         <div className="flex flex-col h-full mx-auto w-full">
           <div
@@ -316,7 +326,7 @@ function ChatUI({
       {sidebarOpen && (
         <>
           <PanelResizeHandle className="hidden md:flex w-1.5 bg-border hover:bg-primary/20 transition-colors" />
-          <Panel defaultSize={40} minSize={25} className="hidden md:flex">
+          <Panel defaultSize={30} minSize={25} className="hidden md:flex">
             <ChatFilesSidebar conversationId={currentConversationId ?? null} />
           </Panel>
         </>

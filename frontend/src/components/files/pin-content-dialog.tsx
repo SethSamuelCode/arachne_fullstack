@@ -90,9 +90,13 @@ export function PinContentDialog({
   const handlePin = async () => {
     if (!currentConversationId || selectedFiles.length === 0) return;
 
+    // Merge with existing pinned files (additive pinning)
+    const existingFiles = pinnedInfo?.file_paths ?? [];
+    const allFiles = [...new Set([...existingFiles, ...selectedFiles])];
+
     // Use user's default model to ensure cache key matches during chat
     const modelName = user?.default_model || "gemini-2.5-flash";
-    const success = await pinContent(currentConversationId, selectedFiles, modelName);
+    const success = await pinContent(currentConversationId, allFiles, modelName);
     if (success) {
       onPinComplete?.();
     }

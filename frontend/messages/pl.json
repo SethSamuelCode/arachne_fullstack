@@ -90,7 +90,7 @@
     "noConversation": "Najpierw wybierz konwersację",
     "existingPinned": "Zawartość już przypięta",
     "showDetails": "Pokaż szczegóły",
-    "willReplace": "Przypięcie nowej zawartości zastąpi istniejącą",
+    "willReplace": "Wybrane pliki zostaną dodane do istniejącej przypiętej zawartości",
     "selectedFiles": "{count, plural, =1 {1 plik wybrany} few {# pliki wybrane} other {# plików wybranych}}",
     "filesCount": "{count, plural, =1 {1 plik} few {# pliki} other {# plików}}",
     "phaseFetching": "Pobieranie plików...",

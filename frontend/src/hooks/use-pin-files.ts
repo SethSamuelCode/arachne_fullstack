@@ -107,7 +107,7 @@ export function usePinFiles({
   }, [conversationId, pinnedInfo, setStalenessData]);
 
   /**
-   * Pin files to conversation cache
+   * Pin files to conversation cache (additive - merges with existing pinned files)
    */
   const pinFiles = useCallback(
     async (filePaths: string[]) => {
@@ -115,6 +115,10 @@ export function usePinFiles({
         setError("Please select at least one file to pin");
         return;
       }
+
+      // Merge with existing pinned files (additive pinning)
+      const existingFiles = pinnedInfo?.file_paths ?? [];
+      const allFiles = [...new Set([...existingFiles, ...filePaths])];
 
       setError(null);
       setIsPinning(true);
@@ -125,7 +129,7 @@ export function usePinFiles({
 
       try {
         const request: PinContentRequest = {
-          s3_paths: filePaths,
+          s3_paths: allFiles,
           model_name: modelName,
         };
 
@@ -174,7 +178,7 @@ export function usePinFiles({
         abortControllerRef.current = null;
       }
     },
-    [conversationId, setIsPinning, setPinProgress, fetchPinnedContent]
+    [conversationId, pinnedInfo, modelName, setIsPinning, setPinProgress, fetchPinnedContent]
   );
 
   /**

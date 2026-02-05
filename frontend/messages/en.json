@@ -90,7 +90,7 @@
     "noConversation": "Please select a conversation first",
     "existingPinned": "Content already pinned",
     "showDetails": "Show details",
-    "willReplace": "Pinning new content will replace existing pinned content",
+    "willReplace": "Selected files will be added to existing pinned content",
     "selectedFiles": "{count, plural, =1 {1 file selected} other {# files selected}}",
     "filesCount": "{count, plural, =1 {1 file} other {# files}}",
     "phaseFetching": "Fetching files...",
