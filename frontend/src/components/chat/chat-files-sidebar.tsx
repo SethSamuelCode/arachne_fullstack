@@ -353,7 +353,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
   const selectedCount = selectedFiles.size;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full overflow-hidden">
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
       <input
         type="file" ref={folderInputRef} onChange={handleFolderSelect}
@@ -531,7 +531,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
       </div>
 
       <Dialog open={previewData !== null || isLoadingPreview} onOpenChange={(open) => !open && setPreviewData(null)}>
-        <DialogContent className="max-w-md max-h-[500px]">
+        <DialogContent className="w-[80vw] max-w-[80vw] h-[80vh] max-h-[80vh]">
           <DialogHeader>
             <DialogTitle className="text-sm truncate">
               {previewData?.key?.split("/").pop() || "Loading..."}
@@ -876,7 +876,7 @@ function FilePreviewContent({ data, isLoading }: { data: FilePreviewData | null;
   if (data.presigned_url) {
     return (
       <div className="flex flex-col items-center">
-        <img src={data.presigned_url} alt={data.key} className="max-w-full max-h-[300px] object-contain rounded" />
+        <img src={data.presigned_url} alt={data.key} className="max-w-full max-h-[calc(80vh-8rem)] object-contain rounded" />
         <p className="text-xs text-muted-foreground mt-2">{formatFileSize(data.size)}</p>
       </div>
     );
@@ -892,11 +892,11 @@ function FilePreviewContent({ data, isLoading }: { data: FilePreviewData | null;
           </div>
         )}
         {isMarkdown ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto text-xs">
+          <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto max-h-[calc(80vh-8rem)] text-xs">
             <MarkdownContent content={data.content} />
           </div>
         ) : (
-          <pre className="text-xs whitespace-pre-wrap break-all font-mono bg-muted p-2 rounded-md overflow-auto max-h-[300px]">
+          <pre className="text-xs whitespace-pre-wrap break-all font-mono bg-muted p-2 rounded-md overflow-auto max-h-[calc(80vh-8rem)]">
             {data.content}
           </pre>
         )}
