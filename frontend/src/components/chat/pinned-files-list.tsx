@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertTriangle, File, RefreshCw, Trash2, Loader2 } from "lucide-react";
 import { usePinFiles } from "@/hooks/use-pin-files";
+import { useAuthStore } from "@/stores";
 import { PinProgressDialog } from "./pin-progress-dialog";
 import { formatDistanceToNow } from "date-fns";
 
@@ -26,6 +27,7 @@ export function PinnedFilesListDialog({
   conversationId,
 }: PinnedFilesListDialogProps) {
   const [showProgressDialog, setShowProgressDialog] = useState(false);
+  const { user } = useAuthStore();
 
   const {
     pinnedInfo,
@@ -37,6 +39,7 @@ export function PinnedFilesListDialog({
     clearPinned,
   } = usePinFiles({
     conversationId,
+    modelName: user?.default_model,
     autoFetch: true,
     autoCheckStaleness: true,
   });

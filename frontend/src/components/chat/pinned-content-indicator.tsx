@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Pin, AlertTriangle, Loader2 } from "lucide-react";
 import { PinnedFilesListDialog } from "./pinned-files-list";
 import { usePinFiles } from "@/hooks/use-pin-files";
+import { useAuthStore } from "@/stores";
 import { cn } from "@/lib/utils";
 
 export interface PinnedContentIndicatorProps {
@@ -16,6 +17,7 @@ export function PinnedContentIndicator({
   conversationId,
 }: PinnedContentIndicatorProps) {
   const [showListDialog, setShowListDialog] = useState(false);
+  const { user } = useAuthStore();
 
   const {
     pinnedInfo,
@@ -23,6 +25,7 @@ export function PinnedContentIndicator({
     isPinning,
   } = usePinFiles({
     conversationId: conversationId || "",
+    modelName: user?.default_model,
     autoFetch: !!conversationId,
     autoCheckStaleness: !!conversationId,
   });

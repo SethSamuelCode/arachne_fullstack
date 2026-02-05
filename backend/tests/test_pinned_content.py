@@ -11,6 +11,7 @@ from uuid import uuid4
 from datetime import datetime, UTC
 
 from app.agents.repo_serializer import (
+    REPOSITORY_CONTEXT_PREAMBLE,
     calculate_content_hash,
     calculate_file_hash,
     calculate_file_hashes,
@@ -231,15 +232,20 @@ class TestBuildXmlWrapper:
     """Tests for XML structure building."""
 
     def test_empty_files(self):
-        """Empty dict produces minimal wrapper."""
+        """Empty dict produces minimal wrapper with preamble."""
         xml = build_xml_wrapper({})
+        assert REPOSITORY_CONTEXT_PREAMBLE.strip() in xml
         assert "<repository_context>" in xml
         assert "</repository_context>" in xml
 
     def test_single_file(self):
-        """Single file is wrapped correctly."""
+        """Single file is wrapped correctly with preamble."""
         files = {"main.py": "print('hello')"}
         xml = build_xml_wrapper(files)
+        # Verify preamble comes before repository_context
+        preamble_pos = xml.find(REPOSITORY_CONTEXT_PREAMBLE.strip().split('\n')[0])
+        context_pos = xml.find("<repository_context>")
+        assert preamble_pos < context_pos
         assert '<file path="main.py">' in xml
         assert "print('hello')" in xml
         assert "</file>" in xml

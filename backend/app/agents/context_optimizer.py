@@ -450,8 +450,17 @@ async def get_cached_content(
         )
 
         # Build cache config
+        # Conditionally append priority directive when pinned content is provided
+        effective_prompt = prompt
+        if pinned_parts:
+            effective_prompt = prompt + PINNED_CONTENT_PRIORITY_DIRECTIVE
+            logger.info(
+                f"Appended pinned content priority directive to system prompt "
+                f"(prompt length: {len(prompt)} -> {len(effective_prompt)})"
+            )
+
         cache_config: dict[str, Any] = {
-            "system_instruction": prompt,
+            "system_instruction": effective_prompt,
             "tools": tools,
             "tool_config": tool_config,
             "ttl": f"{CACHE_TTL_SECONDS + 300}s",  # 60 min on Gemini side
@@ -485,6 +494,15 @@ async def get_cached_content(
 
 # Keep the old function name as an alias for backwards compatibility
 get_cached_system_prompt = get_cached_content
+
+# Priority directive appended to system prompt when pinned content is provided
+PINNED_CONTENT_PRIORITY_DIRECTIVE = """
+
+### Pinned Repository Context
+When <repository_context> is provided in this conversation, you MUST check it BEFORE using any search tools.
+Do not use web search if the answer exists in the pinned repository context.
+Cite answers derived from this context as "Internal Context".
+"""
 
 async def invalidate_cached_content(
     prompt: str,

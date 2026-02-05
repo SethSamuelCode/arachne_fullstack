@@ -15,6 +15,8 @@ import type {
 export interface UsePinFilesOptions {
   /** Conversation ID */
   conversationId: string;
+  /** Model name for cache (should match chat model for cache hit) */
+  modelName?: string;
   /** Auto-fetch pinned content on mount */
   autoFetch?: boolean;
   /** Auto-check staleness on mount and periodically */
@@ -48,6 +50,7 @@ export interface UsePinFilesReturn {
 
 export function usePinFiles({
   conversationId,
+  modelName,
   autoFetch = true,
   autoCheckStaleness = true,
   stalenessCheckInterval = 5 * 60 * 1000, // 5 minutes
@@ -123,6 +126,7 @@ export function usePinFiles({
       try {
         const request: PinContentRequest = {
           s3_paths: filePaths,
+          model_name: modelName,
         };
 
         for await (const event of apiClient.pinFiles(conversationId, request)) {

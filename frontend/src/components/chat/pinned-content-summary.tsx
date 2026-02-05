@@ -14,6 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { usePinFiles } from "@/hooks/use-pin-files";
+import { useAuthStore } from "@/stores";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,7 @@ function getChangedFileCount(stalenessData: {
 
 export function PinnedContentSummary({ conversationId }: PinnedContentSummaryProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user } = useAuthStore();
 
   const {
     pinnedInfo,
@@ -58,6 +60,7 @@ export function PinnedContentSummary({ conversationId }: PinnedContentSummaryPro
     clearPinned,
   } = usePinFiles({
     conversationId: conversationId || "",
+    modelName: user?.default_model,
     autoFetch: !!conversationId,
     autoCheckStaleness: !!conversationId,
   });

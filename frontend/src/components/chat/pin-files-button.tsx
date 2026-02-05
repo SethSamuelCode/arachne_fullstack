@@ -7,7 +7,7 @@ import { FileBrowser } from "@/components/files/file-browser";
 import { PinProgressDialog } from "./pin-progress-dialog";
 import { usePinFiles } from "@/hooks/use-pin-files";
 import { useConversations } from "@/hooks/use-conversations";
-import { useConversationStore } from "@/stores";
+import { useConversationStore, useAuthStore } from "@/stores";
 import { usePinnedContentStore } from "@/stores/pinned-content-store";
 import { apiClient } from "@/lib/api-client";
 import type {
@@ -26,6 +26,7 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
   const [showProgressDialog, setShowProgressDialog] = useState(false);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
 
+  const { user } = useAuthStore();
   const { createConversation } = useConversations();
   const { setCurrentConversationId } = useConversationStore();
   const {
@@ -38,6 +39,7 @@ export function PinFilesButton({ conversationId }: PinFilesButtonProps) {
 
   const { pinFiles, error } = usePinFiles({
     conversationId: conversationId || "",
+    modelName: user?.default_model,
     autoFetch: false,
     autoCheckStaleness: false,
   });

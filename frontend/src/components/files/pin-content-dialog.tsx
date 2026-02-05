@@ -18,7 +18,7 @@ import {
   type PinWarning,
   type PinnedContentInfo,
 } from "@/hooks/use-pin-content";
-import { useConversationStore } from "@/stores";
+import { useConversationStore, useAuthStore } from "@/stores";
 import {
   Pin,
   Loader2,
@@ -55,6 +55,7 @@ export function PinContentDialog({
   const t = useTranslations("pinContent");
   const tCommon = useTranslations("common");
   const { currentConversationId } = useConversationStore();
+  const { user } = useAuthStore();
 
   const {
     isPinning,
@@ -89,7 +90,9 @@ export function PinContentDialog({
   const handlePin = async () => {
     if (!currentConversationId || selectedFiles.length === 0) return;
 
-    const success = await pinContent(currentConversationId, selectedFiles);
+    // Use user's default model to ensure cache key matches during chat
+    const modelName = user?.default_model || "gemini-2.5-flash";
+    const success = await pinContent(currentConversationId, selectedFiles, modelName);
     if (success) {
       onPinComplete?.();
     }

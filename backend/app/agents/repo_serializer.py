@@ -279,19 +279,26 @@ def escape_xml_content(content: str) -> str:
     return html.escape(content, quote=False)
 
 
+# Preamble prepended to pinned content XML to instruct model on priority
+REPOSITORY_CONTEXT_PREAMBLE = """The following files were pinned by the user as authoritative reference material.
+Answer questions from this data before searching externally.
+"""
+
+
 def build_xml_wrapper(text_files: dict[str, str]) -> str:
     """Build XML structure for text files.
 
     Creates a <repository_context> XML document with each file
-    wrapped in a <file path="..."> element.
+    wrapped in a <file path="..."> element. Includes a preamble
+    instructing the model to prioritize this content.
 
     Args:
         text_files: Dict mapping file paths to text content.
 
     Returns:
-        XML-formatted string.
+        XML-formatted string with preamble.
     """
-    lines = ['<repository_context>']
+    lines = [REPOSITORY_CONTEXT_PREAMBLE.strip(), '', '<repository_context>']
 
     # Sort files for consistent ordering
     for path in sorted(text_files.keys()):
@@ -364,6 +371,10 @@ def serialize_content(
         xml_content = build_xml_wrapper(text_files)
         parts.append(genai_types.Part(text=xml_content))
         total_tokens += estimate_tokens(xml_content)
+        logger.info(
+            f"Serialized {len(text_files)} text files with preamble "
+            f"(total XML length: {len(xml_content)} chars)"
+        )
 
     # Add binary files as inline data
     for path, content, mime_type in binary_files:

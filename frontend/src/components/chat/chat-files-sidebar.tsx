@@ -12,6 +12,7 @@ import {
   formatFileSize,
   type FileTreeNode,
 } from "@/stores/files-store";
+import { useAuthStore } from "@/stores";
 import { usePinFiles } from "@/hooks/use-pin-files";
 import { apiClient } from "@/lib/api-client";
 import { MarkdownContent } from "@/components/chat/markdown-content";
@@ -72,6 +73,7 @@ interface ChatFilesSidebarProps {
 }
 
 export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatFilesSidebarProps) {
+  const { user } = useAuthStore();
   const {
     files,
     emptyFolders,
@@ -96,6 +98,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
     pinFiles,
   } = usePinFiles({
     conversationId: conversationId || "",
+    modelName: user?.default_model,
     autoFetch: !!conversationId,
     autoCheckStaleness: false,
   });
