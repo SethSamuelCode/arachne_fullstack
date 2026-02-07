@@ -5,9 +5,9 @@
 **arachne_fullstack** is an AI-powered chat application built on a full-stack FastAPI + Next.js architecture. The AI assistant ("Arachne") uses Google Gemini models via PydanticAI with tool support including academic search, web extraction, image generation, and Python code execution in sandboxed Docker containers.
 
 **Stack:**
-- **Backend:** FastAPI, Pydantic v2, PostgreSQL (async via asyncpg), JWT auth (EdDSA/HS256), Redis, PydanticAI, Celery, SQLAdmin
+- **Backend:** FastAPI, Pydantic v2, PostgreSQL (async via asyncpg), JWT auth (EdDSA), Redis, PydanticAI, Celery, SQLAdmin
 - **Frontend:** Next.js 15 (App Router), React 19, TypeScript, Zustand, Tailwind CSS 4, shadcn/ui, next-intl (i18n)
-- **Infrastructure:** Docker Compose, MinIO (S3-compatible storage), Traefik (production), Logfire (observability)
+- **Infrastructure:** Docker Compose, MinIO (S3-compatible storage), Logfire (observability)
 - **Python:** 3.13+, managed with `uv`
 - **Node:** Bun runtime for frontend
 
@@ -51,7 +51,7 @@ make docker-frontend  # Start frontend separately (port 3552)
 make docker-db        # Start only PostgreSQL (port 5432)
 make docker-redis     # Start only Redis (port 6379)
 
-# Docker (Production with Traefik)
+# Docker (Production)
 make docker-prod      # Start production stack
 make docker-prod-down # Stop production stack
 make docker-rebuild-and-deploy-all  # Rebuild + deploy all services
