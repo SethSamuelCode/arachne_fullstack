@@ -11,6 +11,7 @@ import { useConversationStore } from "@/stores";
 interface UseChatOptions {
   conversationId?: string | null;
   onConversationCreated?: (conversationId: string) => void;
+  ensureConversation?: () => Promise<string | null>;
 }
 
 /**
@@ -25,7 +26,7 @@ interface AttachmentPayload {
 }
 
 export function useChat(options: UseChatOptions = {}) {
-  const { conversationId, onConversationCreated } = options;
+  const { conversationId, onConversationCreated, ensureConversation } = options;
   const { setCurrentConversationId } = useConversationStore();
   const {
     messages,
@@ -66,6 +67,12 @@ export function useChat(options: UseChatOptions = {}) {
           const { conversation_id } = wsEvent.data as { conversation_id: string };
           setCurrentConversationId(conversation_id);
           onConversationCreated?.(conversation_id);
+          break;
+        }
+
+        case "conversation_updated": {
+          const { conversation_id, title } = wsEvent.data as { conversation_id: string; title: string };
+          useConversationStore.getState().updateConversation(conversation_id, { title });
           break;
         }
 
@@ -204,7 +211,13 @@ export function useChat(options: UseChatOptions = {}) {
   });
 
   const sendChatMessage = useCallback(
-    (content: string, attachments?: ChatAttachment[], systemPrompt?: string) => {
+    async (content: string, attachments?: ChatAttachment[], systemPrompt?: string) => {
+      // Ensure a conversation exists before sending
+      let activeConversationId = conversationId || null;
+      if (!activeConversationId && ensureConversation) {
+        activeConversationId = await ensureConversation();
+      }
+
       // Only include uploaded attachments
       const uploadedAttachments = attachments?.filter(a => a.status === "uploaded") || [];
 
@@ -230,12 +243,12 @@ export function useChat(options: UseChatOptions = {}) {
       setIsProcessing(true);
       sendMessage({
         message: content,
-        conversation_id: conversationId || null,
+        conversation_id: activeConversationId,
         system_prompt: systemPrompt,
         attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
       });
     },
-    [addMessage, sendMessage, conversationId]
+    [addMessage, sendMessage, conversationId, ensureConversation]
   );
 
   return {

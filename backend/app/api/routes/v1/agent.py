@@ -430,7 +430,7 @@ async def agent_websocket(
                         )
                         conv_data = ConversationCreate(
                             user_id=user.id,
-                            title=user_message[:50] if len(user_message) > 50 else user_message,
+                            title=None,
                             system_prompt=conv_system_prompt,
                         )
                         conversation = await conv_service.create_conversation(conv_data)
@@ -804,6 +804,27 @@ async def agent_websocket(
                                 )
                     except Exception as e:
                         logger.warning(f"Failed to persist assistant response: {e}")
+
+                    # Generate title for new conversations (non-blocking)
+                    try:
+                        async with get_db_context() as db:
+                            conv_service = get_conversation_service(db)
+                            title = await conv_service.generate_and_set_title(
+                                UUID(current_conversation_id),
+                                user_message,
+                                agent_run.result.output,
+                            )
+                            if title:
+                                await manager.send_event(
+                                    websocket,
+                                    "conversation_updated",
+                                    {
+                                        "conversation_id": current_conversation_id,
+                                        "title": title,
+                                    },
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to generate conversation title: {e}")
 
                 # Handle case where assistant message was created but agent didn't complete
                 elif current_conversation_id and assistant_message_id is not None:

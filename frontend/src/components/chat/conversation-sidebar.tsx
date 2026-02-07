@@ -47,9 +47,7 @@ function ConversationItem({
     setIsEditing(false);
   };
 
-  const displayTitle =
-    conversation.title ||
-    `Chat ${new Date(conversation.created_at).toLocaleDateString()}`;
+  const displayTitle = conversation.title || "New conversation";
 
   return (
     <div

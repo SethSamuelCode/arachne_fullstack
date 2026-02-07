@@ -98,6 +98,7 @@ export type WSEventType =
   | "complete"
   | "error"
   | "conversation_created"
+  | "conversation_updated"
   | "message_saved";
 
 export interface WSEvent {

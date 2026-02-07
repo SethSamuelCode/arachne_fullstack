@@ -39,7 +39,7 @@ export function ChatContainer() {
 function AuthenticatedChatContainer() {
   const { currentConversationId, currentMessages, conversations } = useConversationStore();
   const { addMessage: addChatMessage } = useChatStore();
-  const { fetchConversations, updateConversationDetails } = useConversations();
+  const { fetchConversations, updateConversationDetails, ensureConversation } = useConversations();
   const prevConversationIdRef = useRef<string | null | undefined>(undefined);
   
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -77,6 +77,7 @@ function AuthenticatedChatContainer() {
   } = useChat({
     conversationId: currentConversationId,
     onConversationCreated: handleConversationCreated,
+    ensureConversation,
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -168,6 +169,7 @@ function AuthenticatedChatContainer() {
       setSystemPrompt={setSystemPrompt}
       onSystemPromptSave={handleSystemPromptSave}
       currentConversationId={currentConversationId}
+      ensureConversation={ensureConversation}
     />
   );
 }
@@ -185,6 +187,7 @@ interface ChatUIProps {
   setSystemPrompt?: (prompt: string) => void;
   onSystemPromptSave?: (prompt: string) => Promise<void>;
   currentConversationId?: string | null;
+  ensureConversation?: () => Promise<string | null>;
 }
 
 function ChatUI({
@@ -200,6 +203,7 @@ function ChatUI({
   setSystemPrompt,
   onSystemPromptSave,
   currentConversationId,
+  ensureConversation,
 }: ChatUIProps) {
   const { isOpen: sidebarOpen, toggle: toggleSidebar } = useFilesSidebarStore();
   const stalenessData = usePinnedContentStore((s) => s.stalenessData);
@@ -326,7 +330,7 @@ function ChatUI({
         <>
           <PanelResizeHandle className="hidden md:flex w-1.5 bg-border hover:bg-primary/20 transition-colors" />
           <Panel defaultSize={30} minSize={25} className="hidden md:flex">
-            <ChatFilesSidebar conversationId={currentConversationId ?? null} />
+            <ChatFilesSidebar conversationId={currentConversationId ?? null} onConversationNeeded={ensureConversation} />
           </Panel>
         </>
       )}

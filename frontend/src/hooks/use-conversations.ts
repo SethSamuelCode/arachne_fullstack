@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { apiClient } from "@/lib/api-client";
 import { useConversationStore, useChatStore } from "@/stores";
 import type {
@@ -168,14 +168,33 @@ export function useConversations() {
     [updateConversation, setError]
   );
 
-  const startNewChat = useCallback(async () => {
+  const creatingRef = useRef<Promise<string | null> | null>(null);
+
+  const ensureConversation = useCallback(async (): Promise<string | null> => {
+    const currentId = useConversationStore.getState().currentConversationId;
+    if (currentId) return currentId;
+    if (creatingRef.current) return creatingRef.current;
+
+    creatingRef.current = (async () => {
+      try {
+        const conv = await createConversation();
+        if (conv) {
+          setCurrentConversationId(conv.id);
+          return conv.id;
+        }
+        return null;
+      } finally {
+        creatingRef.current = null;
+      }
+    })();
+    return creatingRef.current;
+  }, [createConversation, setCurrentConversationId]);
+
+  const startNewChat = useCallback(() => {
     clearMessages();
     setCurrentMessages([]);
-    const newConversation = await createConversation();
-    if (newConversation) {
-      setCurrentConversationId(newConversation.id);
-    }
-  }, [clearMessages, setCurrentMessages, createConversation, setCurrentConversationId]);
+    setCurrentConversationId(null);
+  }, [clearMessages, setCurrentMessages, setCurrentConversationId]);
 
   return {
     conversations,
@@ -190,6 +209,7 @@ export function useConversations() {
     deleteConversation,
     renameConversation,
     updateConversationDetails,
+    ensureConversation,
     startNewChat,
   };
 }

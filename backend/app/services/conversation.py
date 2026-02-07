@@ -3,11 +3,13 @@
 Contains business logic for conversation, message, and tool call operations.
 """
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.db.models.conversation import Conversation, Message, ToolCall
 from app.repositories import conversation_repo
@@ -276,3 +278,67 @@ class ConversationService:
             completed_at=data.completed_at or datetime.utcnow(),
             success=data.success,
         )
+
+    # =========================================================================
+    # Title Generation
+    # =========================================================================
+
+    async def generate_and_set_title(
+        self,
+        conversation_id: UUID,
+        user_message: str,
+        assistant_response: str,
+    ) -> str | None:
+        """Generate an LLM title for a conversation and persist it.
+
+        Skips if the conversation already has a non-null title (manual rename).
+        Falls back to truncated user message on LLM failure.
+
+        Returns:
+            The new title, or None if title was already set.
+        """
+        conversation = await self.get_conversation(conversation_id)
+        if conversation.title is not None:
+            return None
+
+        title = await _generate_title_via_llm(user_message, assistant_response)
+        if not title:
+            title = user_message[:50]
+
+        await self.update_conversation(
+            conversation_id,
+            ConversationUpdate(title=title),
+        )
+        return title
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _generate_title_via_llm(user_message: str, assistant_response: str) -> str | None:
+    """Generate a short conversation title using a lightweight LLM.
+
+    Returns:
+        A 5-8 word title string, or None on failure.
+    """
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        prompt = (
+            "Generate a concise title (5-8 words) for a conversation that starts with:\n\n"
+            f"User: {user_message[:200]}\n\n"
+            f"Assistant: {assistant_response[:200]}\n\n"
+            "Reply with ONLY the title, no quotes, no punctuation at the end."
+        )
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=prompt,
+        )
+        title = response.text.strip().strip('"').strip("'")
+        if title:
+            return title[:80]
+        return None
+    except Exception as e:
+        logger.warning(f"LLM title generation failed: {e}")
+        return None
