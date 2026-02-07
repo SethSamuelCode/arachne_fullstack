@@ -36,8 +36,8 @@ export interface UsePinFilesReturn {
   pinProgress: PinProgress | null;
   /** Error message */
   error: string | null;
-  /** Pin files */
-  pinFiles: (filePaths: string[]) => Promise<void>;
+  /** Pin files (optionally override conversation ID for freshly-created conversations) */
+  pinFiles: (filePaths: string[], conversationIdOverride?: string) => Promise<void>;
   /** Check staleness */
   checkStaleness: () => Promise<void>;
   /** Repin files */
@@ -45,7 +45,7 @@ export interface UsePinFilesReturn {
   /** Clear pinned content */
   clearPinned: () => Promise<void>;
   /** Fetch pinned content metadata */
-  fetchPinnedContent: () => Promise<void>;
+  fetchPinnedContent: (conversationIdOverride?: string) => Promise<void>;
 }
 
 export function usePinFiles({
@@ -77,11 +77,13 @@ export function usePinFiles({
   /**
    * Fetch pinned content metadata from API
    */
-  const fetchPinnedContent = useCallback(async () => {
+  const fetchPinnedContent = useCallback(async (conversationIdOverride?: string) => {
+    const id = conversationIdOverride || conversationId;
+    if (!id) return;
     try {
-      const data = await apiClient.getPinnedContent(conversationId);
+      const data = await apiClient.getPinnedContent(id);
       if (data) {
-        setPinnedContent(conversationId, data);
+        setPinnedContent(id, data);
       }
     } catch (err) {
       console.error("Failed to fetch pinned content:", err);
@@ -110,9 +112,15 @@ export function usePinFiles({
    * Pin files to conversation cache (additive - merges with existing pinned files)
    */
   const pinFiles = useCallback(
-    async (filePaths: string[]) => {
+    async (filePaths: string[], conversationIdOverride?: string) => {
+      const effectiveConversationId = conversationIdOverride || conversationId;
       if (filePaths.length === 0) {
         setError("Please select at least one file to pin");
+        return;
+      }
+
+      if (!effectiveConversationId) {
+        setError("No conversation to pin files to");
         return;
       }
 
@@ -133,7 +141,7 @@ export function usePinFiles({
           model_name: modelName,
         };
 
-        for await (const event of apiClient.pinFiles(conversationId, request)) {
+        for await (const event of apiClient.pinFiles(effectiveConversationId, request)) {
           if (event.event === "progress") {
             const progressData = event.data as PinProgressEvent;
             const current = progressData.current ?? 0;
@@ -164,7 +172,7 @@ export function usePinFiles({
               total: completeData.file_count,
               tokens: completeData.total_tokens,
             });
-            await fetchPinnedContent();
+            await fetchPinnedContent(effectiveConversationId);
             break;
           }
         }

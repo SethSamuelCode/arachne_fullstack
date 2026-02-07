@@ -197,7 +197,7 @@ export function ChatFilesSidebar({ conversationId, onConversationNeeded }: ChatF
     if (!targetConversationId) return;
 
     try {
-      await pinFiles(paths);
+      await pinFiles(paths, targetConversationId);
       clearSelection();
     } catch (err) {
       console.error("Pin failed:", err);
