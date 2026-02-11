@@ -31,7 +31,7 @@ from pydantic_ai.messages import (
 
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
-from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
+from app.agents.prompts import DEFAULT_SYSTEM_PROMPT, SESSION_STATE_AWARENESS_BLOCK
 from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.clients.redis import RedisClient
@@ -452,9 +452,11 @@ async def agent_websocket(
 
             await manager.send_event(websocket, "user_prompt", {"content": user_message})
 
-            # Retrieve the system prompt for this conversation
+            # Retrieve the system prompt and compressed state for this conversation
             # Priority: conversation-specific > user default > global default
             system_prompt: str = DEFAULT_SYSTEM_PROMPT
+            compressed_state: dict | None = None
+            compressed_at_message_id: str | None = None
             if current_conversation_id:
                 async with get_db_context() as db:
                     conv_service = get_conversation_service(db)
@@ -465,6 +467,17 @@ async def agent_websocket(
                         system_prompt = current_conv.system_prompt
                     elif user.default_system_prompt:
                         system_prompt = user.default_system_prompt
+                    # Load compressed state if available
+                    if current_conv and current_conv.compressed_state:
+                        compressed_state = current_conv.compressed_state
+                        compressed_at_message_id = (
+                            str(current_conv.compressed_at_message_id)
+                            if current_conv.compressed_at_message_id
+                            else None
+                        )
+
+            # Append SessionState awareness block (always, to avoid cache invalidation)
+            system_prompt = system_prompt + SESSION_STATE_AWARENESS_BLOCK
             logger.info(
                 f"Using system prompt for conversation {current_conversation_id}: "
                 f"{system_prompt[:50]}..."
@@ -515,6 +528,8 @@ async def agent_websocket(
                     redis_client=redis_client,
                     pinned_content_hash=pinned_content_hash,
                     pinned_content_tokens=pinned_content_tokens,
+                    compressed_state=compressed_state,
+                    compressed_at_message_id=compressed_at_message_id,
                 )
                 model_history = optimized["history"]
                 logger.debug(
@@ -825,6 +840,31 @@ async def agent_websocket(
                                 )
                     except Exception as e:
                         logger.warning(f"Failed to generate conversation title: {e}")
+
+                    # Persist new compressed state if compression triggered
+                    if optimized.get("new_compressed_state"):
+                        try:
+                            # Find the last message ID for the compression boundary
+                            async with get_db_context() as db:
+                                conv_service = get_conversation_service(db)
+                                messages_list, _ = await conv_service.list_messages(
+                                    UUID(current_conversation_id), limit=10000
+                                )
+                                if messages_list:
+                                    # Use the latest message as boundary marker
+                                    # (all messages up to this point are covered)
+                                    boundary_msg_id = messages_list[-1].id
+                                    await conv_service.update_compressed_state(
+                                        UUID(current_conversation_id),
+                                        optimized["new_compressed_state"],
+                                        boundary_msg_id,
+                                    )
+                                    logger.info(
+                                        f"Persisted compressed state for conversation "
+                                        f"{current_conversation_id}"
+                                    )
+                        except Exception as e:
+                            logger.warning(f"Failed to persist compressed state: {e}")
 
                 # Handle case where assistant message was created but agent didn't complete
                 elif current_conversation_id and assistant_message_id is not None:

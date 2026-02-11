@@ -40,12 +40,16 @@ class OptimizedContext(TypedDict):
         cached_prompt_name: Gemini cache name if content was cached, None otherwise.
         system_prompt: The system prompt text if NOT cached, None if using cache.
         skip_tool_registration: If True, tools are in cache; skip register_tools().
+        new_compressed_state: New/updated SessionState to persist, or None.
+        new_compressed_at_message_id: Message ID boundary for new compression, or None.
     """
 
     history: list[ModelRequest | ModelResponse]
     cached_prompt_name: str | None
     system_prompt: str | None
     skip_tool_registration: bool
+    new_compressed_state: dict | None
+    new_compressed_at_message_id: str | None
 
 
 # Model context limits (input tokens) with 85% budget for responsiveness
@@ -544,6 +548,88 @@ async def invalidate_cached_content(
 invalidate_cached_prompt = invalidate_cached_content
 
 
+# Compression threshold: trigger when context exceeds this fraction of budget
+COMPRESSION_TRIGGER_THRESHOLD = 0.70
+
+
+async def compress_session_state(
+    messages: list[dict[str, str]],
+    previous_state: dict | None = None,
+    model_name: str = "gemini-2.5-flash",
+) -> dict | None:
+    """Compress conversation messages into a structured SessionState.
+
+    Uses Gemini with structured output (response_schema) to extract logos, pathos,
+    abstract, and conversation_summary from messages. When a previous state exists,
+    merges new information into it.
+
+    Args:
+        messages: Messages to compress as list of {"role": "...", "content": "..."}.
+        previous_state: Existing SessionState dict to merge with, or None for initial compression.
+        model_name: Gemini model to use for compression.
+
+    Returns:
+        SessionState as dict, or None on failure (graceful degradation).
+    """
+    from app.agents.prompts import (
+        SESSION_STATE_COMPRESSION_PROMPT,
+        SESSION_STATE_MERGE_PROMPT,
+    )
+    from app.schemas.conversation import SessionState
+
+    if not messages:
+        return None
+
+    try:
+        client = _get_genai_client()
+
+        # Format messages for the prompt
+        conversation_text = "\n".join(
+            f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages
+        )
+
+        if previous_state:
+            # Merge with existing state
+            import json
+
+            prompt = SESSION_STATE_MERGE_PROMPT.format(
+                previous_state=json.dumps(previous_state, indent=2),
+                new_messages=conversation_text,
+            )
+        else:
+            # Initial compression
+            prompt = SESSION_STATE_COMPRESSION_PROMPT.format(
+                conversation=conversation_text,
+            )
+
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": SessionState,
+            },
+        )
+
+        if response.text:
+            import json
+
+            state_dict = json.loads(response.text)
+            # Validate through Pydantic
+            state = SessionState(**state_dict)
+            logger.info(
+                f"Session state compressed: {len(state.logos)} logos, "
+                f"{len(state.pathos)} pathos, {len(state.abstract)} abstract"
+            )
+            return state.model_dump()
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"Session state compression failed (FIFO fallback): {e}")
+        return None
+
+
 async def optimize_context_window(
     history: list[dict[str, str]],
     model_name: str,
@@ -554,15 +640,22 @@ async def optimize_context_window(
     redis_client: "RedisClient | None" = None,
     pinned_content_hash: str | None = None,
     pinned_content_tokens: int = 0,
+    compressed_state: dict | None = None,
+    compressed_at_message_id: str | None = None,
 ) -> OptimizedContext:
-    """Optimize context window using tiered memory management.
+    """Optimize context window using tiered memory management with session state compression.
 
     Implements intelligent trimming with priority order:
     1. System prompt (via cached reference, accounted separately)
     2. Pinned content (files/media cached with system prompt)
-    3. Latest user query (always keep)
-    4. Recent tool calls/results (last 10 if present)
-    5. Older messages (FIFO trim from oldest until within budget)
+    3. SessionState synthetic pair (if compressed state exists)
+    4. Latest user query (always keep)
+    5. Recent tool calls/results (last 10 if present)
+    6. Older messages (FIFO trim from oldest until within budget)
+
+    When context exceeds 70% of budget, triggers LLM-powered compression of oldest
+    messages into a structured SessionState, preserving semantic context while
+    reducing token usage.
 
     When redis_client is provided, ENABLE_SYSTEM_PROMPT_CACHING is enabled,
     and tool_definitions are provided, both system prompt and tools are cached
@@ -578,14 +671,18 @@ async def optimize_context_window(
         redis_client: Optional Redis client for content caching.
         pinned_content_hash: Optional hash of pinned content for cache key derivation.
         pinned_content_tokens: Token count of pinned content (for budget calculation).
+        compressed_state: Existing SessionState dict from DB, or None.
+        compressed_at_message_id: Message ID boundary for existing compression, or None.
 
     Returns:
-        OptimizedContext with history, cached_prompt_name, system_prompt, and skip_tool_registration.
+        OptimizedContext with history, caching info, and optional new compression state.
     """
     # Attempt content caching if enabled and Redis is available
     cached_prompt_name: str | None = None
     effective_system_prompt: str | None = system_prompt
     skip_tool_registration: bool = False
+    new_compressed_state: dict | None = None
+    new_compressed_at_message_id: str | None = None
 
     if (
         system_prompt
@@ -615,10 +712,13 @@ async def optimize_context_window(
             cached_prompt_name=cached_prompt_name,
             system_prompt=effective_system_prompt,
             skip_tool_registration=skip_tool_registration,
+            new_compressed_state=None,
+            new_compressed_at_message_id=None,
         )
 
     # Get token budget for model (85% of max)
-    budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    total_budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    budget = total_budget
 
     # Reserve space for system prompt
     system_prompt_tokens = 0
@@ -633,56 +733,137 @@ async def optimize_context_window(
     # Reserve space for response (at least 8K tokens)
     budget -= 8192
 
+    # Account for existing compressed state synthetic pair
+    compressed_state_tokens = 0
+    if compressed_state:
+        state_text = json.dumps(compressed_state)
+        # Synthetic pair: user message with <session_state> + assistant "Understood."
+        compressed_state_tokens = _estimate_tokens(
+            f"<session_state>{state_text}</session_state>"
+        ) + _estimate_tokens("Understood.")
+        budget -= compressed_state_tokens
+
     # Always keep the latest message
     latest_msg = history[-1]
     latest_tokens = _estimate_tokens(latest_msg["content"])
     budget -= latest_tokens
 
-    # Process remaining history from newest to oldest
+    # Estimate total tokens for all remaining messages
     remaining_history = history[:-1]
-    optimized_messages: list[dict[str, str]] = []
-    current_tokens = 0
-
-    # Use cached token counts if available
     tokens_cache = tokens_used_cache or {}
+    message_tokens: list[int] = []
+    total_remaining_tokens = 0
+    for i, msg in enumerate(remaining_history):
+        tok = tokens_cache.get(i, _estimate_tokens(msg["content"]))
+        message_tokens.append(tok)
+        total_remaining_tokens += tok
 
-    for i, msg in enumerate(reversed(remaining_history)):
-        original_idx = len(remaining_history) - 1 - i
+    # Check if compression should trigger (70% of total budget used)
+    total_used = system_prompt_tokens + pinned_content_tokens + 8192 + compressed_state_tokens + latest_tokens + total_remaining_tokens
+    usage_ratio = total_used / total_budget if total_budget > 0 else 0
 
-        # Use cached count or estimate
-        msg_tokens = tokens_cache.get(original_idx, _estimate_tokens(msg["content"]))
+    if usage_ratio > COMPRESSION_TRIGGER_THRESHOLD and len(remaining_history) > 2:
+        # Compression trigger: compress oldest messages to get under 60% budget usage
+        target_tokens = int(total_budget * 0.60) - system_prompt_tokens - pinned_content_tokens - 8192 - latest_tokens
+        if target_tokens < 0:
+            target_tokens = budget  # Fallback: use remaining budget
 
-        if current_tokens + msg_tokens <= budget:
-            optimized_messages.append(msg)
-            current_tokens += msg_tokens
+        # Find how many messages to keep (from newest), compressing the rest
+        kept_tokens = 0
+        keep_from_idx = len(remaining_history)  # Start by keeping none
+
+        for i in range(len(remaining_history) - 1, -1, -1):
+            if kept_tokens + message_tokens[i] <= target_tokens:
+                kept_tokens += message_tokens[i]
+                keep_from_idx = i
+            else:
+                break
+
+        messages_to_compress = remaining_history[:keep_from_idx]
+        messages_to_keep = remaining_history[keep_from_idx:]
+
+        if messages_to_compress:
+            logger.info(
+                f"Compression triggered at {usage_ratio:.1%} budget usage: "
+                f"compressing {len(messages_to_compress)} oldest messages"
+            )
+
+            # Compress using LLM
+            new_state = await compress_session_state(
+                messages=messages_to_compress,
+                previous_state=compressed_state,
+                model_name=model_name,
+            )
+
+            if new_state is not None:
+                # Compression succeeded - use new state
+                compressed_state = new_state
+                new_compressed_state = new_state
+
+                # The boundary is the last message we compressed
+                # We use the content of the last compressed message as a marker
+                # (actual message ID will be resolved by the caller)
+                if messages_to_compress:
+                    new_compressed_at_message_id = messages_to_compress[-1].get(
+                        "message_id", ""
+                    )
+
+                # Recalculate compressed state tokens
+                state_text = json.dumps(compressed_state)
+                compressed_state_tokens = _estimate_tokens(
+                    f"<session_state>{state_text}</session_state>"
+                ) + _estimate_tokens("Understood.")
+
+                # Build optimized messages from kept messages only
+                optimized_messages = list(messages_to_keep)
+                optimized_messages.append(latest_msg)
+                current_tokens = kept_tokens
+            else:
+                # Compression failed - fall back to FIFO
+                logger.warning("Compression failed, falling back to FIFO truncation")
+                optimized_messages, current_tokens = _fifo_trim(
+                    remaining_history, message_tokens, budget
+                )
+                optimized_messages.append(latest_msg)
         else:
-            # Budget exceeded - stop including older messages
-            break
+            # Nothing to compress (all messages needed for budget)
+            optimized_messages = list(remaining_history)
+            optimized_messages.append(latest_msg)
+            current_tokens = total_remaining_tokens
+    else:
+        # Under threshold - include all messages that fit (standard FIFO)
+        optimized_messages, current_tokens = _fifo_trim(
+            remaining_history, message_tokens, budget
+        )
+        optimized_messages.append(latest_msg)
 
-    # Reverse to restore chronological order
-    optimized_messages.reverse()
-
-    # Add the latest message back
-    optimized_messages.append(latest_msg)
+    # Prepend compressed state as synthetic message pair
+    if compressed_state:
+        state_text = json.dumps(compressed_state)
+        synthetic_user = {"role": "user", "content": f"<session_state>{state_text}</session_state>"}
+        synthetic_assistant = {"role": "assistant", "content": "Understood."}
+        optimized_messages = [synthetic_user, synthetic_assistant, *optimized_messages]
 
     # Observability: log context optimization results
     total_messages = len(history)
     kept_messages = len(optimized_messages)
-    trimmed_count = total_messages - kept_messages
-    total_budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
-    tokens_used = current_tokens + latest_tokens + system_prompt_tokens + 8192  # Include reserves
+    tokens_used = current_tokens + latest_tokens + system_prompt_tokens + 8192 + compressed_state_tokens
     budget_pct = round((tokens_used / total_budget) * 100, 1)
     cache_status = "hit" if cached_prompt_name else "miss" if system_prompt else "n/a"
+    compression_status = "new" if new_compressed_state else ("active" if compressed_state else "none")
 
-    if trimmed_count > 0:
+    trimmed_count = total_messages - kept_messages
+    if trimmed_count > 0 or new_compressed_state:
         logger.info(
             f"Context optimization: kept {kept_messages}/{total_messages} messages, "
-            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), cache={cache_status}"
+            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), "
+            f"cache={cache_status}, compression={compression_status}"
         )
     else:
         logger.debug(
             f"Context optimization: all {total_messages} messages fit, "
-            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), cache={cache_status}"
+            f"{tokens_used}/{total_budget} tokens ({budget_pct}%), "
+            f"cache={cache_status}, compression={compression_status}"
         )
 
     # Convert to PydanticAI format
@@ -691,7 +872,38 @@ async def optimize_context_window(
         cached_prompt_name=cached_prompt_name,
         system_prompt=effective_system_prompt,
         skip_tool_registration=skip_tool_registration,
+        new_compressed_state=new_compressed_state,
+        new_compressed_at_message_id=new_compressed_at_message_id,
     )
+
+
+def _fifo_trim(
+    messages: list[dict[str, str]],
+    message_tokens: list[int],
+    budget: int,
+) -> tuple[list[dict[str, str]], int]:
+    """FIFO trim messages from oldest, keeping newest that fit in budget.
+
+    Args:
+        messages: Messages in chronological order.
+        message_tokens: Token counts corresponding to each message.
+        budget: Available token budget.
+
+    Returns:
+        Tuple of (kept messages in chronological order, total tokens used).
+    """
+    kept: list[dict[str, str]] = []
+    current_tokens = 0
+
+    for i in range(len(messages) - 1, -1, -1):
+        if current_tokens + message_tokens[i] <= budget:
+            kept.append(messages[i])
+            current_tokens += message_tokens[i]
+        else:
+            break
+
+    kept.reverse()
+    return kept, current_tokens
 
 
 def _to_pydantic_messages(

@@ -280,6 +280,28 @@ class ConversationService:
         )
 
     # =========================================================================
+    # Session State Compression
+    # =========================================================================
+
+    async def update_compressed_state(
+        self,
+        conversation_id: UUID,
+        compressed_state: dict,
+        compressed_at_message_id: UUID,
+    ) -> None:
+        """Persist compressed session state to the conversation.
+
+        Args:
+            conversation_id: Conversation to update.
+            compressed_state: Serialized SessionState dict.
+            compressed_at_message_id: Last message ID covered by compression.
+        """
+        conversation = await self.get_conversation(conversation_id)
+        conversation.compressed_state = compressed_state
+        conversation.compressed_at_message_id = compressed_at_message_id
+        await self.db.flush()
+
+    # =========================================================================
     # Title Generation
     # =========================================================================
 

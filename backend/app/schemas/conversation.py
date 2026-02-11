@@ -7,9 +7,30 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.schemas.base import BaseSchema, TimestampSchema
+
+# =============================================================================
+# Session State Compression
+# =============================================================================
+
+
+class SessionState(BaseModel):
+    """Compressed conversation state for semantic context preservation.
+
+    Fields map the rhetorical triangle into structured state variables:
+    - logos: Hard facts (zero loss tolerance)
+    - pathos: Emotional tone, metaphors, communication style
+    - abstract: Shared intellectual frameworks (condescension filter)
+    - conversation_summary: Narrative bridge between compressed and recent context
+    """
+
+    logos: list[str] = []
+    pathos: list[str] = []
+    abstract: list[str] = []
+    conversation_summary: str = ""
+
 
 # =============================================================================
 # Tool Call Schemas
@@ -122,6 +143,7 @@ class ConversationRead(ConversationBase, TimestampSchema):
     id: UUID
     user_id: UUID | None = None
     is_archived: bool = False
+    compressed_state: dict | None = None
 
 
 class ConversationReadWithMessages(ConversationRead):

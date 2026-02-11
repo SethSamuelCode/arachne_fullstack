@@ -42,6 +42,16 @@ class Conversation(TimestampMixin, SQLModel, table=True):
     system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     is_archived: bool = Field(default=False)
 
+    # Session state compression
+    compressed_state: dict | None = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+    )
+    compressed_at_message_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(PG_UUID(as_uuid=True), nullable=True),
+    )
+
     # Relationships
     messages: list["Message"] = Relationship(
         back_populates="conversation",
