@@ -35,23 +35,7 @@ active metaphors or running jokes, communication style preferences, implicit nee
 understands (these should not be re-explained), agreed-upon premises.
 - "conversation_summary": 2-3 sentence narrative of what happened and where \
 things left off.
-
+{previous_state_block}
 <conversation>
 {conversation}
 </conversation>"""
-
-SESSION_STATE_MERGE_PROMPT = """\
-You are a conversation state compiler. You have an existing session state \
-from earlier compression and new messages to incorporate.
-
-<previous_state>
-{previous_state}
-</previous_state>
-
-<new_messages>
-{new_messages}
-</new_messages>
-
-Produce a MERGED SessionState that combines the previous state with new \
-information. Update fields that have changed, keep fields still relevant, \
-drop anything contradicted or no longer applicable. Do not duplicate entries."""

@@ -555,7 +555,7 @@ COMPRESSION_TRIGGER_THRESHOLD = 0.70
 async def compress_session_state(
     messages: list[dict[str, str]],
     previous_state: dict | None = None,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3-flash-preview",
 ) -> dict | None:
     """Compress conversation messages into a structured SessionState.
 
@@ -571,10 +571,7 @@ async def compress_session_state(
     Returns:
         SessionState as dict, or None on failure (graceful degradation).
     """
-    from app.agents.prompts import (
-        SESSION_STATE_COMPRESSION_PROMPT,
-        SESSION_STATE_MERGE_PROMPT,
-    )
+    from app.agents.prompts import SESSION_STATE_COMPRESSION_PROMPT
     from app.schemas.conversation import SessionState
 
     if not messages:
@@ -588,19 +585,21 @@ async def compress_session_state(
             f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages
         )
 
+        # Build optional previous state block for merging
         if previous_state:
-            # Merge with existing state
-            import json
-
-            prompt = SESSION_STATE_MERGE_PROMPT.format(
-                previous_state=json.dumps(previous_state, indent=2),
-                new_messages=conversation_text,
+            previous_state_block = (
+                "\n\nYou have an existing session state from earlier compression. "
+                "Merge it with the new conversation: update changed fields, keep "
+                "relevant ones, drop contradicted entries. Do not duplicate.\n\n"
+                f"<previous_state>\n{json.dumps(previous_state, indent=2)}\n</previous_state>\n"
             )
         else:
-            # Initial compression
-            prompt = SESSION_STATE_COMPRESSION_PROMPT.format(
-                conversation=conversation_text,
-            )
+            previous_state_block = ""
+
+        prompt = SESSION_STATE_COMPRESSION_PROMPT.format(
+            conversation=conversation_text,
+            previous_state_block=previous_state_block,
+        )
 
         response = await client.aio.models.generate_content(
             model=model_name,
