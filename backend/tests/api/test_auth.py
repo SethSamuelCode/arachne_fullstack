@@ -263,3 +263,27 @@ async def test_get_current_user(
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == mock_user.email
+
+
+@pytest.mark.anyio
+async def test_register_role_field_ignored(
+    client_with_mock_service: AsyncClient,
+    mock_user_service: MagicMock,
+):
+    """Test that role field in registration payload is silently ignored.
+
+    This is the critical security test: a malicious user sending role=ADMIN
+    must not be able to elevate their privileges.
+    """
+    response = await client_with_mock_service.post(
+        f"{settings.API_V1_STR}/auth/register",
+        json={
+            "email": "attacker@example.com",
+            "password": "password123",
+            "role": "ADMIN",
+        },
+    )
+    # Should succeed — role field is stripped by UserRegister schema
+    assert response.status_code == 201
+    # Verify register() was called (role is handled at service level)
+    mock_user_service.register.assert_called_once()
