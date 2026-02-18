@@ -33,7 +33,11 @@ class UserCreate(BaseSchema):
 
 
 class UserRegister(BaseSchema):
-    """Schema for public user registration. No role field — always USER."""
+    """Schema for public user registration. No role field — always USER.
+
+    Accepts 'name' or 'full_name' as input keys for the full_name field.
+    Serializes as 'full_name'.
+    """
 
     email: EmailStr = Field(max_length=255)
     password: str = Field(min_length=8, max_length=128)
