@@ -10,7 +10,7 @@ from app.core.exceptions import AuthenticationError
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, create_refresh_token
 from app.schemas.token import RefreshTokenRequest, Token, TokenWithUser
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserRead, UserRegister
 
 router = APIRouter()
 
@@ -65,12 +65,17 @@ async def login(
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
 async def register(
-    user_in: UserCreate,
+    request: Request,
+    user_in: UserRegister,
     user_service: UserSvc,
     settings_service: RuntimeSettingsSvc,
 ):
     """Register a new user.
+
+    Rate limited to 3 attempts per minute.
+    Role is always USER — role field in payload is ignored.
 
     Raises:
         HTTPException 403: If registration is disabled by admin.
@@ -82,9 +87,7 @@ async def register(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Registration is currently disabled",
         )
-
-    user = await user_service.register(user_in)
-    return user
+    return await user_service.register(user_in)
 
 
 @router.post("/refresh", response_model=Token)
