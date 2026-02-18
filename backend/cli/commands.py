@@ -219,7 +219,7 @@ def user_create(email: str, password: str, role: str, superuser: bool):
             user_service = UserService(session)
             try:
                 user_in = UserCreate(email=email, password=password, role=UserRole(role))
-                user = await user_service.register(user_in)
+                user = await user_service.create_by_admin(user_in)
 
                 if superuser:
                     user.is_superuser = True
@@ -260,7 +260,7 @@ def user_create_admin(email: str, password: str):
             user_service = UserService(session)
             try:
                 user_in = UserCreate(email=email, password=password, role=UserRole.ADMIN)
-                user = await user_service.register(user_in)
+                user = await user_service.create_by_admin(user_in)
 
                 # Admin users are also superusers
                 user.is_superuser = True
