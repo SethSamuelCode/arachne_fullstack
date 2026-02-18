@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserRegister, UserUpdate
 from app.services.user import UserService
 
 
@@ -91,13 +91,13 @@ class TestUserServicePostgresql:
 
     @pytest.mark.anyio
     async def test_register_success(self, user_service: UserService, mock_user: MockUser):
-        """Test registering a new user."""
+        """Test registering a new user always uses USER role regardless of input."""
         with patch("app.services.user.user_repo") as mock_repo:
             mock_repo.get_by_email = AsyncMock(return_value=None)
             mock_repo.count = AsyncMock(return_value=1)  # Not the first user
             mock_repo.create = AsyncMock(return_value=mock_user)
 
-            user_in = UserCreate(
+            user_in = UserRegister(
                 email="new@example.com",
                 password="password123",
                 full_name="New User",
@@ -105,7 +105,9 @@ class TestUserServicePostgresql:
             result = await user_service.register(user_in)
 
             assert result == mock_user
-            mock_repo.create.assert_called_once()
+            # Verify role is hardcoded to USER (not taken from user_in)
+            call_kwargs = mock_repo.create.call_args.kwargs
+            assert call_kwargs["role"] == "USER"
 
     @pytest.mark.anyio
     async def test_register_duplicate_email(self, user_service: UserService, mock_user: MockUser):
@@ -113,7 +115,7 @@ class TestUserServicePostgresql:
         with patch("app.services.user.user_repo") as mock_repo:
             mock_repo.get_by_email = AsyncMock(return_value=mock_user)
 
-            user_in = UserCreate(
+            user_in = UserRegister(
                 email="existing@example.com",
                 password="password123",
                 full_name="Test",
