@@ -3,7 +3,7 @@
 from enum import Enum
 from uuid import UUID
 
-from pydantic import EmailStr, Field
+from pydantic import AliasChoices, EmailStr, Field
 
 from app.schemas.base import BaseSchema, TimestampSchema
 
@@ -30,6 +30,18 @@ class UserCreate(BaseSchema):
     password: str = Field(min_length=8, max_length=128)
     full_name: str | None = Field(default=None, max_length=255)
     role: UserRole = UserRole.USER
+
+
+class UserRegister(BaseSchema):
+    """Schema for public user registration. No role field — always USER."""
+
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(
+        default=None,
+        max_length=255,
+        validation_alias=AliasChoices("name", "full_name"),
+    )
 
 
 class UserUpdate(BaseSchema):
