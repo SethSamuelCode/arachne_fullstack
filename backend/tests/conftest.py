@@ -47,6 +47,20 @@ def setup_test_jwt_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.settings, "JWT_PUBLIC_KEY", _TEST_PUBLIC_KEY_PEM)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter() -> None:
+    """Reset slowapi in-memory rate limiter storage between tests.
+
+    Prevents rate limit state from leaking between tests when the limiter
+    uses MemoryStorage (the default when no Redis URI is provided).
+    """
+    from app.core.rate_limit import limiter
+
+    yield
+
+    limiter._storage.reset()
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     """Specify the async backend for anyio tests.
