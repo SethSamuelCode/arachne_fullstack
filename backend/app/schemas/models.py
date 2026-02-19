@@ -15,6 +15,7 @@ class GeminiModelName(str, Enum):
     - gemini-2.5-pro: Complex reasoning, coding, creative writing.
     - gemini-3-flash-preview: Fast with moderate reasoning capability.
     - gemini-3-pro-preview: MAXIMUM reasoning. Architecture, security, hard problems.
+    - gemini-3.1-pro-preview: Improved Gemini 3 Pro with better intelligence and behavior.
 
     Use stronger models only when task complexity requires it.
     """
@@ -24,6 +25,7 @@ class GeminiModelName(str, Enum):
     GEMINI_2_5_PRO = "gemini-2.5-pro"
     GEMINI_3_FLASH = "gemini-3-flash-preview"
     GEMINI_3_PRO = "gemini-3-pro-preview"
+    GEMINI_3_1_PRO = "gemini-3.1-pro-preview"
 
 
 DEFAULT_GEMINI_MODEL: GeminiModelName = GeminiModelName.GEMINI_2_5_FLASH

@@ -55,6 +55,7 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "gemini-2.5-pro": 891_289,  # 1M * 0.85
     "gemini-3-flash-preview": 850_000,  # 1M * 0.85
     "gemini-3-pro-preview": 1_700_000,  # 2M * 0.85
+    "gemini-3.1-pro-preview": 1_700_000,  # 2M * 0.85
 }
 
 # Default fallback budget (conservative)
