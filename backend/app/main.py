@@ -32,9 +32,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
     See: https://asgi.readthedocs.io/en/latest/specs/lifespan.html#lifespan-state
     """
     # === Startup ===
-    from app.core.logfire_setup import instrument_asyncpg
-
-    instrument_asyncpg()
     from app.core.logfire_setup import instrument_pydantic_ai
 
     instrument_pydantic_ai()
