@@ -18,8 +18,9 @@ export async function POST(request: NextRequest) {
         (error.data as { detail?: string })?.detail || "Registration failed";
       return NextResponse.json({ detail }, { status: error.status });
     }
+    console.error("Registration proxy error:", error);
     return NextResponse.json(
-      { detail: `Internal server error: ${error}` },
+      { detail: "Internal server error" },
       { status: 500 }
     );
   }

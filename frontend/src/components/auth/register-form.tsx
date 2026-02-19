@@ -30,8 +30,7 @@ export function RegisterForm() {
         const status = await apiClient.get<RegistrationStatus>("/auth/registration-status");
         setRegistrationEnabled(status.registration_enabled);
       } catch {
-        // If we can't check status, assume registration is enabled
-        setRegistrationEnabled(true);
+        // Cannot determine registration status — will show error UI
       } finally {
         setCheckingStatus(false);
       }
@@ -94,6 +93,30 @@ export function RegisterForm() {
           </p>
           <p className="text-sm text-muted-foreground">
             Please contact the administrator if you need an account.
+          </p>
+        </CardContent>
+        <CardFooter className="justify-center">
+          <p className="text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link href={ROUTES.LOGIN} className="text-primary hover:underline">
+              Login
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // Error state — couldn't determine registration status
+  if (registrationEnabled === null) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle className="text-2xl text-center">Service Unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-4">
+          <p className="text-muted-foreground">
+            Unable to verify registration availability. Please try again later.
           </p>
         </CardContent>
         <CardFooter className="justify-center">

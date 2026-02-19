@@ -5,13 +5,14 @@ Contains business logic for user operations. Uses UserRepository for database ac
 
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
 from app.core.security import get_password_hash, verify_password
 from app.db.models.user import User, UserRole
 from app.repositories import session_repo, user_repo
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserRegister, UserUpdate
 
 
 class UserService:
@@ -47,20 +48,26 @@ class UserService:
         """Get multiple users with pagination."""
         return await user_repo.get_multi(self.db, skip=skip, limit=limit)
 
-    async def register(self, user_in: UserCreate) -> User:
+    async def register(self, user_in: UserRegister) -> User:
         """Register a new user.
 
         The first user registered will automatically be made an admin.
+        Role is always USER for public registration — never trusted from input.
 
         Raises:
-            AlreadyExistsError: If email is already registered.
+            AlreadyExistsError: If email is already registered (generic message).
         """
         existing = await user_repo.get_by_email(self.db, user_in.email)
         if existing:
             raise AlreadyExistsError(
-                message="Email already registered",
-                details={"email": user_in.email},
+                message="Registration failed",
             )
+
+        # Acquire advisory lock to prevent race on first-user admin promotion.
+        # Lock is transaction-scoped and auto-released on commit/rollback.
+        # Note: email uniqueness under concurrent load is enforced by the DB
+        # UNIQUE constraint — the service-level check above is a fast-path only.
+        await self.db.execute(text("SELECT pg_advisory_xact_lock(1001)"))
 
         # Check if this is the first user - make them admin
         user_count = await user_repo.count(self.db)
@@ -72,7 +79,7 @@ class UserService:
             email=user_in.email,
             hashed_password=hashed_password,
             full_name=user_in.full_name,
-            role=UserRole.ADMIN.value if is_first_user else user_in.role.value,
+            role=UserRole.ADMIN.value if is_first_user else UserRole.USER.value,
             is_superuser=is_first_user,
         )
 
