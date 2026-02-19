@@ -65,6 +65,8 @@ class UserService:
 
         # Acquire advisory lock to prevent race on first-user admin promotion.
         # Lock is transaction-scoped and auto-released on commit/rollback.
+        # Note: email uniqueness under concurrent load is enforced by the DB
+        # UNIQUE constraint — the service-level check above is a fast-path only.
         await self.db.execute(text("SELECT pg_advisory_xact_lock(1001)"))
 
         # Check if this is the first user - make them admin

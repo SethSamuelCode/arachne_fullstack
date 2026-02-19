@@ -56,8 +56,8 @@ def reset_rate_limiter() -> None:
     """
     from app.core.rate_limit import limiter
 
+    limiter._storage.reset()
     yield
-
     limiter._storage.reset()
 
 

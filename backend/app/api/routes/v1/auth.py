@@ -79,7 +79,7 @@ async def register(
 
     Raises:
         HTTPException 403: If registration is disabled by admin.
-        AlreadyExistsError: If email is already registered.
+        AlreadyExistsError: Registration failed (generic, to prevent email enumeration).
     """
     # Check if registration is enabled
     if not await settings_service.is_registration_enabled():

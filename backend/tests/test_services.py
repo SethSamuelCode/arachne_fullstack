@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
-from app.schemas.user import UserCreate, UserRegister, UserUpdate
+from app.schemas.user import UserRegister, UserUpdate
 from app.services.user import UserService
 
 
