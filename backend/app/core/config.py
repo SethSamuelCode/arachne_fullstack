@@ -260,6 +260,11 @@ class Settings(BaseSettings):
     # Maximum file size for individual pinned files (100MB - Gemini limit for media)
     MAX_PINNED_FILE_SIZE_MB: int = 100
 
+    # === Google Cloud Platform (Vertex AI) ===
+    GCP_PROJECT: str | None = None
+    GCP_LOCATION: str = "global"
+    GOOGLE_APPLICATION_CREDENTIALS: str | None = None
+
     @field_validator("GOOGLE_CACHE_TTL_SECONDS")
     @classmethod
     def validate_cache_ttl_minimum(cls, v: int) -> int:
@@ -278,6 +283,7 @@ class Settings(BaseSettings):
         "TAVILY_API_KEY",
         "OPENALEX_API_KEY",
         "SEMANTIC_SCHOLAR_API_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
         mode="before",
     )
     @classmethod

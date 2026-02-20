@@ -159,3 +159,24 @@ class TestLogfireSetup:
         app = FastAPI()
         instrument_app(app)
         mock_logfire.instrument_fastapi.assert_called()
+
+
+class TestGCPConfig:
+    """Tests for Google Cloud Platform (Vertex AI) config fields."""
+
+    def test_gcp_defaults(self):
+        """Test GCP fields default to None/global when not set."""
+        from app.core.config import Settings
+
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.GCP_PROJECT is None
+        assert s.GCP_LOCATION == "global"
+        assert s.GOOGLE_APPLICATION_CREDENTIALS is None
+
+    def test_gcp_project_can_be_set(self):
+        """Test GCP_PROJECT and GCP_LOCATION can be overridden."""
+        from app.core.config import Settings
+
+        s = Settings(GCP_PROJECT="my-project-123", GCP_LOCATION="us-central1", _env_file=None)  # type: ignore[call-arg]
+        assert s.GCP_PROJECT == "my-project-123"
+        assert s.GCP_LOCATION == "us-central1"
