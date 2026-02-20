@@ -188,3 +188,16 @@ class TestGeminiModelProvider:
         p._genai_client = mock_client
         result = await p.count_tokens([])
         assert result >= 1
+
+    @pytest.mark.anyio
+    async def test_count_tokens_none_content_fallback(self):
+        """None message content should not raise in the Gemini API path."""
+        from app.agents.providers.gemini import Gemini25ModelProvider
+
+        p = Gemini25ModelProvider("gemini-2.5-flash", "gemini-2.5-flash", "Gemini 2.5 Flash")
+        mock_client = MagicMock()
+        mock_client.aio.models.count_tokens = AsyncMock(side_effect=Exception("API error"))
+        p._genai_client = mock_client
+        messages = [{"role": "user", "content": None}]
+        result = await p.count_tokens(messages)
+        assert result >= 1

@@ -125,13 +125,11 @@ class GeminiModelProvider(ModelProvider, ABC):
         """
         base_settings = self._build_model_settings()
 
-        # Start with permissive safety settings, then layer in generation-specific
-        # config from the subclass, and finally apply runtime options.
-        merged: GoogleModelSettings = GoogleModelSettings(
-            google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
-        )
-        # Only copy keys that were explicitly set by the subclass.
+        # Build merged settings: subclass config as base, then safety settings
+        # applied last so they always take precedence over any subclass override.
+        merged: GoogleModelSettings = GoogleModelSettings()
         merged.update(base_settings)
+        merged["google_safety_settings"] = PERMISSIVE_SAFETY_SETTINGS
         if cached_content_name is not None:
             merged["google_cached_content"] = cached_content_name
 
