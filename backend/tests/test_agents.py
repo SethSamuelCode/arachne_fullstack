@@ -965,49 +965,37 @@ class TestSchemaSanitization:
 class TestContextOptimizer:
     """Tests for context window optimization."""
 
-    def test_model_context_limits_exist(self):
-        """Test MODEL_CONTEXT_LIMITS has all Gemini models."""
-        from app.agents.context_optimizer import MODEL_CONTEXT_LIMITS
+    def test_registry_context_limits(self):
+        """Test that registry has correct context limits for all models."""
+        from app.agents.providers.registry import MODEL_REGISTRY
+        assert MODEL_REGISTRY["gemini-2.5-flash"].context_limit == 1_048_576
+        assert MODEL_REGISTRY["gemini-3-pro-preview"].context_limit == 2_000_000
+        assert MODEL_REGISTRY["gemini-3.1-pro-preview"].context_limit == 2_000_000
+        assert MODEL_REGISTRY["glm-5"].context_limit == 200_000
 
-        expected_models = [
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
-        ]
-        for model in expected_models:
-            assert model in MODEL_CONTEXT_LIMITS
-            # All budgets should be at 85% of max
-            assert MODEL_CONTEXT_LIMITS[model] > 0
-
-    def test_gemini_3_pro_budget_is_1_7m(self):
-        """Test Gemini 3 Pro has 1.7M token budget (85% of 2M)."""
-        from app.agents.context_optimizer import MODEL_CONTEXT_LIMITS
-
-        assert MODEL_CONTEXT_LIMITS["gemini-3-pro-preview"] == 1_700_000
-
-    def test_get_token_budget_returns_correct_budget(self):
-        """Test get_token_budget returns correct values."""
+    def test_get_token_budget_returns_85_percent(self):
+        """Test get_token_budget returns 85% of context limit."""
         from app.agents.context_optimizer import get_token_budget
+        from app.agents.providers.registry import get_provider
+        assert get_token_budget(get_provider("gemini-3-pro-preview")) == 1_700_000
+        assert get_token_budget(get_provider("gemini-2.5-flash")) == 891_289
 
-        assert get_token_budget("gemini-3-pro-preview") == 1_700_000
-        assert get_token_budget("gemini-2.5-flash") == 891_289
-
-    def test_get_token_budget_returns_default_for_unknown_model(self):
-        """Test get_token_budget returns default for unknown models."""
-        from app.agents.context_optimizer import DEFAULT_TOKEN_BUDGET, get_token_budget
-
-        assert get_token_budget("unknown-model") == DEFAULT_TOKEN_BUDGET
+    def test_get_token_budget_for_vertex_model(self):
+        """Test get_token_budget works for Vertex AI models."""
+        from app.agents.context_optimizer import get_token_budget
+        from app.agents.providers.registry import get_provider
+        # 200_000 * 0.85 = 170_000
+        assert get_token_budget(get_provider("glm-5")) == 170_000
 
     @pytest.mark.anyio
     async def test_optimize_empty_history_returns_optimized_context(self):
         """Test optimize_context_window with empty history returns OptimizedContext."""
         from app.agents.context_optimizer import optimize_context_window
 
+        from app.agents.providers.registry import get_provider
         result = await optimize_context_window(
             history=[],
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
         )
         # Should return OptimizedContext TypedDict, not a list
         assert isinstance(result, dict)
@@ -1025,10 +1013,11 @@ class TestContextOptimizer:
         """Test optimize_context_window returns correct OptimizedContext structure."""
         from app.agents.context_optimizer import optimize_context_window
 
+        from app.agents.providers.registry import get_provider
         history = [{"role": "user", "content": "Hello"}]
         result = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
             system_prompt="You are helpful",
         )
 
@@ -1053,10 +1042,11 @@ class TestContextOptimizer:
         """Test optimize_context_window with single message."""
         from app.agents.context_optimizer import optimize_context_window
 
+        from app.agents.providers.registry import get_provider
         history = [{"role": "user", "content": "Hello"}]
         result = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
         )
         assert len(result["history"]) == 1
         assert result["history"][0].parts[0].content == "Hello"
@@ -1071,9 +1061,10 @@ class TestContextOptimizer:
             {"role": "assistant", "content": "First response"},
             {"role": "user", "content": "Latest message"},
         ]
+        from app.agents.providers.registry import get_provider
         result = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
         )
         # Latest message must be present
         assert any(
@@ -1096,9 +1087,10 @@ class TestContextOptimizer:
         history.append({"role": "user", "content": "Latest"})
 
         # Use a small budget to force trimming
+        from app.agents.providers.registry import get_provider
         result = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
             max_context_tokens=50000,  # Small budget
         )
         # Should have fewer messages than original
@@ -1119,16 +1111,17 @@ class TestContextOptimizer:
 
         long_system_prompt = "System: " + "y" * 20000  # ~5000 tokens
 
+        from app.agents.providers.registry import get_provider
         result_with_prompt = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
             system_prompt=long_system_prompt,
             max_context_tokens=100000,
         )
 
         result_without_prompt = await optimize_context_window(
             history=history,
-            model_name="gemini-3-pro-preview",
+            provider=get_provider("gemini-3-pro-preview"),
             system_prompt=None,
             max_context_tokens=100000,
         )
@@ -1155,9 +1148,10 @@ class TestContextOptimizer:
         with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
             mock_client.return_value.aio.caches.create = AsyncMock(return_value=None)
 
+            from app.agents.providers.registry import get_provider
             result = await optimize_context_window(
                 history=history,
-                model_name="gemini-2.5-flash",
+                provider=get_provider("gemini-2.5-flash"),
                 system_prompt="You are helpful",
                 tool_definitions=tool_definitions,
                 redis_client=mock_redis,
@@ -1187,9 +1181,10 @@ class TestContextOptimizer:
         with patch("app.agents.context_optimizer._get_genai_client") as mock_client:
             mock_client.return_value.aio.caches.update = AsyncMock()
 
+            from app.agents.providers.registry import get_provider
             result = await optimize_context_window(
                 history=history,
-                model_name="gemini-2.5-flash",
+                provider=get_provider("gemini-2.5-flash"),
                 system_prompt="You are helpful",
                 tool_definitions=tool_definitions,
                 redis_client=mock_redis,
@@ -1213,9 +1208,10 @@ class TestContextOptimizer:
         # Mock tool definitions for caching
         tool_definitions = [{"name": "test_tool", "description": "Test", "parameters": {}}]
 
+        from app.agents.providers.registry import get_provider
         result = await optimize_context_window(
             history=history,
-            model_name="gemini-2.5-flash",
+            provider=get_provider("gemini-2.5-flash"),
             system_prompt="You are helpful",
             tool_definitions=tool_definitions,
             redis_client=mock_redis,

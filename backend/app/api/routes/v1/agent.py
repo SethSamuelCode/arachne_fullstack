@@ -31,6 +31,7 @@ from pydantic_ai.messages import (
 
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
+from app.agents.providers.registry import get_provider
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
@@ -509,7 +510,7 @@ async def agent_websocket(
                 # Uses 85% of model's context limit for better responsiveness
                 optimized: OptimizedContext = await optimize_context_window(
                     history=conversation_history,
-                    model_name=model_name or "gemini-2.5-flash",
+                    provider=get_provider(model_name or "gemini-2.5-flash"),
                     system_prompt=system_prompt,
                     tool_definitions=tool_definitions,
                     redis_client=redis_client,

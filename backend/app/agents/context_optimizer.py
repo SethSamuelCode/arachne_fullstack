@@ -27,6 +27,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from app.agents.providers.base import ModelProvider
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -47,16 +48,6 @@ class OptimizedContext(TypedDict):
     system_prompt: str | None
     skip_tool_registration: bool
 
-
-# Model context limits (input tokens) with 85% budget for responsiveness
-MODEL_CONTEXT_LIMITS: dict[str, int] = {
-    "gemini-2.5-flash-lite": 891_289,  # 1M * 0.85
-    "gemini-2.5-flash": 891_289,  # 1M * 0.85
-    "gemini-2.5-pro": 891_289,  # 1M * 0.85
-    "gemini-3-flash-preview": 850_000,  # 1M * 0.85
-    "gemini-3-pro-preview": 1_700_000,  # 2M * 0.85
-    "gemini-3.1-pro-preview": 1_700_000,  # 2M * 0.85
-}
 
 # Default fallback budget (conservative)
 DEFAULT_TOKEN_BUDGET = 850_000
@@ -547,7 +538,7 @@ invalidate_cached_prompt = invalidate_cached_content
 
 async def optimize_context_window(
     history: list[dict[str, str]],
-    model_name: str,
+    provider: ModelProvider,
     system_prompt: str | None = None,
     tool_definitions: list[dict[str, Any]] | None = None,
     max_context_tokens: int | None = None,
@@ -571,7 +562,7 @@ async def optimize_context_window(
 
     Args:
         history: Conversation history as list of {"role": "...", "content": "..."}.
-        model_name: Model name for correct token budget lookup.
+        provider: The model provider instance for budget and capability lookup.
         system_prompt: Optional system prompt for token accounting.
         tool_definitions: Optional list of tool defs for caching (from get_tool_definitions()).
         max_context_tokens: Override default budget (for testing).
@@ -593,10 +584,11 @@ async def optimize_context_window(
         and tool_definitions
         and redis_client
         and settings.ENABLE_SYSTEM_PROMPT_CACHING
+        and provider.supports_caching
     ):
         cached_prompt_name = await get_cached_content(
             prompt=system_prompt,
-            model_name=model_name,
+            model_name=provider.model_id,
             tool_definitions=tool_definitions,
             redis_client=redis_client,
             pinned_content_hash=pinned_content_hash,
@@ -619,7 +611,7 @@ async def optimize_context_window(
         )
 
     # Get token budget for model (85% of max)
-    budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    budget = max_context_tokens or int(provider.context_limit * 0.85)
 
     # Reserve space for system prompt
     system_prompt_tokens = 0
@@ -670,7 +662,7 @@ async def optimize_context_window(
     total_messages = len(history)
     kept_messages = len(optimized_messages)
     trimmed_count = total_messages - kept_messages
-    total_budget = max_context_tokens or MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    total_budget = max_context_tokens or int(provider.context_limit * 0.85)
     tokens_used = current_tokens + latest_tokens + system_prompt_tokens + 8192  # Include reserves
     budget_pct = round((tokens_used / total_budget) * 100, 1)
     cache_status = "hit" if cached_prompt_name else "miss" if system_prompt else "n/a"
@@ -711,13 +703,13 @@ def _to_pydantic_messages(
     return result
 
 
-def get_token_budget(model_name: str) -> int:
+def get_token_budget(provider: ModelProvider) -> int:
     """Get the token budget for a model (85% of max context).
 
     Args:
-        model_name: Gemini model name.
+        provider: The model provider instance.
 
     Returns:
-        Token budget for the model.
+        Token budget for the model (85% of context_limit).
     """
-    return MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    return int(provider.context_limit * 0.85)

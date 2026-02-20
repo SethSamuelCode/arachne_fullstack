@@ -404,9 +404,9 @@ def validate_pinned_content_budget(
         - warning: str | None (if 30-40%)
         - error: str | None (if >40% and would block, but we allow with warning)
     """
-    from app.agents.context_optimizer import MODEL_CONTEXT_LIMITS, DEFAULT_TOKEN_BUDGET
+    from app.agents.providers.registry import get_provider
 
-    model_budget = MODEL_CONTEXT_LIMITS.get(model_name, DEFAULT_TOKEN_BUDGET)
+    model_budget = get_provider(model_name).context_limit
     max_percent = settings.MAX_PINNED_CONTEXT_PERCENT
     warn_percent = settings.PINNED_CONTEXT_WARNING_PERCENT
 

@@ -41,13 +41,13 @@ MODEL_REGISTRY: dict[str, ModelProvider] = {
         model_id="gemini-3-pro-preview",
         api_model_id="gemini-3-pro-preview",
         display_name="Gemini 3 Pro",
-        context_limit=1_048_576,
+        context_limit=2_000_000,
     ),
     "gemini-3.1-pro-preview": Gemini3ModelProvider(
         model_id="gemini-3.1-pro-preview",
         api_model_id="gemini-3.1-pro-preview",
         display_name="Gemini 3.1 Pro",
-        context_limit=1_048_576,
+        context_limit=2_000_000,
     ),
     # Vertex AI models (no caching, no thinking)
     "glm-5": VertexModelProvider(
