@@ -54,7 +54,7 @@ MODEL_REGISTRY: dict[str, ModelProvider] = {
         model_id="glm-5",
         api_model_id="publishers/zai-org/models/glm-5-maas",
         display_name="GLM-5 (Vertex AI)",
-        context_limit=108_000,
+        context_limit=200_000,  # Official Vertex AI GLM-5 context window
     ),
 }
 
