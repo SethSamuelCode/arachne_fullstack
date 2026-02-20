@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+from pydantic_ai.models import Model as PydanticAIModel
+
 
 class ModelProvider(ABC):
     """Abstract base for all LLM model providers.
@@ -29,7 +31,7 @@ class ModelProvider(ABC):
         self,
         using_cached_tools: bool = False,
         cached_content_name: str | None = None,
-    ) -> object:
+    ) -> PydanticAIModel:
         """Return a PydanticAI model object ready for agent use."""
 
     async def count_tokens(

@@ -62,3 +62,11 @@ class TestModelProviderBase:
         messages = [{"role": "user", "content": [{"text": "part one"}, {"text": "part two"}]}]
         result = await p.count_tokens(messages)
         assert result > 0
+
+    @pytest.mark.anyio
+    async def test_count_tokens_none_content(self):
+        """Malformed messages with None content should not raise and return minimum."""
+        p = StubProvider("m", "m", "M", "P")
+        messages = [{"role": "user", "content": None}]
+        result = await p.count_tokens(messages)
+        assert result >= 1
