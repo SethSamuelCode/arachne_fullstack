@@ -1,5 +1,6 @@
 """Tests for the ModelProvider base class and Gemini provider classes."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -201,3 +202,80 @@ class TestGeminiModelProvider:
         messages = [{"role": "user", "content": None}]
         result = await p.count_tokens(messages)
         assert result >= 1
+
+
+class TestVertexModelProvider:
+    """Tests for VertexModelProvider."""
+
+    def test_vertex_provider_label(self):
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        assert p.provider_label == "Google Vertex AI"
+
+    def test_vertex_supports_caching_false(self):
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        assert p.supports_caching is False
+
+    def test_vertex_supports_thinking_false(self):
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        assert p.supports_thinking is False
+
+    def test_vertex_attributes(self):
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = VertexModelProvider(
+            "glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5", context_limit=108_000
+        )
+        assert p.model_id == "glm-5"
+        assert p.api_model_id == "publishers/zai-org/models/glm-5-maas"
+        assert p.display_name == "GLM-5"
+        assert p.context_limit == 108_000
+
+    def test_create_model_raises_without_gcp_project(self, monkeypatch):
+        from app.agents.providers.vertex import VertexModelProvider
+        from app.core.exceptions import ExternalServiceError
+
+        monkeypatch.setattr("app.agents.providers.vertex.settings.GCP_PROJECT", None)
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        with pytest.raises(ExternalServiceError, match="GCP_PROJECT"):
+            p.create_pydantic_model()
+
+    def test_create_model_raises_without_credentials(self, monkeypatch):
+        from app.agents.providers.vertex import VertexModelProvider
+        from app.core.exceptions import ExternalServiceError
+
+        monkeypatch.setattr("app.agents.providers.vertex.settings.GCP_PROJECT", "my-project")
+        monkeypatch.setattr(
+            "app.agents.providers.vertex.settings.GOOGLE_APPLICATION_CREDENTIALS", None
+        )
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        with pytest.raises(ExternalServiceError, match="GOOGLE_APPLICATION_CREDENTIALS"):
+            p.create_pydantic_model()
+
+    def test_create_model_sets_env_var(self, monkeypatch, tmp_path):
+        """create_pydantic_model sets GOOGLE_APPLICATION_CREDENTIALS in os.environ."""
+        from unittest.mock import MagicMock, patch
+
+        from app.agents.providers.vertex import VertexModelProvider
+
+        creds_path = str(tmp_path / "sa-key.json")
+        monkeypatch.setattr("app.agents.providers.vertex.settings.GCP_PROJECT", "my-project")
+        monkeypatch.setattr(
+            "app.agents.providers.vertex.settings.GOOGLE_APPLICATION_CREDENTIALS", creds_path
+        )
+        # Remove the env var so setdefault can set it
+        monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+        with (
+            patch("app.agents.providers.vertex.GoogleProvider") as mock_provider_cls,
+            patch("app.agents.providers.vertex.GoogleModel") as mock_model_cls,
+        ):
+            mock_provider_cls.return_value = MagicMock()
+            mock_model_cls.return_value = MagicMock()
+            p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+            p.create_pydantic_model()
+        assert os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") == creds_path
