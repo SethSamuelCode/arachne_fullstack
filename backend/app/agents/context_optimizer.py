@@ -353,6 +353,16 @@ def _convert_tools_to_gemini_format(
     return [genai_types.Tool(function_declarations=function_declarations)]
 
 
+# Priority directive appended to system prompt when pinned content is provided
+PINNED_CONTENT_PRIORITY_DIRECTIVE = """
+
+### Pinned Repository Context
+When <repository_context> is provided in this conversation, you MUST check it BEFORE using any search tools.
+Do not use web search if the answer exists in the pinned repository context.
+Cite answers derived from this context as "Internal Context".
+"""
+
+
 async def get_cached_content(
     prompt: str,
     model_name: str,
@@ -487,14 +497,6 @@ async def get_cached_content(
 # Keep the old function name as an alias for backwards compatibility
 get_cached_system_prompt = get_cached_content
 
-# Priority directive appended to system prompt when pinned content is provided
-PINNED_CONTENT_PRIORITY_DIRECTIVE = """
-
-### Pinned Repository Context
-When <repository_context> is provided in this conversation, you MUST check it BEFORE using any search tools.
-Do not use web search if the answer exists in the pinned repository context.
-Cite answers derived from this context as "Internal Context".
-"""
 
 async def invalidate_cached_content(
     prompt: str,
@@ -622,6 +624,7 @@ async def optimize_context_window(
     # Reserve space for pinned content (if any)
     if pinned_content_tokens > 0:
         budget -= pinned_content_tokens
+    budget = max(0, budget)
 
     # Reserve space for response (at least 8K tokens)
     budget -= 8192
