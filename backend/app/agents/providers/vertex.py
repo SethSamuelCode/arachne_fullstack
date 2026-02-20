@@ -1,6 +1,7 @@
 """Vertex AI model provider."""
 
 import os
+from pathlib import Path
 
 from pydantic_ai.models import Model as PydanticAIModel
 from pydantic_ai.models.google import GoogleModel
@@ -60,17 +61,23 @@ class VertexModelProvider(ModelProvider):
                 "GCP_PROJECT must be set in environment to use Vertex AI models. "
                 f"Cannot load model '{self.model_id}'."
             )
-        if not settings.GOOGLE_APPLICATION_CREDENTIALS:
+        creds_path = settings.GOOGLE_APPLICATION_CREDENTIALS
+        if not creds_path:
             raise ExternalServiceError(
                 "GOOGLE_APPLICATION_CREDENTIALS must be set in environment to use "
                 f"Vertex AI models. Cannot load model '{self.model_id}'."
             )
-        # Ensure the Google SDK can find the credentials file via ADC.
-        # pydantic-settings reads .env but does NOT set os.environ, so we must
-        # propagate the path ourselves.
-        os.environ.setdefault(
-            "GOOGLE_APPLICATION_CREDENTIALS", settings.GOOGLE_APPLICATION_CREDENTIALS
-        )
+        if not Path(creds_path).is_file():
+            raise ExternalServiceError(
+                f"GOOGLE_APPLICATION_CREDENTIALS path does not exist or is not a file: "
+                f"'{creds_path}'. Cannot load model '{self.model_id}'."
+            )
+        # Propagate the sanitised credentials path into os.environ so the Google
+        # SDK can locate the credentials file via ADC.  pydantic-settings reads
+        # .env but does NOT place values into os.environ, so we must do it here.
+        # Using direct assignment (not setdefault) ensures the sanitised value
+        # from settings always wins over any unsanitised value already in the env.
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
         provider = GoogleProvider(
             vertexai=True,
             project=settings.GCP_PROJECT,

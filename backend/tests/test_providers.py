@@ -263,12 +263,13 @@ class TestVertexModelProvider:
 
         from app.agents.providers.vertex import VertexModelProvider
 
-        creds_path = str(tmp_path / "sa-key.json")
+        creds_file = tmp_path / "sa-key.json"
+        creds_file.write_text("{}")  # must exist on disk for is_file() check
+        creds_path = str(creds_file)
         monkeypatch.setattr("app.agents.providers.vertex.settings.GCP_PROJECT", "my-project")
         monkeypatch.setattr(
             "app.agents.providers.vertex.settings.GOOGLE_APPLICATION_CREDENTIALS", creds_path
         )
-        # Remove the env var so setdefault can set it
         monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
         with (
             patch("app.agents.providers.vertex.GoogleProvider") as mock_provider_cls,
@@ -279,3 +280,17 @@ class TestVertexModelProvider:
             p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
             p.create_pydantic_model()
         assert os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") == creds_path
+
+    def test_create_model_raises_if_credentials_file_missing(self, monkeypatch):
+        """create_pydantic_model raises ExternalServiceError when file does not exist."""
+        from app.agents.providers.vertex import VertexModelProvider
+        from app.core.exceptions import ExternalServiceError
+
+        monkeypatch.setattr("app.agents.providers.vertex.settings.GCP_PROJECT", "my-project")
+        monkeypatch.setattr(
+            "app.agents.providers.vertex.settings.GOOGLE_APPLICATION_CREDENTIALS",
+            "/nonexistent/sa-key.json",
+        )
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        with pytest.raises(ExternalServiceError, match="does not exist"):
+            p.create_pydantic_model()
