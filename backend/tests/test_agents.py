@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.agents.assistant import AssistantAgent, Deps, get_agent
+from app.agents.providers.registry import get_provider
 from app.agents.tools.datetime_tool import get_current_datetime
 from app.agents.tools.decorators import safe_tool
 
@@ -149,7 +150,7 @@ class TestAssistantAgent:
     def test_init_with_custom_values(self):
         """Test AssistantAgent with custom configuration."""
         agent = AssistantAgent(
-            model_name="gemini-2.5-flash",
+            provider=get_provider("gemini-2.5-flash"),
             system_prompt="Custom prompt",
         )
         assert agent.model_name == "gemini-2.5-flash"
@@ -223,7 +224,7 @@ class TestPermissiveSafetySettings:
         """Test that the assistant has all safety filters set to OFF."""
         from google.genai.types import HarmBlockThreshold
 
-        from app.agents.assistant import PERMISSIVE_SAFETY_SETTINGS
+        from app.agents.providers.gemini import PERMISSIVE_SAFETY_SETTINGS
 
         # Verify we have all expected harm categories
         assert len(PERMISSIVE_SAFETY_SETTINGS) == 5
@@ -1275,7 +1276,7 @@ class TestAssistantAgentWithCaching:
     def test_init_with_cached_prompt_nullifies_system_prompt(self):
         """Test AssistantAgent sets system_prompt=None when cached_prompt_name provided."""
         agent = AssistantAgent(
-            model_name="gemini-2.5-flash",
+            provider=get_provider("gemini-2.5-flash"),
             system_prompt="Original prompt",
             cached_prompt_name="cachedContents/abc123",
         )
@@ -1286,7 +1287,7 @@ class TestAssistantAgentWithCaching:
     def test_init_without_cached_prompt_keeps_system_prompt(self):
         """Test AssistantAgent keeps system_prompt when no cached_prompt_name."""
         agent = AssistantAgent(
-            model_name="gemini-2.5-flash",
+            provider=get_provider("gemini-2.5-flash"),
             system_prompt="Custom prompt",
         )
         assert agent.system_prompt == "Custom prompt"
@@ -1296,7 +1297,7 @@ class TestAssistantAgentWithCaching:
     def test_agent_creates_with_cached_content_setting(self):
         """Test agent includes google_cached_content in model settings when cache provided."""
         agent = AssistantAgent(
-            model_name="gemini-2.5-flash",
+            provider=get_provider("gemini-2.5-flash"),
             cached_prompt_name="cachedContents/abc123",
         )
         # Access agent to trigger creation

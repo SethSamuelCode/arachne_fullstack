@@ -1,13 +1,15 @@
 """Assistant agent with PydanticAI.
 
 The main conversational agent that can be extended with custom tools.
+Model-specific behaviour (safety settings, thinking config, caching) is
+encapsulated in ModelProvider subclasses — this module has no knowledge of
+specific providers.
 """
 
 import logging
 from collections.abc import Sequence
 from typing import Any
 
-from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
 from pydantic_ai import Agent, BinaryContent, UsageLimits
 from pydantic_ai.messages import (
     ModelRequest,
@@ -16,13 +18,12 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
-from pydantic_ai.models.google import GoogleModelSettings
 
-from app.agents.cached_google_model import CachedContentGoogleModel
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
+from app.agents.providers.base import ModelProvider
+from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
 from app.agents.tool_register import register_tools
 from app.core.config import settings
-from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
 
 logger = logging.getLogger(__name__)
@@ -31,30 +32,23 @@ logger = logging.getLogger(__name__)
 UserContent = str | BinaryContent
 MultimodalInput = str | Sequence[UserContent]
 
-# Safety settings with all filters disabled for maximum permissiveness
-PERMISSIVE_SAFETY_SETTINGS: list[dict[str, Any]] = [
-    {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, "threshold": HarmBlockThreshold.OFF},
-]
-
 
 class AssistantAgent:
     """Assistant agent wrapper for conversational AI.
 
     Encapsulates agent creation and execution with tool support.
+    Delegates all provider-specific concerns to the ModelProvider.
     """
 
     def __init__(
         self,
-        model_name: str | None = None,
+        provider: ModelProvider | None = None,
         system_prompt: str | None = None,
         cached_prompt_name: str | None = None,
         skip_tool_registration: bool = False,
     ):
-        self.model_name = model_name or DEFAULT_GEMINI_MODEL
+        self.provider = provider or get_provider(DEFAULT_MODEL_ID)
+        self.model_name = self.provider.model_id  # exposed for DB persistence
         # If using cached prompt, don't pass system_prompt to agent (it's in the cache)
         self.system_prompt = None if cached_prompt_name else (system_prompt or DEFAULT_SYSTEM_PROMPT)
         self.cached_prompt_name = cached_prompt_name
@@ -63,28 +57,14 @@ class AssistantAgent:
 
     def _create_agent(self) -> Agent[Deps, str]:
         """Create and configure the PydanticAI agent."""
-        # Determine if we're using cached content with tools
         using_cached_tools = bool(self.cached_prompt_name)
 
-        # Model settings with safety filters disabled and thinking enabled
-        model_settings = GoogleModelSettings(
-            google_safety_settings=PERMISSIVE_SAFETY_SETTINGS,
-            google_thinking_config={
-                "thinking_level": ThinkingLevel.HIGH,
-                "include_thoughts": True,  # Required to get thinking content in response
-            },
-            # Use cached content if available (75% cost reduction)
-            google_cached_content=self.cached_prompt_name if self.cached_prompt_name else None,
-        )
-
-        # Use our custom model that strips tools when using cached content
-        model = CachedContentGoogleModel(
-            model_name=self.model_name,
-            settings=model_settings,
+        # Delegate model creation to the provider — no hardcoded Gemini logic here
+        model = self.provider.create_pydantic_model(
             using_cached_tools=using_cached_tools,
+            cached_content_name=self.cached_prompt_name,
         )
 
-        # Build agent kwargs - omit system_prompt entirely when using cached content
         agent_kwargs: dict[str, Any] = {
             "model": model,
             "deps_type": Deps,
@@ -97,14 +77,14 @@ class AssistantAgent:
         agent = Agent[Deps, str](**agent_kwargs)
 
         # Always register tools locally - PydanticAI needs them to execute tool calls.
-        # When using cached content, Gemini already knows about the tools (they're
+        # When using cached content, the model already knows about the tools (they're
         # in the cache), but PydanticAI still needs them registered to handle the
-        # tool call responses. Our CachedContentGoogleModel strips tools from the
-        # API request so Gemini doesn't get duplicate tool definitions.
+        # tool call responses. The provider's model strips tools from the API request
+        # so the model doesn't get duplicate tool definitions.
         register_tools(agent)
 
         if using_cached_tools:
-            logger.debug("Tools registered locally (will be stripped from Gemini request)")
+            logger.debug("Tools registered locally (will be stripped from API request)")
 
         return agent
 
@@ -213,23 +193,29 @@ class AssistantAgent:
 def get_agent(
     system_prompt: str | None = None,
     model_name: str | None = None,
+    provider: ModelProvider | None = None,
     cached_prompt_name: str | None = None,
     skip_tool_registration: bool = False,
 ) -> AssistantAgent:
     """Factory function to create an AssistantAgent.
 
+    Accepts either a pre-resolved ModelProvider or a model_name string.
+    If both are given, provider takes precedence.
+
     Args:
         system_prompt: Custom system prompt (ignored if cached_prompt_name is provided).
-        model_name: Gemini model name to use.
+        model_name: Model ID to look up in the registry (e.g. "gemini-2.5-flash").
+        provider: Pre-resolved ModelProvider (takes precedence over model_name).
         cached_prompt_name: Gemini cache name for the content (75% cost savings).
         skip_tool_registration: If True, skip tool registration (tools in cache).
 
     Returns:
         Configured AssistantAgent instance.
     """
+    resolved_provider = provider or get_provider(model_name or DEFAULT_MODEL_ID)
     return AssistantAgent(
+        provider=resolved_provider,
         system_prompt=system_prompt,
-        model_name=model_name,
         cached_prompt_name=cached_prompt_name,
         skip_tool_registration=skip_tool_registration,
     )
