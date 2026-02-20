@@ -294,3 +294,73 @@ class TestVertexModelProvider:
         p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
         with pytest.raises(ExternalServiceError, match="does not exist"):
             p.create_pydantic_model()
+
+
+class TestModelRegistry:
+    """Tests for the MODEL_REGISTRY, get_provider, and get_model_list."""
+
+    def test_default_model_exists_in_registry(self):
+        from app.agents.providers.registry import DEFAULT_MODEL_ID, MODEL_REGISTRY
+
+        assert DEFAULT_MODEL_ID in MODEL_REGISTRY
+
+    def test_registry_contains_all_expected_models(self):
+        from app.agents.providers.registry import MODEL_REGISTRY
+
+        expected = {
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-3.1-pro-preview",
+            "glm-5",
+        }
+        assert expected == set(MODEL_REGISTRY.keys())
+
+    def test_get_provider_returns_correct_provider(self):
+        from app.agents.providers.gemini import Gemini25ModelProvider
+        from app.agents.providers.registry import get_provider
+
+        p = get_provider("gemini-2.5-flash")
+        assert isinstance(p, Gemini25ModelProvider)
+        assert p.model_id == "gemini-2.5-flash"
+
+    def test_get_provider_falls_back_to_default(self):
+        from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
+
+        p = get_provider("unknown-model-xyz")
+        assert p.model_id == DEFAULT_MODEL_ID
+
+    def test_get_provider_glm5_is_vertex(self):
+        from app.agents.providers.registry import get_provider
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = get_provider("glm-5")
+        assert isinstance(p, VertexModelProvider)
+        assert p.supports_caching is False
+        assert p.supports_thinking is False
+
+    def test_get_model_list_length(self):
+        from app.agents.providers.registry import MODEL_REGISTRY, get_model_list
+
+        result = get_model_list()
+        assert len(result) == len(MODEL_REGISTRY)
+
+    def test_get_model_list_entry_structure(self):
+        from app.agents.providers.registry import get_model_list
+
+        result = get_model_list()
+        for entry in result:
+            assert "id" in entry
+            assert "label" in entry
+            assert "provider" in entry
+            assert "supports_thinking" in entry
+
+    def test_get_model_list_glm5_entry(self):
+        from app.agents.providers.registry import get_model_list
+
+        result = get_model_list()
+        glm5 = next(e for e in result if e["id"] == "glm-5")
+        assert glm5["provider"] == "Google Vertex AI"
+        assert glm5["supports_thinking"] is False
