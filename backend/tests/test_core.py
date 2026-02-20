@@ -173,10 +173,16 @@ class TestGCPConfig:
         assert s.GCP_LOCATION == "global"
         assert s.GOOGLE_APPLICATION_CREDENTIALS is None
 
-    def test_gcp_project_can_be_set(self):
-        """Test GCP_PROJECT and GCP_LOCATION can be overridden."""
+    def test_gcp_fields_can_be_set(self):
+        """Test all GCP fields can be overridden."""
         from app.core.config import Settings
 
-        s = Settings(GCP_PROJECT="my-project-123", GCP_LOCATION="us-central1", _env_file=None)  # type: ignore[call-arg]
+        s = Settings(  # type: ignore[call-arg]
+            GCP_PROJECT="my-project-123",
+            GCP_LOCATION="us-central1",
+            GOOGLE_APPLICATION_CREDENTIALS="/tmp/sa-key.json",
+            _env_file=None,
+        )
         assert s.GCP_PROJECT == "my-project-123"
         assert s.GCP_LOCATION == "us-central1"
+        assert s.GOOGLE_APPLICATION_CREDENTIALS == "/tmp/sa-key.json"
