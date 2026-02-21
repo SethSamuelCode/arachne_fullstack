@@ -27,7 +27,7 @@ from app.schemas.webhook import (
     WebhookTestResponse,
 )
 
-from app.schemas.models import ModelInfo, DEFAULT_GEMINI_MODEL
+from app.schemas.models import ModelInfo, ModalitySupport, DEFAULT_GEMINI_MODEL
 from app.schemas.web_search import (
     WebSearchRequest,
     WebSearchResult,
@@ -83,6 +83,7 @@ __all__ = [
     "WebhookDeliveryListResponse",
     "WebhookTestResponse",
     "ModelInfo",
+    "ModalitySupport",
     "DEFAULT_GEMINI_MODEL",
     "WebSearchRequest",
     "WebSearchResult",

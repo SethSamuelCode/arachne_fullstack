@@ -3,6 +3,14 @@
 from pydantic import BaseModel
 
 
+class ModalitySupport(BaseModel):
+    """Supported input modalities for an LLM model."""
+
+    images: bool = False
+    audio: bool = False
+    video: bool = False
+
+
 class ModelInfo(BaseModel):
     """Available model information returned by the /models endpoint."""
 
@@ -10,6 +18,7 @@ class ModelInfo(BaseModel):
     label: str
     provider: str
     supports_thinking: bool = False
+    modalities: ModalitySupport = ModalitySupport()
 
 
 # Backward-compatible alias. New code should import DEFAULT_MODEL_ID from

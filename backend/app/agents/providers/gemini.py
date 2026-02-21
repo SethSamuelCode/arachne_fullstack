@@ -11,6 +11,7 @@ from pydantic_ai.models.google import GoogleModelSettings
 from app.agents.cached_google_model import CachedContentGoogleModel
 from app.agents.providers.base import ModelProvider
 from app.core.config import settings
+from app.schemas.models import ModalitySupport
 
 # Safety settings with all filters disabled for maximum permissiveness.
 # Mirrors PERMISSIVE_SAFETY_SETTINGS in assistant.py.
@@ -103,6 +104,10 @@ class GeminiModelProvider(ModelProvider, ABC):
     @property
     def supports_thinking(self) -> bool:
         return True
+
+    @property
+    def modalities(self) -> ModalitySupport:
+        return ModalitySupport(images=True, audio=True, video=True)
 
     @abstractmethod
     def _build_model_settings(self) -> GoogleModelSettings:

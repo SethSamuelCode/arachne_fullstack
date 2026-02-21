@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 
 from pydantic_ai.models import Model as PydanticAIModel
 
+from app.schemas.models import ModalitySupport
+
 
 class ModelProvider(ABC):
     """Abstract base for all LLM model providers.
@@ -64,6 +66,11 @@ class ModelProvider(ABC):
     def supports_thinking(self) -> bool:
         """Whether this provider supports thinking/reasoning traces."""
         return False
+
+    @property
+    def modalities(self) -> ModalitySupport:
+        """Supported input modalities. Override in providers that support multimodal input."""
+        return ModalitySupport()
 
     @property
     def context_limit(self) -> int:

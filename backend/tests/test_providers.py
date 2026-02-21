@@ -75,6 +75,13 @@ class TestModelProviderBase:
         assert result >= 1
 
 
+    def test_base_modalities_all_false(self):
+        p = StubProvider("m", "m", "M", "P")
+        assert p.modalities.images is False
+        assert p.modalities.audio is False
+        assert p.modalities.video is False
+
+
 class TestGeminiModelProvider:
     """Tests for Gemini provider classes."""
 
@@ -204,6 +211,21 @@ class TestGeminiModelProvider:
         assert result >= 1
 
 
+    def test_gemini25_modalities_all_true(self):
+        from app.agents.providers.gemini import Gemini25ModelProvider
+        p = Gemini25ModelProvider("gemini-2.5-flash", "gemini-2.5-flash", "Gemini 2.5 Flash")
+        assert p.modalities.images is True
+        assert p.modalities.audio is True
+        assert p.modalities.video is True
+
+    def test_gemini3_modalities_all_true(self):
+        from app.agents.providers.gemini import Gemini3ModelProvider
+        p = Gemini3ModelProvider("gemini-3-flash-preview", "gemini-3-flash-preview", "Gemini 3 Flash")
+        assert p.modalities.images is True
+        assert p.modalities.audio is True
+        assert p.modalities.video is True
+
+
 class TestVertexModelProvider:
     """Tests for VertexModelProvider."""
 
@@ -294,6 +316,14 @@ class TestVertexModelProvider:
         p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
         with pytest.raises(ExternalServiceError, match="does not exist"):
             p.create_pydantic_model()
+
+
+    def test_vertex_modalities_all_false(self):
+        from app.agents.providers.vertex import VertexModelProvider
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        assert p.modalities.images is False
+        assert p.modalities.audio is False
+        assert p.modalities.video is False
 
 
 class TestModelRegistry:
