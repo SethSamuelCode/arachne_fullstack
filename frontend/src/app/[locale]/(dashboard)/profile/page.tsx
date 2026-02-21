@@ -37,9 +37,7 @@ export default function ProfilePage() {
       .then((r) => r.json())
       .then((data: ModelOption[]) => setAvailableModels(data))
       .catch(() => {
-        setAvailableModels([
-          { id: "", label: "Default (Backend Configured)", provider: "", supports_thinking: false },
-        ]);
+        setAvailableModels([]);
       });
   }, []);
 
