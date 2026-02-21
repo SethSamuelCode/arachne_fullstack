@@ -1536,3 +1536,241 @@ class TestAttachmentCapabilityCheck:
         provider = get_provider("glm-5")
         result = _check_attachment_support(provider, [])
         assert result is None
+
+
+class TestRunAgentNonStreaming:
+    """Tests for the non-streaming agent execution path."""
+
+    @pytest.mark.anyio
+    async def test_emits_correct_event_sequence_text_only(self):
+        """Non-streaming path emits model_request_start, text_delta, final_result, complete."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from pydantic_ai.messages import ModelResponse, TextPart
+
+        from app.api.routes.v1.agent import _run_agent_non_streaming
+
+        # Build a mock AgentRunResult with a simple text response
+        mock_result = MagicMock()
+        mock_result.output = "Hello from GLM-5"
+        mock_result.all_messages.return_value = [
+            ModelResponse(parts=[TextPart(content="Hello from GLM-5")]),
+        ]
+
+        # Mock the assistant
+        mock_assistant = MagicMock()
+        mock_assistant.model_name = "glm-5"
+        mock_assistant.agent = MagicMock()
+        mock_assistant.agent.run = AsyncMock(return_value=mock_result)
+
+        # Mock the WebSocket
+        mock_ws = MagicMock()
+        sent_events: list[tuple[str, dict]] = []
+
+        async def capture_event(_ws, event_type, data):
+            sent_events.append((event_type, data))
+            return True
+
+        deps = MagicMock()
+
+        with (
+            patch(
+                "app.api.routes.v1.agent.get_db_context",
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=MagicMock()),
+                    __aexit__=AsyncMock(return_value=False),
+                ),
+            ),
+            patch(
+                "app.api.routes.v1.agent.manager.send_event",
+                side_effect=capture_event,
+            ),
+            patch(
+                "app.api.routes.v1.agent._persist_assistant_result",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await _run_agent_non_streaming(
+                assistant=mock_assistant,
+                agent_input="Hi",
+                deps=deps,
+                model_history=[],
+                websocket=mock_ws,
+                conversation_id=None,
+                user_message="Hi",
+                conversation_history=[],
+            )
+
+        event_types = [e[0] for e in sent_events]
+        assert event_types == [
+            "model_request_start",
+            "text_delta",
+            "final_result",
+            "complete",
+        ]
+        # Verify text_delta contains full output
+        text_event = sent_events[1]
+        assert text_event[1]["content"] == "Hello from GLM-5"
+
+    @pytest.mark.anyio
+    async def test_emits_tool_call_and_result_events(self):
+        """Non-streaming path emits tool_call and tool_result for tool usage."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from pydantic_ai.messages import (
+            ModelRequest,
+            ModelResponse,
+            TextPart,
+            ToolCallPart,
+            ToolReturnPart,
+        )
+
+        from app.api.routes.v1.agent import _run_agent_non_streaming
+
+        # Simulate a tool call + result + final text
+        mock_result = MagicMock()
+        mock_result.output = "The time is 12:00"
+        mock_result.all_messages.return_value = [
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="current_datetime",
+                        args={"timezone": "UTC"},
+                        tool_call_id="tc_001",
+                    ),
+                ]
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="current_datetime",
+                        content="2026-02-21T12:00:00Z",
+                        tool_call_id="tc_001",
+                    ),
+                ]
+            ),
+            ModelResponse(parts=[TextPart(content="The time is 12:00")]),
+        ]
+
+        mock_assistant = MagicMock()
+        mock_assistant.model_name = "glm-5"
+        mock_assistant.agent = MagicMock()
+        mock_assistant.agent.run = AsyncMock(return_value=mock_result)
+
+        mock_ws = MagicMock()
+        sent_events: list[tuple[str, dict]] = []
+
+        async def capture_event(_ws, event_type, data):
+            sent_events.append((event_type, data))
+            return True
+
+        deps = MagicMock()
+
+        with (
+            patch(
+                "app.api.routes.v1.agent.get_db_context",
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=MagicMock()),
+                    __aexit__=AsyncMock(return_value=False),
+                ),
+            ),
+            patch(
+                "app.api.routes.v1.agent.manager.send_event",
+                side_effect=capture_event,
+            ),
+            patch(
+                "app.api.routes.v1.agent._persist_assistant_result",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await _run_agent_non_streaming(
+                assistant=mock_assistant,
+                agent_input="What time is it?",
+                deps=deps,
+                model_history=[],
+                websocket=mock_ws,
+                conversation_id=None,
+                user_message="What time is it?",
+                conversation_history=[],
+            )
+
+        event_types = [e[0] for e in sent_events]
+        assert "tool_call" in event_types
+        assert "tool_result" in event_types
+        # Verify ordering: tool_call before tool_result before text_delta
+        tc_idx = event_types.index("tool_call")
+        tr_idx = event_types.index("tool_result")
+        td_idx = event_types.index("text_delta")
+        assert tc_idx < tr_idx < td_idx
+
+    @pytest.mark.anyio
+    async def test_emits_thinking_events_when_enabled(self):
+        """Non-streaming path emits thinking_delta for ThinkingPart content."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+
+        from app.api.routes.v1.agent import _run_agent_non_streaming
+
+        mock_result = MagicMock()
+        mock_result.output = "Answer"
+        mock_result.all_messages.return_value = [
+            ModelResponse(
+                parts=[
+                    ThinkingPart(content="Let me think..."),
+                    TextPart(content="Answer"),
+                ]
+            ),
+        ]
+
+        mock_assistant = MagicMock()
+        mock_assistant.model_name = "glm-5"
+        mock_assistant.agent = MagicMock()
+        mock_assistant.agent.run = AsyncMock(return_value=mock_result)
+
+        mock_ws = MagicMock()
+        sent_events: list[tuple[str, dict]] = []
+
+        async def capture_event(_ws, event_type, data):
+            sent_events.append((event_type, data))
+            return True
+
+        deps = MagicMock()
+
+        with (
+            patch(
+                "app.api.routes.v1.agent.get_db_context",
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=MagicMock()),
+                    __aexit__=AsyncMock(return_value=False),
+                ),
+            ),
+            patch(
+                "app.api.routes.v1.agent.manager.send_event",
+                side_effect=capture_event,
+            ),
+            patch(
+                "app.api.routes.v1.agent._persist_assistant_result",
+                new_callable=AsyncMock,
+            ),
+            patch("app.api.routes.v1.agent.settings") as mock_settings,
+        ):
+            mock_settings.AGENT_MAX_REQUESTS = 100
+            mock_settings.AGENT_MAX_TOOL_CALLS = 200
+            mock_settings.AGENT_STREAM_THINKING = True
+
+            await _run_agent_non_streaming(
+                assistant=mock_assistant,
+                agent_input="Think about this",
+                deps=deps,
+                model_history=[],
+                websocket=mock_ws,
+                conversation_id=None,
+                user_message="Think about this",
+                conversation_history=[],
+            )
+
+        event_types = [e[0] for e in sent_events]
+        assert "thinking_delta" in event_types
+        thinking_event = next(e for e in sent_events if e[0] == "thinking_delta")
+        assert thinking_event[1]["content"] == "Let me think..."

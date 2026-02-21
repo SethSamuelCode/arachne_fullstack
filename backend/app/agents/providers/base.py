@@ -63,6 +63,17 @@ class ModelProvider(ABC):
         return False
 
     @property
+    def supports_streaming(self) -> bool:
+        """Whether this provider supports streamed responses.
+
+        When False, the agent handler uses ``agent.run()`` instead of
+        ``agent.iter()`` to avoid provider-side rate-limit (429) errors
+        that some providers (e.g. Vertex AI Model Garden) return for
+        streaming endpoints.
+        """
+        return True
+
+    @property
     def supports_thinking(self) -> bool:
         """Whether this provider supports thinking/reasoning traces."""
         return False

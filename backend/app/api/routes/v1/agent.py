@@ -26,6 +26,8 @@ from pydantic_ai.messages import (
     SystemPromptPart,
     TextPart,
     ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 
@@ -308,6 +310,257 @@ async def build_multimodal_input(
     return content
 
 
+async def _persist_assistant_result(
+    *,
+    conversation_id: str | None,
+    output: str,
+    assistant_message_id: UUID | None,
+    thinking_content_buffer: list[str],
+    model_name: str | None,
+    user_message: str,
+    websocket: WebSocket,
+) -> None:
+    """Persist the assistant response, tool-call message, title generation, etc.
+
+    Shared by both the streaming and non-streaming paths so DB logic is not
+    duplicated.
+    """
+    if not conversation_id:
+        return
+
+    final_thinking_content = "".join(thinking_content_buffer) if thinking_content_buffer else None
+
+    try:
+        async with get_db_context() as db:
+            conv_service = get_conversation_service(db)
+
+            if assistant_message_id is not None:
+                # Update existing message (created during tool calls)
+                from app.repositories.conversation import update_message_content
+
+                await update_message_content(
+                    db,
+                    assistant_message_id,
+                    output,
+                    thinking_content=final_thinking_content,
+                )
+            else:
+                # No tools were used, create new message
+                await conv_service.add_message(
+                    UUID(conversation_id),
+                    MessageCreate(
+                        role="assistant",
+                        content=output,
+                        thinking_content=final_thinking_content,
+                        model_name=model_name,
+                    ),
+                )
+    except Exception as e:
+        logger.warning(f"Failed to persist assistant response: {e}")
+
+    # Generate title for new conversations (non-blocking)
+    try:
+        async with get_db_context() as db:
+            conv_service = get_conversation_service(db)
+            title = await conv_service.generate_and_set_title(
+                UUID(conversation_id),
+                user_message,
+                output,
+            )
+            if title:
+                await manager.send_event(
+                    websocket,
+                    "conversation_updated",
+                    {
+                        "conversation_id": conversation_id,
+                        "title": title,
+                    },
+                )
+    except Exception as e:
+        logger.warning(f"Failed to generate conversation title: {e}")
+
+
+async def _run_agent_non_streaming(
+    *,
+    assistant: Any,
+    agent_input: Any,
+    deps: Deps,
+    model_history: list[ModelRequest | ModelResponse],
+    websocket: WebSocket,
+    conversation_id: str | None,
+    user_message: str,
+    conversation_history: list[dict[str, Any]],
+) -> None:
+    """Execute the agent without streaming and emit WebSocket events after completion.
+
+    Used for providers that do not support streaming (e.g. Vertex AI Model
+    Garden models) to avoid 429 RESOURCE_EXHAUSTED errors from the streaming
+    endpoint.
+
+    The full result is obtained via ``agent.run()``, then tool calls, thinking,
+    and text are sent to the client as discrete WebSocket events — the same
+    event types the frontend already handles.
+    """
+    from pydantic_ai import UsageLimits
+
+    assistant_message_id: UUID | None = None
+    tool_call_mapping: dict[str, UUID] = {}
+    thinking_content_buffer: list[str] = []
+
+    async with get_db_context() as agent_db:
+        deps.db = agent_db
+
+        result = await assistant.agent.run(
+            agent_input,
+            deps=deps,
+            message_history=model_history,
+            usage_limits=UsageLimits(
+                request_limit=settings.AGENT_MAX_REQUESTS,
+                tool_calls_limit=settings.AGENT_MAX_TOOL_CALLS,
+            ),
+        )
+
+    # Walk result messages and emit events the frontend understands
+    await manager.send_event(websocket, "model_request_start", {})
+
+    for message in result.all_messages():
+        if isinstance(message, ModelResponse):
+            for part in message.parts:
+                if isinstance(part, ThinkingPart) and part.content:
+                    thinking_content_buffer.append(part.content)
+                    if settings.AGENT_STREAM_THINKING:
+                        await manager.send_event(
+                            websocket,
+                            "thinking_delta",
+                            {"index": 0, "content": part.content},
+                        )
+                elif isinstance(part, ToolCallPart):
+                    args = part.args if isinstance(part.args, dict) else {}
+                    await manager.send_event(
+                        websocket,
+                        "tool_call",
+                        {
+                            "tool_name": part.tool_name,
+                            "args": args,
+                            "tool_call_id": part.tool_call_id,
+                        },
+                    )
+                    # Persist tool call start
+                    if conversation_id:
+                        try:
+                            if assistant_message_id is None:
+                                async with get_db_context() as db:
+                                    conv_service = get_conversation_service(db)
+                                    assistant_msg = await conv_service.add_message(
+                                        UUID(conversation_id),
+                                        MessageCreate(
+                                            role="assistant",
+                                            content="",
+                                            model_name=assistant.model_name
+                                            if hasattr(assistant, "model_name")
+                                            else None,
+                                        ),
+                                    )
+                                    assistant_message_id = assistant_msg.id
+
+                            async with get_db_context() as db:
+                                conv_service = get_conversation_service(db)
+                                tool_call = await conv_service.start_tool_call(
+                                    assistant_message_id,
+                                    ToolCallCreate(
+                                        tool_call_id=part.tool_call_id,
+                                        tool_name=part.tool_name,
+                                        args=args,
+                                        started_at=datetime.now(UTC),
+                                    ),
+                                )
+                                tool_call_mapping[part.tool_call_id] = tool_call.id
+                        except Exception as e:
+                            logger.warning(f"Failed to persist tool call start: {e}")
+
+        elif isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, ToolReturnPart):
+                    content_parts = serialize_tool_content(part.content)
+                    await manager.send_event(
+                        websocket,
+                        "tool_result",
+                        {
+                            "tool_call_id": part.tool_call_id,
+                            "content": content_parts,
+                        },
+                    )
+                    # Persist tool result
+                    if conversation_id and part.tool_call_id in tool_call_mapping:
+                        try:
+                            db_tool_call_id = tool_call_mapping[part.tool_call_id]
+                            result_text = serialize_tool_result_for_db(part.content)
+                            is_error = (
+                                isinstance(part.content, dict) and part.content.get("error") is True
+                            )
+                            async with get_db_context() as db:
+                                conv_service = get_conversation_service(db)
+                                await conv_service.complete_tool_call(
+                                    db_tool_call_id,
+                                    ToolCallComplete(
+                                        result=result_text,
+                                        completed_at=datetime.now(UTC),
+                                        success=not is_error,
+                                    ),
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to persist tool result: {e}")
+
+    # Send the full output text as a single delta
+    await manager.send_event(
+        websocket,
+        "text_delta",
+        {"index": 0, "content": result.output},
+    )
+
+    # Signal final result
+    await manager.send_event(
+        websocket,
+        "final_result",
+        {"output": result.output},
+    )
+
+    # Update conversation history
+    conversation_history.append({"role": "user", "content": user_message})
+    conversation_history.append({"role": "assistant", "content": result.output})
+
+    # Persist assistant response and generate title
+    await _persist_assistant_result(
+        conversation_id=conversation_id,
+        output=result.output,
+        assistant_message_id=assistant_message_id,
+        thinking_content_buffer=thinking_content_buffer,
+        model_name=assistant.model_name if hasattr(assistant, "model_name") else None,
+        user_message=user_message,
+        websocket=websocket,
+    )
+
+    # Handle interrupted tool calls (agent didn't complete but we created a message)
+    if not result.output and assistant_message_id is not None:
+        try:
+            async with get_db_context() as db:
+                from app.repositories.conversation import update_message_content
+
+                await update_message_content(
+                    db,
+                    assistant_message_id,
+                    "(Tool execution interrupted)",
+                )
+        except Exception as e:
+            logger.warning(f"Failed to update interrupted message: {e}")
+
+    await manager.send_event(
+        websocket,
+        "complete",
+        {"conversation_id": conversation_id},
+    )
+
+
 @router.websocket("/ws/agent")
 async def agent_websocket(
     websocket: WebSocket,
@@ -566,6 +819,20 @@ async def agent_websocket(
                     await manager.send_event(websocket, "error", {"message": str(e)})
                     continue
 
+                # Branch: non-streaming path for providers that don't support it
+                if not provider.supports_streaming:
+                    await _run_agent_non_streaming(
+                        assistant=assistant,
+                        agent_input=agent_input,
+                        deps=deps,
+                        model_history=model_history,
+                        websocket=websocket,
+                        conversation_id=current_conversation_id,
+                        user_message=user_message,
+                        conversation_history=conversation_history,
+                    )
+                    continue
+
                 # Track assistant message and tool call mapping for persistence
                 assistant_message_id: UUID | None = None
                 tool_call_mapping: dict[str, UUID] = {}  # Maps PydanticAI tool_call_id to DB UUID
@@ -816,62 +1083,17 @@ async def agent_websocket(
 
                 # Save or update assistant response to database
                 if current_conversation_id and agent_run.result:
-                    # Combine thinking content if any was captured
-                    final_thinking_content = (
-                        "".join(thinking_content_buffer) if thinking_content_buffer else None
+                    await _persist_assistant_result(
+                        conversation_id=current_conversation_id,
+                        output=agent_run.result.output,
+                        assistant_message_id=assistant_message_id,
+                        thinking_content_buffer=thinking_content_buffer,
+                        model_name=assistant.model_name
+                        if hasattr(assistant, "model_name")
+                        else None,
+                        user_message=user_message,
+                        websocket=websocket,
                     )
-
-                    try:
-                        async with get_db_context() as db:
-                            conv_service = get_conversation_service(db)
-
-                            # If assistant message was created for tool calls, update it
-                            if assistant_message_id is not None:
-                                # Update the existing message with final content and thinking
-                                from app.repositories.conversation import update_message_content
-
-                                await update_message_content(
-                                    db,
-                                    assistant_message_id,
-                                    agent_run.result.output,
-                                    thinking_content=final_thinking_content,
-                                )
-                            else:
-                                # No tools were used, create new message
-                                await conv_service.add_message(
-                                    UUID(current_conversation_id),
-                                    MessageCreate(
-                                        role="assistant",
-                                        content=agent_run.result.output,
-                                        thinking_content=final_thinking_content,
-                                        model_name=assistant.model_name
-                                        if hasattr(assistant, "model_name")
-                                        else None,
-                                    ),
-                                )
-                    except Exception as e:
-                        logger.warning(f"Failed to persist assistant response: {e}")
-
-                    # Generate title for new conversations (non-blocking)
-                    try:
-                        async with get_db_context() as db:
-                            conv_service = get_conversation_service(db)
-                            title = await conv_service.generate_and_set_title(
-                                UUID(current_conversation_id),
-                                user_message,
-                                agent_run.result.output,
-                            )
-                            if title:
-                                await manager.send_event(
-                                    websocket,
-                                    "conversation_updated",
-                                    {
-                                        "conversation_id": current_conversation_id,
-                                        "title": title,
-                                    },
-                                )
-                    except Exception as e:
-                        logger.warning(f"Failed to generate conversation title: {e}")
 
                 # Handle case where assistant message was created but agent didn't complete
                 elif current_conversation_id and assistant_message_id is not None:

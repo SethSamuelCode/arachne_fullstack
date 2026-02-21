@@ -42,6 +42,15 @@ class VertexModelProvider(ModelProvider):
         return False
 
     @property
+    def supports_streaming(self) -> bool:
+        """Vertex AI Model Garden models have strict streaming rate limits.
+
+        Using non-streaming ``agent.run()`` avoids 429 RESOURCE_EXHAUSTED
+        errors that occur with ``generate_content_stream``.
+        """
+        return False
+
+    @property
     def supports_thinking(self) -> bool:
         return False
 

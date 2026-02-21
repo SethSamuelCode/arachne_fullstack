@@ -82,6 +82,7 @@ def get_model_list() -> list[dict[str, object]]:
             "label": provider.display_name,
             "provider": provider.provider_label,
             "supports_thinking": provider.supports_thinking,
+            "supports_streaming": provider.supports_streaming,
             "modalities": provider.modalities.model_dump(),
         }
         for provider in MODEL_REGISTRY.values()

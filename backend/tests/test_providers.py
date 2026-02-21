@@ -81,6 +81,10 @@ class TestModelProviderBase:
         assert p.modalities.audio is False
         assert p.modalities.video is False
 
+    def test_supports_streaming_true_by_default(self):
+        p = StubProvider("m", "m", "M", "P")
+        assert p.supports_streaming is True
+
 
 class TestGeminiModelProvider:
     """Tests for Gemini provider classes."""
@@ -247,6 +251,12 @@ class TestVertexModelProvider:
         p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
         assert p.supports_thinking is False
 
+    def test_vertex_supports_streaming_false(self):
+        from app.agents.providers.vertex import VertexModelProvider
+
+        p = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        assert p.supports_streaming is False
+
     def test_vertex_attributes(self):
         from app.agents.providers.vertex import VertexModelProvider
 
@@ -370,6 +380,7 @@ class TestModelRegistry:
         assert isinstance(p, VertexModelProvider)
         assert p.supports_caching is False
         assert p.supports_thinking is False
+        assert p.supports_streaming is False
 
     def test_get_model_list_length(self):
         from app.agents.providers.registry import MODEL_REGISTRY, get_model_list
@@ -386,6 +397,7 @@ class TestModelRegistry:
             assert "label" in entry
             assert "provider" in entry
             assert "supports_thinking" in entry
+            assert "supports_streaming" in entry
 
     def test_get_model_list_glm5_entry(self):
         from app.agents.providers.registry import get_model_list
@@ -394,3 +406,11 @@ class TestModelRegistry:
         glm5 = next(e for e in result if e["id"] == "glm-5")
         assert glm5["provider"] == "Google Vertex AI"
         assert glm5["supports_thinking"] is False
+        assert glm5["supports_streaming"] is False
+
+    def test_get_model_list_gemini_supports_streaming(self):
+        from app.agents.providers.registry import get_model_list
+
+        result = get_model_list()
+        gemini = next(e for e in result if e["id"] == "gemini-2.5-flash")
+        assert gemini["supports_streaming"] is True
