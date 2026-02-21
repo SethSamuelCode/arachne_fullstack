@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 @dataclass
 class SpawnAgentDeps:
     """Dependencies for spawn_agent tool."""
+
     user_id: str | None = None
     user_name: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

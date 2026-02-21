@@ -1,6 +1,5 @@
 """Research tool schemas for web search, URL fetching, and calculations."""
 
-
 from pydantic import BaseModel, Field
 
 
@@ -98,9 +97,7 @@ class CalculateRequest(BaseModel):
         examples=["2 + 2", "sqrt(16) + 3**2", "(1 + 0.05)**10 * 1000", "sin(pi/4)"],
     )
 
-    model_config = {
-        "json_schema_extra": {"examples": [{"expression": "1000 * (1 + 0.07)**30"}]}
-    }
+    model_config = {"json_schema_extra": {"examples": [{"expression": "1000 * (1 + 0.07)**30"}]}}
 
 
 class CalculateResponse(BaseModel):
@@ -108,6 +105,4 @@ class CalculateResponse(BaseModel):
 
     expression: str = Field(..., description="The original expression")
     result: str = Field(..., description="The computed result as a string")
-    result_type: str = Field(
-        ..., description="Type of result (int, float, complex, etc.)"
-    )
+    result_type: str = Field(..., description="Type of result (int, float, complex, etc.)")

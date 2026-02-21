@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
@@ -171,9 +171,7 @@ class ConversationPinnedContent(TimestampMixin, SQLModel, table=True):
     """
 
     __tablename__ = "conversation_pinned_content"
-    __table_args__ = (
-        UniqueConstraint("conversation_id", name="uq_pinned_content_conversation"),
-    )
+    __table_args__ = (UniqueConstraint("conversation_id", name="uq_pinned_content_conversation"),)
 
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,

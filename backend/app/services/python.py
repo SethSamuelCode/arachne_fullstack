@@ -76,22 +76,28 @@ class PythonExecutor:
             if storage_token:
                 # Determine proxy URL (use internal Docker network URL if available)
                 # Default to port 8550 which is the production FastAPI port
-                proxy_base_url = settings.STORAGE_PROXY_URL or "http://host.docker.internal:8550/api/v1/storage"
-                env_vars.update({
-                    "STORAGE_PROXY_URL": proxy_base_url,
-                    "STORAGE_TOKEN": storage_token,
-                    "S3_USER_PREFIX": f"users/{user_id}/" if user_id else "",
-                })
+                proxy_base_url = (
+                    settings.STORAGE_PROXY_URL or "http://host.docker.internal:8550/api/v1/storage"
+                )
+                env_vars.update(
+                    {
+                        "STORAGE_PROXY_URL": proxy_base_url,
+                        "STORAGE_TOKEN": storage_token,
+                        "S3_USER_PREFIX": f"users/{user_id}/" if user_id else "",
+                    }
+                )
             elif user_id:
                 # Legacy mode: pass raw S3 credentials (DEPRECATED)
                 # TODO: Remove this branch once all callers use storage_token
-                env_vars.update({
-                    "AWS_ACCESS_KEY_ID": settings.S3_ACCESS_KEY,
-                    "AWS_SECRET_ACCESS_KEY": settings.S3_SECRET_KEY,
-                    "AWS_REGION": settings.S3_REGION,
-                    "S3_BUCKET": settings.S3_BUCKET,
-                    "S3_USER_PREFIX": f"users/{user_id}/",
-                })
+                env_vars.update(
+                    {
+                        "AWS_ACCESS_KEY_ID": settings.S3_ACCESS_KEY,
+                        "AWS_SECRET_ACCESS_KEY": settings.S3_SECRET_KEY,
+                        "AWS_REGION": settings.S3_REGION,
+                        "S3_BUCKET": settings.S3_BUCKET,
+                        "S3_USER_PREFIX": f"users/{user_id}/",
+                    }
+                )
                 if settings.S3_ENDPOINT:
                     env_vars["AWS_ENDPOINT_URL"] = settings.S3_ENDPOINT
 
@@ -101,8 +107,9 @@ class PythonExecutor:
                 lambda: client.containers.run(
                     image=settings.PYTHON_SANDBOX_IMAGE,
                     command=[
-                        "python", "-c",
-                        "import os; exec(compile(os.environ.get('PYTHON_CODE', ''), 'script.py', 'exec'))"
+                        "python",
+                        "-c",
+                        "import os; exec(compile(os.environ.get('PYTHON_CODE', ''), 'script.py', 'exec'))",
                     ],
                     detach=True,
                     stderr=True,
@@ -111,7 +118,7 @@ class PythonExecutor:
                     # Enable host.docker.internal on Linux (required for storage proxy)
                     extra_hosts={"host.docker.internal": "host-gateway"},
                     # network and resource limits lifted for advanced uses
-                )
+                ),
             )
 
             if container is None:
@@ -120,16 +127,13 @@ class PythonExecutor:
             try:
                 # container.wait() is blocking in docker-py, so use executor
                 exit_status = await asyncio.wait_for(
-                    loop.run_in_executor(None, container.wait),
-                    timeout=timeout
+                    loop.run_in_executor(None, container.wait), timeout=timeout
                 )
             except TimeoutError:
                 await loop.run_in_executor(None, container.kill)
                 return {"output": "", "error": "Execution timed out."}
 
-            logs = await loop.run_in_executor(
-                None, lambda: container.logs().decode("utf-8")
-            )
+            logs = await loop.run_in_executor(None, lambda: container.logs().decode("utf-8"))
 
             if exit_status["StatusCode"] != 0:
                 return {"output": "", "error": logs}
@@ -142,9 +146,7 @@ class PythonExecutor:
             if container:
                 try:
                     loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(
-                        None, lambda: container.remove(force=True)
-                    )
+                    await loop.run_in_executor(None, lambda: container.remove(force=True))
                 except Exception:
                     pass
 

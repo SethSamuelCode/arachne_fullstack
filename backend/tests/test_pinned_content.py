@@ -332,7 +332,7 @@ class TestValidatePinnedContentBudget:
 
         result = validate_pinned_content_budget(
             total_tokens=100_000,  # Small amount
-            model_name="gemini-2.5-flash",  # ~891K budget
+            model_name="gemini-2.5-flash",  # ~1048K budget
         )
 
         assert result["within_budget"] is True
@@ -346,7 +346,7 @@ class TestValidatePinnedContentBudget:
         mock_settings.PINNED_CONTEXT_WARNING_PERCENT = 30
 
         result = validate_pinned_content_budget(
-            total_tokens=300_000,  # ~34% of 891K
+            total_tokens=350_000,  # ~33% of 1048K
             model_name="gemini-2.5-flash",
         )
 
@@ -361,7 +361,7 @@ class TestValidatePinnedContentBudget:
         mock_settings.PINNED_CONTEXT_WARNING_PERCENT = 30
 
         result = validate_pinned_content_budget(
-            total_tokens=400_000,  # ~45% of 891K
+            total_tokens=450_000,  # ~43% of 1048K
             model_name="gemini-2.5-flash",
         )
 

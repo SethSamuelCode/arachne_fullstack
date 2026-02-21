@@ -75,13 +75,9 @@ class StorageClient:
         self.token = token or os.environ.get("STORAGE_TOKEN")
 
         if not self.base_url:
-            raise StorageClientError(
-                "STORAGE_PROXY_URL environment variable is required"
-            )
+            raise StorageClientError("STORAGE_PROXY_URL environment variable is required")
         if not self.token:
-            raise StorageClientError(
-                "STORAGE_TOKEN environment variable is required"
-            )
+            raise StorageClientError("STORAGE_TOKEN environment variable is required")
 
         # Remove trailing slash for consistent URL building
         self.base_url = self.base_url.rstrip("/")
@@ -115,9 +111,7 @@ class StorageClient:
                 detail = response.json().get("detail", response.text)
             except Exception:
                 detail = response.text
-            raise StorageClientError(
-                f"Storage error ({response.status_code}): {detail}"
-            )
+            raise StorageClientError(f"Storage error ({response.status_code}): {detail}")
         return response
 
     def get(self, path: str) -> bytes:
@@ -224,9 +218,7 @@ class StorageClient:
 
         url = f"{self.base_url}/objects"
         params = {"prefix": prefix} if prefix else {}
-        response = requests.get(
-            url, headers=self._headers, params=params, timeout=60
-        )
+        response = requests.get(url, headers=self._headers, params=params, timeout=60)
         self._handle_response(response, "list")
         return response.json().get("objects", [])
 

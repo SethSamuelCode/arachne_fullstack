@@ -270,10 +270,12 @@ async def pin_content_sse(
             if not s3_paths:
                 yield {
                     "event": "error",
-                    "data": json.dumps({
-                        "code": "NO_FILES",
-                        "message": "No files specified. Provide s3_paths query parameter.",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "code": "NO_FILES",
+                            "message": "No files specified. Provide s3_paths query parameter.",
+                        }
+                    ),
                 }
                 return
 
@@ -283,12 +285,14 @@ async def pin_content_sse(
 
             yield {
                 "event": "progress",
-                "data": json.dumps({
-                    "phase": "fetching",
-                    "current": 0,
-                    "total": len(s3_paths),
-                    "message": "Fetching files from storage...",
-                }),
+                "data": json.dumps(
+                    {
+                        "phase": "fetching",
+                        "current": 0,
+                        "total": len(s3_paths),
+                        "message": "Fetching files from storage...",
+                    }
+                ),
             }
 
             for i, path in enumerate(s3_paths):
@@ -308,31 +312,37 @@ async def pin_content_sse(
 
                     yield {
                         "event": "progress",
-                        "data": json.dumps({
-                            "phase": "fetching",
-                            "current": i + 1,
-                            "total": len(s3_paths),
-                            "current_file": path,
-                        }),
+                        "data": json.dumps(
+                            {
+                                "phase": "fetching",
+                                "current": i + 1,
+                                "total": len(s3_paths),
+                                "current_file": path,
+                            }
+                        ),
                     }
                 except Exception as e:
                     logger.warning(f"Failed to fetch {path}: {e}")
                     yield {
                         "event": "warning",
-                        "data": json.dumps({
-                            "type": "file_error",
-                            "path": path,
-                            "message": str(e),
-                        }),
+                        "data": json.dumps(
+                            {
+                                "type": "file_error",
+                                "path": path,
+                                "message": str(e),
+                            }
+                        ),
                     }
 
             if not files:
                 yield {
                     "event": "error",
-                    "data": json.dumps({
-                        "code": "NO_FILES_LOADED",
-                        "message": "Could not load any files from storage.",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "code": "NO_FILES_LOADED",
+                            "message": "Could not load any files from storage.",
+                        }
+                    ),
                 }
                 return
 
@@ -366,10 +376,12 @@ async def pin_content_sse(
             logger.exception(f"Error pinning content: {e}")
             yield {
                 "event": "error",
-                "data": json.dumps({
-                    "code": "INTERNAL_ERROR",
-                    "message": str(e),
-                }),
+                "data": json.dumps(
+                    {
+                        "code": "INTERNAL_ERROR",
+                        "message": str(e),
+                    }
+                ),
             }
 
     return EventSourceResponse(event_generator())
@@ -404,12 +416,14 @@ async def pin_content_post(
             if data.s3_paths:
                 yield {
                     "event": "progress",
-                    "data": json.dumps({
-                        "phase": "fetching",
-                        "current": 0,
-                        "total": len(data.s3_paths),
-                        "message": "Fetching files from storage...",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "phase": "fetching",
+                            "current": 0,
+                            "total": len(data.s3_paths),
+                            "message": "Fetching files from storage...",
+                        }
+                    ),
                 }
 
                 for i, path in enumerate(data.s3_paths):
@@ -427,12 +441,14 @@ async def pin_content_post(
 
                         yield {
                             "event": "progress",
-                            "data": json.dumps({
-                                "phase": "fetching",
-                                "current": i + 1,
-                                "total": len(data.s3_paths),
-                                "current_file": path,
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "phase": "fetching",
+                                    "current": i + 1,
+                                    "total": len(data.s3_paths),
+                                    "current_file": path,
+                                }
+                            ),
                         }
                     except Exception as e:
                         logger.warning(f"Failed to fetch {path}: {e}")
@@ -440,10 +456,12 @@ async def pin_content_post(
             if not files:
                 yield {
                     "event": "error",
-                    "data": json.dumps({
-                        "code": "NO_FILES",
-                        "message": "No files provided or could be loaded.",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "code": "NO_FILES",
+                            "message": "No files provided or could be loaded.",
+                        }
+                    ),
                 }
                 return
 
@@ -476,10 +494,12 @@ async def pin_content_post(
             logger.exception(f"Error pinning content: {e}")
             yield {
                 "event": "error",
-                "data": json.dumps({
-                    "code": "INTERNAL_ERROR",
-                    "message": str(e),
-                }),
+                "data": json.dumps(
+                    {
+                        "code": "INTERNAL_ERROR",
+                        "message": str(e),
+                    }
+                ),
             }
 
     return EventSourceResponse(event_generator())

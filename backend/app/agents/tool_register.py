@@ -33,6 +33,7 @@ ImageModelName = Literal[
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
 
+
 def _stringify(output: Any) -> str:
     """Convert various output types to a string representation."""
     if isinstance(output, str):
@@ -42,6 +43,7 @@ def _stringify(output: Any) -> str:
     else:
         return repr(output)
 
+
 def register_tools(agent: Agent[TDeps, str]) -> None:
     """Register tools to the given agent."""
 
@@ -49,8 +51,16 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def search_web(
         ctx: RunContext[TDeps],
-        query: Annotated[str, Field(description="Search query string. Be specific and include relevant keywords.")],
-        max_results: Annotated[int, Field(description="Maximum number of results to return. Higher values provide more context but increase latency.")] = 5,
+        query: Annotated[
+            str,
+            Field(description="Search query string. Be specific and include relevant keywords."),
+        ],
+        max_results: Annotated[
+            int,
+            Field(
+                description="Maximum number of results to return. Higher values provide more context but increase latency."
+            ),
+        ] = 5,
     ) -> str | dict[str, Any]:
         """
         <tool_def>
@@ -110,21 +120,30 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def spawn_agent(
         ctx: RunContext[TDeps],
-        user_input: Annotated[str, Field(
-            description="The specific instructions or question for the sub-agent. Must be fully self-contained as sub-agents have no conversation history."
-        )],
-        system_prompt: Annotated[str | None, Field(
-            description="Define the sub-agent's role and expertise (e.g., 'You are a Python security expert'). Defaults to generic assistant."
-        )] = None,
-        model_name: Annotated[str | None, Field(
-            description="Model ID to use. Options: 'gemini-2.5-flash-lite' (fast/cheap), "
-                        "'gemini-2.5-flash' (default, standard tasks), "
-                        "'gemini-2.5-pro' (complex reasoning), "
-                        "'gemini-3-flash-preview' (fast with reasoning), "
-                        "'gemini-3-pro-preview' (max reasoning), "
-                        "'gemini-3.1-pro-preview' (improved Gemini 3 Pro), "
-                        "'glm-5' (Vertex AI). Use stronger models only when needed."
-        )] = None,
+        user_input: Annotated[
+            str,
+            Field(
+                description="The specific instructions or question for the sub-agent. Must be fully self-contained as sub-agents have no conversation history."
+            ),
+        ],
+        system_prompt: Annotated[
+            str | None,
+            Field(
+                description="Define the sub-agent's role and expertise (e.g., 'You are a Python security expert'). Defaults to generic assistant."
+            ),
+        ] = None,
+        model_name: Annotated[
+            str | None,
+            Field(
+                description="Model ID to use. Options: 'gemini-2.5-flash-lite' (fast/cheap), "
+                "'gemini-2.5-flash' (default, standard tasks), "
+                "'gemini-2.5-pro' (complex reasoning), "
+                "'gemini-3-flash-preview' (fast with reasoning), "
+                "'gemini-3-pro-preview' (max reasoning), "
+                "'gemini-3.1-pro-preview' (improved Gemini 3 Pro), "
+                "'glm-5' (Vertex AI). Use stronger models only when needed."
+            ),
+        ] = None,
     ) -> str:
         """
         <tool_def>
@@ -183,9 +202,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
 
         # Only use cache if using the default prompt (cached prompts match)
         if effective_system_prompt == DEFAULT_SUBAGENT_PROMPT:
-            cached_content_name = await get_subagent_cached_content(
-                model_name=str(effective_model)
-            )
+            cached_content_name = await get_subagent_cached_content(model_name=str(effective_model))
             if cached_content_name:
                 skip_tool_registration = True
                 logger.debug(f"Sub-agent using cached content: {cached_content_name}")
@@ -231,9 +248,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def create_plan(
         ctx: RunContext[TDeps],
-        plan: Annotated[PlanCreate, Field(
-            description="The plan object with name, description, optional notes, and initial tasks."
-        )],
+        plan: Annotated[
+            PlanCreate,
+            Field(
+                description="The plan object with name, description, optional notes, and initial tasks."
+            ),
+        ],
     ) -> str:
         """
         <tool_def>
@@ -322,9 +342,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def update_plan(
         ctx: RunContext[TDeps],
         plan_id: Annotated[str, Field(description="The UUID of the plan to update.")],
-        plan_data: Annotated[PlanUpdate, Field(
-            description="Partial update data. Only include fields you want to change (name, description, notes, is_completed)."
-        )],
+        plan_data: Annotated[
+            PlanUpdate,
+            Field(
+                description="Partial update data. Only include fields you want to change (name, description, notes, is_completed)."
+            ),
+        ],
     ) -> str:
         """
         <tool_def>
@@ -471,9 +494,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def add_task_to_plan(
         ctx: RunContext[TDeps],
         plan_id: Annotated[str, Field(description="The UUID of the plan to add the task to.")],
-        task: Annotated[PlanTaskCreate, Field(
-            description="The task to add with description, optional notes, status ('pending'/'in_progress'/'completed'), and optional position."
-        )],
+        task: Annotated[
+            PlanTaskCreate,
+            Field(
+                description="The task to add with description, optional notes, status ('pending'/'in_progress'/'completed'), and optional position."
+            ),
+        ],
     ) -> str:
         """
         <tool_def>
@@ -521,9 +547,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def update_task(
         ctx: RunContext[TDeps],
         task_id: Annotated[str, Field(description="The UUID of the task to update.")],
-        task_update: Annotated[PlanTaskUpdate, Field(
-            description="Partial update with fields: description, notes, status, is_completed, position."
-        )],
+        task_update: Annotated[
+            PlanTaskUpdate,
+            Field(
+                description="Partial update with fields: description, notes, status, is_completed, position."
+            ),
+        ],
     ) -> str:
         """
         <tool_def>
@@ -656,8 +685,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_upload_file(
         ctx: RunContext[TDeps],
-        file_name: Annotated[str, Field(description="Absolute or relative path to the local file to upload.")],
-        object_name: Annotated[str, Field(description="The key (name) to assign to the object in your storage.")],
+        file_name: Annotated[
+            str, Field(description="Absolute or relative path to the local file to upload.")
+        ],
+        object_name: Annotated[
+            str, Field(description="The key (name) to assign to the object in your storage.")
+        ],
     ) -> str | dict[str, Any]:
         """
         <tool_def>
@@ -694,8 +727,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_download_file(
         ctx: RunContext[TDeps],
-        object_name: Annotated[str, Field(description="The key (name) of the object in your storage to download.")],
-        file_name: Annotated[str, Field(description="The local path where the file should be saved.")],
+        object_name: Annotated[
+            str, Field(description="The key (name) of the object in your storage to download.")
+        ],
+        file_name: Annotated[
+            str, Field(description="The local path where the file should be saved.")
+        ],
     ) -> str | dict[str, Any]:
         """
         <tool_def>
@@ -734,7 +771,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     async def s3_upload_string_content(
         ctx: RunContext[TDeps],
         content: Annotated[str, Field(description="The string content to be written to the file.")],
-        object_name: Annotated[str, Field(description="The key (name) to assign to the object in your storage.")],
+        object_name: Annotated[
+            str, Field(description="The key (name) to assign to the object in your storage.")
+        ],
     ) -> str | dict[str, Any]:
         """
         <tool_def>
@@ -770,7 +809,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_read_string_content(
         ctx: RunContext[TDeps],
-        object_name: Annotated[str, Field(description="The key (name) of the object in your storage to read.")],
+        object_name: Annotated[
+            str, Field(description="The key (name) of the object in your storage to read.")
+        ],
     ) -> str | dict[str, Any]:
         """
         <tool_def>
@@ -845,7 +886,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_generate_presigned_download_url(
         ctx: RunContext[TDeps],
-        object_name: Annotated[str, Field(description="The key (name) of the object in your storage.")],
+        object_name: Annotated[
+            str, Field(description="The key (name) of the object in your storage.")
+        ],
         expiration: Annotated[int, Field(description="Validity duration in seconds.")] = 3600,
     ) -> str | dict[str, Any]:
         """
@@ -881,7 +924,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_generate_presigned_upload_post_url(
         ctx: RunContext[TDeps],
-        object_name: Annotated[str, Field(description="The key (name) for the object to be uploaded.")],
+        object_name: Annotated[
+            str, Field(description="The key (name) for the object to be uploaded.")
+        ],
         expiration: Annotated[int, Field(description="Validity duration in seconds.")] = 3600,
     ) -> str | dict[str, Any]:
         """
@@ -917,7 +962,9 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def s3_copy_file(
         ctx: RunContext[TDeps],
-        source_object_name: Annotated[str, Field(description="The key (name) of the existing object to copy.")],
+        source_object_name: Annotated[
+            str, Field(description="The key (name) of the existing object to copy.")
+        ],
         dest_object_name: Annotated[str, Field(description="The key (name) for the new copy.")],
     ) -> str | dict[str, Any]:
         """
@@ -955,8 +1002,15 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def python_execute_code(
         ctx: RunContext[TDeps],
-        code: Annotated[str, Field(description="The Python code to execute. Must be valid Python 3.13 syntax.")],
-        timeout: Annotated[int, Field(description="Maximum execution time in seconds. Use higher values for long-running tasks.")] = 600,
+        code: Annotated[
+            str, Field(description="The Python code to execute. Must be valid Python 3.13 syntax.")
+        ],
+        timeout: Annotated[
+            int,
+            Field(
+                description="Maximum execution time in seconds. Use higher values for long-running tasks."
+            ),
+        ] = 600,
     ) -> dict[str, Any]:
         """
         <tool_def>
@@ -1040,11 +1094,18 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @safe_tool
     async def extract_webpage(
         ctx: RunContext[TDeps],
-        url: Annotated[str, Field(description="The full URL to fetch (e.g., 'https://docs.python.org/3/').")],
-        extract_text: Annotated[bool, Field(
-            description="True: Returns parsed readable text (best for reasoning). False: Returns raw HTML (for layout analysis)."
-        )] = True,
-        max_length: Annotated[int, Field(description="Maximum characters to return. Content is truncated if longer.")] = 20000,
+        url: Annotated[
+            str, Field(description="The full URL to fetch (e.g., 'https://docs.python.org/3/').")
+        ],
+        extract_text: Annotated[
+            bool,
+            Field(
+                description="True: Returns parsed readable text (best for reasoning). False: Returns raw HTML (for layout analysis)."
+            ),
+        ] = True,
+        max_length: Annotated[
+            int, Field(description="Maximum characters to return. Content is truncated if longer.")
+        ] = 20000,
     ) -> dict[str, Any]:
         """
         <tool_def>
@@ -1089,9 +1150,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def s3_fetch_image(
         ctx: RunContext[TDeps],
-        object_name: Annotated[str, Field(
-            description="The key (name) of the image in storage (e.g., 'photos/receipt.png'). Do NOT include 'users/<id>/' prefix."
-        )],
+        object_name: Annotated[
+            str,
+            Field(
+                description="The key (name) of the image in storage (e.g., 'photos/receipt.png'). Do NOT include 'users/<id>/' prefix."
+            ),
+        ],
     ) -> ToolReturn:
         """
         <tool_def>
@@ -1132,27 +1196,45 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def generate_image(
         ctx: RunContext[TDeps],
-        prompt: Annotated[str, Field(
-            description="Detailed description of the image to generate. Be specific about subject, style, lighting, composition, colors, and mood."
-        )],
-        model: Annotated[ImageModelName, Field(
-            description="Model to use for generation. See model_guide for selection criteria."
-        )] = "imagen-4.0-generate-001",
-        aspect_ratio: Annotated[str, Field(
-            description="Image dimensions ratio. Options: '1:1' (square), '16:9'/'4:3'/'3:2' (landscape), '9:16'/'3:4'/'2:3' (portrait), '21:9' (ultra-wide, Gemini only)."
-        )] = "1:1",
-        image_size: Annotated[str, Field(
-            description="Resolution: '1K' (fastest), '2K' (balanced), '4K' (highest, Gemini only)."
-        )] = "2K",
-        number_of_images: Annotated[int, Field(
-            description="Number of images to generate, 1-4 (Imagen models only)."
-        )] = 1,
-        negative_prompt: Annotated[str | None, Field(
-            description="What to avoid in the image (Imagen only). Example: 'blurry, low quality, distorted, watermark'."
-        )] = None,
-        filename: Annotated[str | None, Field(
-            description="Custom filename without extension. Defaults to auto-generated UUID. Saved as PNG."
-        )] = None,
+        prompt: Annotated[
+            str,
+            Field(
+                description="Detailed description of the image to generate. Be specific about subject, style, lighting, composition, colors, and mood."
+            ),
+        ],
+        model: Annotated[
+            ImageModelName,
+            Field(
+                description="Model to use for generation. See model_guide for selection criteria."
+            ),
+        ] = "imagen-4.0-generate-001",
+        aspect_ratio: Annotated[
+            str,
+            Field(
+                description="Image dimensions ratio. Options: '1:1' (square), '16:9'/'4:3'/'3:2' (landscape), '9:16'/'3:4'/'2:3' (portrait), '21:9' (ultra-wide, Gemini only)."
+            ),
+        ] = "1:1",
+        image_size: Annotated[
+            str,
+            Field(
+                description="Resolution: '1K' (fastest), '2K' (balanced), '4K' (highest, Gemini only)."
+            ),
+        ] = "2K",
+        number_of_images: Annotated[
+            int, Field(description="Number of images to generate, 1-4 (Imagen models only).")
+        ] = 1,
+        negative_prompt: Annotated[
+            str | None,
+            Field(
+                description="What to avoid in the image (Imagen only). Example: 'blurry, low quality, distorted, watermark'."
+            ),
+        ] = None,
+        filename: Annotated[
+            str | None,
+            Field(
+                description="Custom filename without extension. Defaults to auto-generated UUID. Saved as PNG."
+            ),
+        ] = None,
     ) -> ToolReturn:
         """
         <tool_def>
@@ -1214,7 +1296,11 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         generated_images: list[tuple[bytes, str]] = []  # (image_bytes, s3_key)
         rai_reasons: list[str] = []
 
-        if model in ("imagen-4.0-generate-001", "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001"):
+        if model in (
+            "imagen-4.0-generate-001",
+            "imagen-4.0-ultra-generate-001",
+            "imagen-4.0-fast-generate-001",
+        ):
             # Imagen 4 image generation (standard, ultra, or fast)
             # Note: API only supports BLOCK_LOW_AND_ABOVE for safety_filter_level
             # and ALLOW_ADULT for person_generation (BLOCK_NONE/ALLOW_ALL rejected)
@@ -1377,29 +1463,57 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_openalex(
         ctx: RunContext[TDeps],
-        query: Annotated[str, Field(description="Search terms. Natural language queries work well.")],
+        query: Annotated[
+            str, Field(description="Search terms. Natural language queries work well.")
+        ],
         search_field: Annotated[
             Literal["all", "title", "abstract", "fulltext", "title_and_abstract"],
-            Field(description="Which fields to search: 'all' (broadest), 'title', 'abstract', 'fulltext', 'title_and_abstract'.")
+            Field(
+                description="Which fields to search: 'all' (broadest), 'title', 'abstract', 'fulltext', 'title_and_abstract'."
+            ),
         ] = "all",
-        year_from: Annotated[int | None, Field(description="Minimum publication year (inclusive).")] = None,
-        year_to: Annotated[int | None, Field(description="Maximum publication year (inclusive).")] = None,
-        min_citations: Annotated[int | None, Field(description="Only papers with at least this many citations.")] = None,
-        open_access_only: Annotated[bool, Field(description="If True, only return papers with free full text.")] = False,
+        year_from: Annotated[
+            int | None, Field(description="Minimum publication year (inclusive).")
+        ] = None,
+        year_to: Annotated[
+            int | None, Field(description="Maximum publication year (inclusive).")
+        ] = None,
+        min_citations: Annotated[
+            int | None, Field(description="Only papers with at least this many citations.")
+        ] = None,
+        open_access_only: Annotated[
+            bool, Field(description="If True, only return papers with free full text.")
+        ] = False,
         oa_status: Annotated[
             Literal["gold", "green", "hybrid", "bronze", "closed"] | None,
-            Field(description="Filter by OA status: 'gold' (OA journal), 'green' (repository), 'hybrid', 'bronze' (free on publisher), 'closed'.")
+            Field(
+                description="Filter by OA status: 'gold' (OA journal), 'green' (repository), 'hybrid', 'bronze' (free on publisher), 'closed'."
+            ),
         ] = None,
-        publication_type: Annotated[str | None, Field(description="Filter by type: 'article', 'book', 'dataset', etc.")] = None,
-        institution_id: Annotated[str | None, Field(description="OpenAlex institution ID (e.g., 'I27837315' for MIT).")] = None,
-        author_id: Annotated[str | None, Field(description="OpenAlex author ID (e.g., 'A5023888391').")] = None,
-        concept_id: Annotated[str | None, Field(description="Research concept ID (e.g., 'C41008148' for AI).")] = None,
-        language: Annotated[str | None, Field(description="ISO 639-1 language code (e.g., 'en', 'zh', 'de').")] = None,
+        publication_type: Annotated[
+            str | None, Field(description="Filter by type: 'article', 'book', 'dataset', etc.")
+        ] = None,
+        institution_id: Annotated[
+            str | None, Field(description="OpenAlex institution ID (e.g., 'I27837315' for MIT).")
+        ] = None,
+        author_id: Annotated[
+            str | None, Field(description="OpenAlex author ID (e.g., 'A5023888391').")
+        ] = None,
+        concept_id: Annotated[
+            str | None, Field(description="Research concept ID (e.g., 'C41008148' for AI).")
+        ] = None,
+        language: Annotated[
+            str | None, Field(description="ISO 639-1 language code (e.g., 'en', 'zh', 'de').")
+        ] = None,
         sort_by: Annotated[
             Literal["relevance", "cited_by_count", "publication_date", "display_name"],
-            Field(description="Sort by: 'relevance', 'cited_by_count', 'publication_date', 'display_name'.")
+            Field(
+                description="Sort by: 'relevance', 'cited_by_count', 'publication_date', 'display_name'."
+            ),
         ] = "relevance",
-        sort_order: Annotated[Literal["asc", "desc"], Field(description="Sort order: 'asc' or 'desc'.")] = "desc",
+        sort_order: Annotated[
+            Literal["asc", "desc"], Field(description="Sort order: 'asc' or 'desc'.")
+        ] = "desc",
         page: Annotated[int, Field(description="Page number (1-indexed).")] = 1,
         per_page: Annotated[int, Field(description="Results per page, 1-200.")] = 25,
         include_abstract: Annotated[bool, Field(description="Include paper abstracts.")] = True,
@@ -1462,24 +1576,50 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_semantic_scholar(
         ctx: RunContext[TDeps],
-        query: Annotated[str, Field(description="Plain-text search query. No special syntax supported.")],
-        year: Annotated[str | None, Field(description="Year or range: '2020', '2016-2020', '2010-' (onwards), '-2015' (before).")] = None,
-        venue: Annotated[str | None, Field(description="Comma-separated venue names (e.g., 'Nature,Science,ICML').")] = None,
-        fields_of_study: Annotated[list[str] | None, Field(
-            description="List of fields: 'Computer Science', 'Medicine', 'Physics', 'Biology', 'Chemistry', 'Mathematics', etc."
-        )] = None,
-        publication_types: Annotated[list[str] | None, Field(
-            description="List of types: 'JournalArticle', 'Conference', 'Review', 'Book', 'Dataset', 'ClinicalTrial'."
-        )] = None,
-        open_access_only: Annotated[bool, Field(description="If True, only return papers with free PDFs.")] = False,
-        min_citation_count: Annotated[int | None, Field(description="Minimum number of citations required.")] = None,
+        query: Annotated[
+            str, Field(description="Plain-text search query. No special syntax supported.")
+        ],
+        year: Annotated[
+            str | None,
+            Field(
+                description="Year or range: '2020', '2016-2020', '2010-' (onwards), '-2015' (before)."
+            ),
+        ] = None,
+        venue: Annotated[
+            str | None,
+            Field(description="Comma-separated venue names (e.g., 'Nature,Science,ICML')."),
+        ] = None,
+        fields_of_study: Annotated[
+            list[str] | None,
+            Field(
+                description="List of fields: 'Computer Science', 'Medicine', 'Physics', 'Biology', 'Chemistry', 'Mathematics', etc."
+            ),
+        ] = None,
+        publication_types: Annotated[
+            list[str] | None,
+            Field(
+                description="List of types: 'JournalArticle', 'Conference', 'Review', 'Book', 'Dataset', 'ClinicalTrial'."
+            ),
+        ] = None,
+        open_access_only: Annotated[
+            bool, Field(description="If True, only return papers with free PDFs.")
+        ] = False,
+        min_citation_count: Annotated[
+            int | None, Field(description="Minimum number of citations required.")
+        ] = None,
         offset: Annotated[int, Field(description="Starting index (0-based) for pagination.")] = 0,
         limit: Annotated[int, Field(description="Number of results (1-100).")] = 20,
-        include_abstract: Annotated[bool, Field(description="Include full paper abstracts.")] = True,
-        include_tldr: Annotated[bool, Field(description="Include AI-generated TLDR summaries (RECOMMENDED).")] = True,
+        include_abstract: Annotated[
+            bool, Field(description="Include full paper abstracts.")
+        ] = True,
+        include_tldr: Annotated[
+            bool, Field(description="Include AI-generated TLDR summaries (RECOMMENDED).")
+        ] = True,
         include_authors: Annotated[bool, Field(description="Include author names and IDs.")] = True,
         include_venue: Annotated[bool, Field(description="Include publication venue info.")] = True,
-        include_embedding: Annotated[bool, Field(description="Include SPECTER v2 paper embeddings.")] = False,
+        include_embedding: Annotated[
+            bool, Field(description="Include SPECTER v2 paper embeddings.")
+        ] = False,
     ) -> dict[str, Any]:
         """
         <tool_def>
@@ -1538,23 +1678,39 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_semantic_scholar_bulk(
         ctx: RunContext[TDeps],
-        query: Annotated[str, Field(
-            description="Boolean query string. Supports: AND, OR ('|'), NOT ('-'), phrases ('\"exact\"'), wildcards ('neuro*'), fuzzy ('word~2')."
-        )],
-        year: Annotated[str | None, Field(description="Year or range filter (same as relevance search).")] = None,
+        query: Annotated[
+            str,
+            Field(
+                description="Boolean query string. Supports: AND, OR ('|'), NOT ('-'), phrases ('\"exact\"'), wildcards ('neuro*'), fuzzy ('word~2')."
+            ),
+        ],
+        year: Annotated[
+            str | None, Field(description="Year or range filter (same as relevance search).")
+        ] = None,
         venue: Annotated[str | None, Field(description="Comma-separated venue names.")] = None,
-        fields_of_study: Annotated[list[str] | None, Field(description="List of fields to filter by.")] = None,
-        publication_types: Annotated[list[str] | None, Field(description="List of publication types.")] = None,
+        fields_of_study: Annotated[
+            list[str] | None, Field(description="List of fields to filter by.")
+        ] = None,
+        publication_types: Annotated[
+            list[str] | None, Field(description="List of publication types.")
+        ] = None,
         open_access_only: Annotated[bool, Field(description="Only papers with free PDFs.")] = False,
-        min_citation_count: Annotated[int | None, Field(description="Minimum citation count.")] = None,
+        min_citation_count: Annotated[
+            int | None, Field(description="Minimum citation count.")
+        ] = None,
         sort_by: Annotated[
             Literal["paperId", "publicationDate", "citationCount"],
-            Field(description="Sort by: 'paperId' (stable), 'publicationDate', 'citationCount'.")
+            Field(description="Sort by: 'paperId' (stable), 'publicationDate', 'citationCount'."),
         ] = "paperId",
         sort_order: Annotated[Literal["asc", "desc"], Field(description="Sort order.")] = "asc",
-        token: Annotated[str | None, Field(description="Continuation token from previous response for pagination.")] = None,
+        token: Annotated[
+            str | None,
+            Field(description="Continuation token from previous response for pagination."),
+        ] = None,
         include_abstract: Annotated[bool, Field(description="Include paper abstracts.")] = True,
-        include_tldr: Annotated[bool, Field(description="Include TLDR summaries (adds latency).")] = False,
+        include_tldr: Annotated[
+            bool, Field(description="Include TLDR summaries (adds latency).")
+        ] = False,
     ) -> dict[str, Any]:
         """
         <tool_def>
@@ -1609,31 +1765,46 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
     @agent.tool
     async def search_arxiv(
         ctx: RunContext[TDeps],
-        query: Annotated[str | None, Field(
-            description="Search terms. Can use inline prefixes like 'ti:quantum AND au:smith'."
-        )] = None,
-        id_list: Annotated[list[str] | None, Field(
-            description="List of specific arXiv IDs (e.g., ['2301.00001', 'cs/0001001'])."
-        )] = None,
+        query: Annotated[
+            str | None,
+            Field(
+                description="Search terms. Can use inline prefixes like 'ti:quantum AND au:smith'."
+            ),
+        ] = None,
+        id_list: Annotated[
+            list[str] | None,
+            Field(description="List of specific arXiv IDs (e.g., ['2301.00001', 'cs/0001001'])."),
+        ] = None,
         search_field: Annotated[
             Literal["all", "title", "abstract", "author", "category", "comment", "journal_ref"],
-            Field(description="Limit search to: 'all', 'title', 'abstract', 'author', 'category', 'comment', 'journal_ref'.")
+            Field(
+                description="Limit search to: 'all', 'title', 'abstract', 'author', 'category', 'comment', 'journal_ref'."
+            ),
         ] = "all",
-        categories: Annotated[list[str] | None, Field(
-            description="Filter by arXiv category codes (e.g., ['cs.AI', 'cs.LG']). Use list_arxiv_categories for valid codes."
-        )] = None,
-        submitted_after: Annotated[str | None, Field(description="Only papers after this date (YYYYMMDD format).")] = None,
-        submitted_before: Annotated[str | None, Field(description="Only papers before this date (YYYYMMDD format).")] = None,
+        categories: Annotated[
+            list[str] | None,
+            Field(
+                description="Filter by arXiv category codes (e.g., ['cs.AI', 'cs.LG']). Use list_arxiv_categories for valid codes."
+            ),
+        ] = None,
+        submitted_after: Annotated[
+            str | None, Field(description="Only papers after this date (YYYYMMDD format).")
+        ] = None,
+        submitted_before: Annotated[
+            str | None, Field(description="Only papers before this date (YYYYMMDD format).")
+        ] = None,
         sort_by: Annotated[
             Literal["relevance", "lastUpdatedDate", "submittedDate"],
-            Field(description="Sort by: 'relevance', 'lastUpdatedDate', 'submittedDate'.")
+            Field(description="Sort by: 'relevance', 'lastUpdatedDate', 'submittedDate'."),
         ] = "relevance",
         sort_order: Annotated[
             Literal["ascending", "descending"],
-            Field(description="Sort order: 'ascending' or 'descending'.")
+            Field(description="Sort order: 'ascending' or 'descending'."),
         ] = "descending",
         start: Annotated[int, Field(description="Starting index for pagination (0-based).")] = 0,
-        max_results: Annotated[int, Field(description="Number of results (max 2000 per request).")] = 20,
+        max_results: Annotated[
+            int, Field(description="Number of results (max 2000 per request).")
+        ] = 20,
     ) -> dict[str, Any]:
         """
         <tool_def>

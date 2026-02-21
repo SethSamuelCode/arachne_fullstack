@@ -149,9 +149,7 @@ async def delete_plan(
 # =============================================================================
 
 
-@router.post(
-    "/{plan_id}/tasks", response_model=PlanTaskRead, status_code=status.HTTP_201_CREATED
-)
+@router.post("/{plan_id}/tasks", response_model=PlanTaskRead, status_code=status.HTTP_201_CREATED)
 async def add_task(
     plan_id: UUID,
     task_in: PlanTaskCreate,
@@ -211,6 +209,4 @@ async def reorder_tasks(
     Raises 404 if the plan does not exist or is not owned by the current user.
     Raises 400 if the task IDs don't match the plan's tasks.
     """
-    return await plan_service.reorder_tasks(
-        plan_id, current_user.id, reorder_request.task_ids
-    )
+    return await plan_service.reorder_tasks(plan_id, current_user.id, reorder_request.task_ids)

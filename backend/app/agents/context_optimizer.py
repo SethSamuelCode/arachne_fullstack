@@ -233,7 +233,7 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
 
         # Only process if title/description are strings (not nested schema objects)
         if isinstance(title, str) and isinstance(description, str):
-            if title and title.lower() != description.lower()[:len(title)]:
+            if title and title.lower() != description.lower()[: len(title)]:
                 parts.append(title + ".")
 
             if description:
@@ -294,15 +294,15 @@ def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
             # Fields not supported by Gemini's Schema API
             # See: https://ai.google.dev/api/caching#Schema
             unsupported = {
-                "examples",           # JSON Schema examples
-                "$defs",              # JSON Schema definitions
-                "title",              # JSON Schema title
-                "default",            # JSON Schema default value
+                "examples",  # JSON Schema examples
+                "$defs",  # JSON Schema definitions
+                "title",  # JSON Schema title
+                "default",  # JSON Schema default value
                 "additionalProperties",  # JSON Schema additionalProperties
-                "minimum",            # JSON Schema numeric constraints (not in Gemini)
-                "maximum",            # JSON Schema numeric constraints
-                "minLength",          # JSON Schema string constraints
-                "maxLength",          # JSON Schema string constraints
+                "minimum",  # JSON Schema numeric constraints (not in Gemini)
+                "maximum",  # JSON Schema numeric constraints
+                "minLength",  # JSON Schema string constraints
+                "maxLength",  # JSON Schema string constraints
             }
             result: dict[str, Any] = {}
 
@@ -599,7 +599,7 @@ async def optimize_context_window(
             # Content is cached (system prompt + tools + pinned); skip separate tool registration
             effective_system_prompt = None
             skip_tool_registration = True
-            pinned_info = f" + pinned content" if pinned_content_hash else ""
+            pinned_info = " + pinned content" if pinned_content_hash else ""
             logger.info(f"Content cache hit{pinned_info}: {cached_prompt_name}")
         else:
             logger.debug("Content cache miss, using raw prompt and registering tools")

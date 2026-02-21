@@ -50,7 +50,9 @@ class AssistantAgent:
         self.provider = provider or get_provider(DEFAULT_MODEL_ID)
         self.model_name = self.provider.model_id  # exposed for DB persistence
         # If using cached prompt, don't pass system_prompt to agent (it's in the cache)
-        self.system_prompt = None if cached_prompt_name else (system_prompt or DEFAULT_SYSTEM_PROMPT)
+        self.system_prompt = (
+            None if cached_prompt_name else (system_prompt or DEFAULT_SYSTEM_PROMPT)
+        )
         self.cached_prompt_name = cached_prompt_name
         self.skip_tool_registration = skip_tool_registration
         self._agent: Agent[Deps, str] | None = None

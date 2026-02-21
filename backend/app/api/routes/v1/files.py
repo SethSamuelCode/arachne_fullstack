@@ -165,10 +165,44 @@ MAX_PREVIEW_SIZE = 200 * 1024 * 1024
 
 # Text file extensions that can be previewed
 TEXT_EXTENSIONS = {
-    ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",
-    ".xml", ".html", ".css", ".csv", ".log", ".sh", ".bash", ".env", ".toml",
-    ".ini", ".cfg", ".rst", ".sql", ".r", ".rb", ".go", ".java", ".c", ".cpp",
-    ".h", ".hpp", ".rs", ".swift", ".kt", ".scala", ".php", ".pl", ".lua",
+    ".txt",
+    ".md",
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".html",
+    ".css",
+    ".csv",
+    ".log",
+    ".sh",
+    ".bash",
+    ".env",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".rst",
+    ".sql",
+    ".r",
+    ".rb",
+    ".go",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".rs",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".php",
+    ".pl",
+    ".lua",
 }
 
 # Magic bytes signatures for common file types
@@ -231,7 +265,7 @@ def detect_mime_type_from_magic(content_bytes: bytes) -> str | None:
 
     # Check magic signatures
     for magic, offset, mime_type in MAGIC_SIGNATURES:
-        if content_bytes[offset:offset + len(magic)] == magic:
+        if content_bytes[offset : offset + len(magic)] == magic:
             return mime_type
 
     return None
@@ -295,7 +329,10 @@ def _is_path_nested(parent: str, child: str) -> bool:
     child_normalized = child.rstrip("/")
 
     # Check if child starts with parent path followed by /
-    return child_normalized.startswith(parent_normalized + "/") or child_normalized == parent_normalized
+    return (
+        child_normalized.startswith(parent_normalized + "/")
+        or child_normalized == parent_normalized
+    )
 
 
 @router.post("/move", response_model=MoveResponse)
@@ -378,7 +415,7 @@ async def move_file_or_folder(
         # Move all files in the folder
         files_moved = 0
         for source_key in source_files:
-            relative_path = source_key[len(source_prefix):]
+            relative_path = source_key[len(source_prefix) :]
             dest_key = dest_prefix + relative_path
 
             s3.copy_file(source_key, dest_key)

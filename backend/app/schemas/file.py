@@ -97,7 +97,9 @@ class FileContentResponse(BaseSchema):
     content_type: str | None = Field(default=None, description="MIME type of the file")
     size: int = Field(description="File size in bytes")
     is_binary: bool = Field(default=False, description="Whether content is base64 encoded binary")
-    is_truncated: bool = Field(default=False, description="Whether content was truncated due to size")
+    is_truncated: bool = Field(
+        default=False, description="Whether content was truncated due to size"
+    )
 
 
 class RenameRequest(BaseSchema):
@@ -131,7 +133,9 @@ class MoveRequest(BaseSchema):
     """Request to move a file or folder to a new location."""
 
     source_path: str = Field(description="Current path of the file or folder to move")
-    destination_path: str = Field(description="New path (including new name) for the file or folder")
+    destination_path: str = Field(
+        description="New path (including new name) for the file or folder"
+    )
 
 
 class MoveResponse(BaseSchema):

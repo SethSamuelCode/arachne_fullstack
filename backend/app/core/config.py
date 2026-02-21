@@ -336,4 +336,5 @@ class Settings(BaseSettings):
     PYTHON_SANDBOX_IMAGE: str = "python-sandbox:latest"
     SANDBOX_TIMEOUT_SECONDS: int = 600  # 10 minutes
 
+
 settings = Settings()

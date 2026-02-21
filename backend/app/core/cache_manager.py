@@ -76,9 +76,7 @@ async def _invalidate_all_cached_content(redis_client: RedisClient) -> None:
         # Get all matching keys using the raw Redis client
         cursor = 0
         while True:
-            cursor, keys = await redis_client.raw.scan(
-                cursor=cursor, match=pattern, count=100
-            )
+            cursor, keys = await redis_client.raw.scan(cursor=cursor, match=pattern, count=100)
             for key in keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
                 keys_to_delete.append(key_str)

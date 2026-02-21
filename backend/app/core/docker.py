@@ -4,7 +4,6 @@ Docker client initialization and management.
 Handles Docker client setup for Python sandbox execution.
 """
 
-
 import docker
 from docker import DockerClient
 
@@ -29,7 +28,6 @@ def get_docker_client() -> DockerClient | None:
         return _docker_client
     except Exception:
         return None
-
 
 
 def is_docker_available() -> bool:

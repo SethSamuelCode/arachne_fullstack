@@ -60,7 +60,9 @@ class MessageBase(BaseSchema):
 
     role: Literal["user", "assistant", "system"] = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
-    thinking_content: str | None = Field(default=None, description="Model's thinking/reasoning content")
+    thinking_content: str | None = Field(
+        default=None, description="Model's thinking/reasoning content"
+    )
 
 
 class MessageCreate(MessageBase):
@@ -98,7 +100,9 @@ class ConversationBase(BaseSchema):
     """Base conversation schema."""
 
     title: str | None = Field(default=None, max_length=255, description="Conversation title")
-    system_prompt: str | None = Field(default=None, description="Custom system prompt for the conversation")
+    system_prompt: str | None = Field(
+        default=None, description="Custom system prompt for the conversation"
+    )
 
 
 class ConversationCreate(ConversationBase):

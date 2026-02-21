@@ -227,11 +227,7 @@ async def get_task_by_id(
     Returns:
         The task if found and plan is owned by user, None otherwise.
     """
-    query = (
-        select(PlanTask)
-        .join(Plan)
-        .where(PlanTask.id == task_id, Plan.user_id == user_id)
-    )
+    query = select(PlanTask).join(Plan).where(PlanTask.id == task_id, Plan.user_id == user_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 
@@ -430,9 +426,7 @@ async def reorder_tasks(
     # Update positions
     for position, task_id in enumerate(task_ids):
         await db.execute(
-            sql_update(PlanTask)
-            .where(PlanTask.id == task_id)
-            .values(position=position)
+            sql_update(PlanTask).where(PlanTask.id == task_id).values(position=position)
         )
 
     await db.flush()

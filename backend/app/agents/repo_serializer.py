@@ -27,44 +27,48 @@ logger = logging.getLogger(__name__)
 
 
 # Directories to always exclude from pinned content
-IGNORE_DIRS: frozenset[str] = frozenset({
-    ".git",
-    "__pycache__",
-    "node_modules",
-    "venv",
-    ".venv",
-    "env",
-    ".env",
-    ".tox",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "dist",
-    "build",
-    ".next",
-    ".nuxt",
-    "coverage",
-    ".coverage",
-    "htmlcov",
-    ".eggs",
-    "*.egg-info",
-})
+IGNORE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        "__pycache__",
+        "node_modules",
+        "venv",
+        ".venv",
+        "env",
+        ".env",
+        ".tox",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        "coverage",
+        ".coverage",
+        "htmlcov",
+        ".eggs",
+        "*.egg-info",
+    }
+)
 
 # File patterns to always exclude
-IGNORE_FILES: frozenset[str] = frozenset({
-    ".DS_Store",
-    "Thumbs.db",
-    ".gitignore",
-    ".dockerignore",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "poetry.lock",
-    "Pipfile.lock",
-    "composer.lock",
-    "Gemfile.lock",
-    "Cargo.lock",
-})
+IGNORE_FILES: frozenset[str] = frozenset(
+    {
+        ".DS_Store",
+        "Thumbs.db",
+        ".gitignore",
+        ".dockerignore",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "Pipfile.lock",
+        "composer.lock",
+        "Gemfile.lock",
+        "Cargo.lock",
+    }
+)
 
 
 def estimate_tokens(content: str | bytes) -> int:
@@ -259,10 +263,7 @@ def should_ignore_file(path: str) -> bool:
         return True
 
     # Check for lock files by extension
-    if path_obj.suffix == ".lock":
-        return True
-
-    return False
+    return path_obj.suffix == ".lock"
 
 
 def escape_xml_content(content: str) -> str:
@@ -298,7 +299,7 @@ def build_xml_wrapper(text_files: dict[str, str]) -> str:
     Returns:
         XML-formatted string with preamble.
     """
-    lines = [REPOSITORY_CONTEXT_PREAMBLE.strip(), '', '<repository_context>']
+    lines = [REPOSITORY_CONTEXT_PREAMBLE.strip(), "", "<repository_context>"]
 
     # Sort files for consistent ordering
     for path in sorted(text_files.keys()):
@@ -307,10 +308,10 @@ def build_xml_wrapper(text_files: dict[str, str]) -> str:
         escaped_content = escape_xml_content(content)
         lines.append(f'<file path="{escaped_path}">')
         lines.append(escaped_content)
-        lines.append('</file>')
+        lines.append("</file>")
 
-    lines.append('</repository_context>')
-    return '\n'.join(lines)
+    lines.append("</repository_context>")
+    return "\n".join(lines)
 
 
 def serialize_content(
@@ -358,9 +359,7 @@ def serialize_content(
                 # Validate size
                 if len(content) > MAX_PINNED_FILE_SIZE_BYTES:
                     max_mb = MAX_PINNED_FILE_SIZE_BYTES / (1024 * 1024)
-                    logger.warning(
-                        f"Skipping {path}: size exceeds {max_mb}MB limit"
-                    )
+                    logger.warning(f"Skipping {path}: size exceeds {max_mb}MB limit")
                     continue
                 binary_files.append((path, content, mime_type))
             else:
@@ -377,7 +376,7 @@ def serialize_content(
         )
 
     # Add binary files as inline data
-    for path, content, mime_type in binary_files:
+    for _path, content, mime_type in binary_files:
         blob = genai_types.Blob(mime_type=mime_type, data=content)
         parts.append(genai_types.Part(inline_data=blob))
         total_tokens += estimate_tokens_for_mime(content, mime_type)

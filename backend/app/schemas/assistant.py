@@ -16,4 +16,3 @@ class Deps:
     user_name: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     db: "AsyncSession | None" = None
-

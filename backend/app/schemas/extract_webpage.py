@@ -10,6 +10,7 @@ class FetchUrlResponse(BaseModel):
     content_length: int = Field(..., description="Length of content in characters")
     truncated: bool = Field(..., description="Whether content was truncated to max_length")
 
+
 class FetchUrlRequest(BaseModel):
     """Fetch and extract content from a URL."""
 

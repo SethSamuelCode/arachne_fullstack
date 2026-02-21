@@ -256,7 +256,9 @@ async def list_objects(
         # Strip user prefix from keys for cleaner response
         objects = [
             ObjectInfo(
-                key=obj["key"][len(user_prefix) :] if obj["key"].startswith(user_prefix) else obj["key"],
+                key=obj["key"][len(user_prefix) :]
+                if obj["key"].startswith(user_prefix)
+                else obj["key"],
                 size=obj["size"],
                 last_modified=obj["last_modified"],
                 content_type=obj.get("content_type"),
@@ -305,14 +307,15 @@ async def download_object(
         # Try to get the object - will raise if not found
         try:
             obj_data = s3.download_obj(full_key)
-        except Exception:
+        except Exception as err:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Object not found: {path}",
-            )
+            ) from err
 
         # Determine content type from file extension
         import mimetypes
+
         content_type, _ = mimetypes.guess_type(path)
         if not content_type:
             content_type = "application/octet-stream"
@@ -322,7 +325,7 @@ async def download_object(
             """Generator that yields the object data in chunks."""
             chunk_size = 1024 * 1024  # 1MB chunks
             for i in range(0, len(obj_data), chunk_size):
-                yield obj_data[i:i + chunk_size]
+                yield obj_data[i : i + chunk_size]
 
         return StreamingResponse(
             stream_generator(),

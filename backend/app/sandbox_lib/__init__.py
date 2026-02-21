@@ -8,17 +8,17 @@ storage via a proxy, preventing direct access to S3 credentials.
 """
 
 from app.sandbox_lib.storage_client import (
+    StorageAuthError,
     StorageClient,
     StorageClientError,
     StorageNotFoundError,
-    StorageAuthError,
     get_storage_client,
 )
 
 __all__ = [
+    "StorageAuthError",
     "StorageClient",
     "StorageClientError",
     "StorageNotFoundError",
-    "StorageAuthError",
     "get_storage_client",
 ]

@@ -53,9 +53,7 @@ class PlanService:
         Raises:
             NotFoundError: If plan does not exist or is not owned by user.
         """
-        plan = await plan_repo.get_plan_by_id(
-            self.db, plan_id, user_id, include_tasks=True
-        )
+        plan = await plan_repo.get_plan_by_id(self.db, plan_id, user_id, include_tasks=True)
         if not plan:
             raise NotFoundError(
                 message="Plan not found",
@@ -295,9 +293,7 @@ class PlanService:
         success = await plan_repo.reorder_tasks(self.db, plan_id, user_id, task_ids)
         if not success:
             # Could be plan not found or task IDs mismatch
-            plan = await plan_repo.get_plan_by_id(
-                self.db, plan_id, user_id, include_tasks=False
-            )
+            plan = await plan_repo.get_plan_by_id(self.db, plan_id, user_id, include_tasks=False)
             if not plan:
                 raise NotFoundError(
                     message="Plan not found",

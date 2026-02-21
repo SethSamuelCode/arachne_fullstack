@@ -97,9 +97,7 @@ class PinnedContentService:
             raise ConversationNotFoundError(conversation_id)
         return conversation
 
-    async def _get_pinned_content(
-        self, conversation_id: UUID
-    ) -> ConversationPinnedContent | None:
+    async def _get_pinned_content(self, conversation_id: UUID) -> ConversationPinnedContent | None:
         """Get pinned content for a conversation."""
         result = await self.db.execute(
             select(ConversationPinnedContent).where(
@@ -430,9 +428,7 @@ class PinnedContentService:
         ):
             yield event
 
-    async def get_pinned_content_info(
-        self, conversation_id: UUID
-    ) -> dict[str, Any] | None:
+    async def get_pinned_content_info(self, conversation_id: UUID) -> dict[str, Any] | None:
         """Get pinned content metadata for a conversation.
 
         Args:
@@ -454,9 +450,7 @@ class PinnedContentService:
             "pinned_at": pinned.pinned_at.isoformat(),
         }
 
-    async def get_pinned_content_hash(
-        self, conversation_id: UUID
-    ) -> str | None:
+    async def get_pinned_content_hash(self, conversation_id: UUID) -> str | None:
         """Get the content hash for pinned content.
 
         Used by the agent flow to include in cache key derivation.

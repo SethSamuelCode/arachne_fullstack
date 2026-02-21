@@ -138,8 +138,7 @@ class PlanBase(BaseSchema):
         default="",
         max_length=255,
         description=(
-            "Short, descriptive title for the plan. "
-            "Should clearly indicate the goal or project."
+            "Short, descriptive title for the plan. Should clearly indicate the goal or project."
         ),
         examples=[
             "Q1 Product Launch",
