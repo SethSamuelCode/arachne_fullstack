@@ -32,6 +32,7 @@ from pydantic_ai.messages import (
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
+from app.agents.providers.base import ModelProvider
 from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
 from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
@@ -246,6 +247,25 @@ def build_message_history(history: list[dict[str, str]]) -> list[ModelRequest | 
             model_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
 
     return model_history
+
+
+def _check_attachment_support(
+    provider: ModelProvider,
+    attachments: list[AttachmentInMessage],
+) -> str | None:
+    """Return an error message if the provider cannot handle these attachments.
+
+    Args:
+        provider: The resolved ModelProvider for the current request.
+        attachments: Validated attachments from the WebSocket message.
+
+    Returns:
+        An error string if the model does not support image input and
+        attachments are present, otherwise None.
+    """
+    if attachments and not provider.modalities.images:
+        return f"Model '{provider.display_name}' does not support image attachments."
+    return None
 
 
 async def build_multimodal_input(
@@ -530,6 +550,12 @@ async def agent_websocket(
                     cached_prompt_name=optimized["cached_prompt_name"],
                     skip_tool_registration=optimized["skip_tool_registration"],
                 )
+
+                # Reject attachments if the model does not support multimodal input
+                attachment_error = _check_attachment_support(provider, attachments)
+                if attachment_error:
+                    await manager.send_event(websocket, "error", {"message": attachment_error})
+                    continue
 
                 # Build multimodal input if attachments are present
                 try:
