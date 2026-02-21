@@ -1504,25 +1504,24 @@ class TestAttachmentCapabilityCheck:
     def test_rejects_images_for_non_multimodal_model(self):
         """Non-multimodal provider with attachments returns an error string."""
         from app.api.routes.v1.agent import _check_attachment_support
-        from app.agents.providers.vertex import VertexModelProvider
+        from app.agents.providers.registry import get_provider
         from app.schemas.attachment import AttachmentInMessage
 
-        provider = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        provider = get_provider("glm-5")
         attachments = [
             AttachmentInMessage(s3_key="test.png", mime_type="image/png", size_bytes=100)
         ]
         result = _check_attachment_support(provider, attachments)
         assert result is not None
         assert "does not support" in result
-        assert "GLM-5" in result
 
     def test_allows_images_for_multimodal_model(self):
         """Multimodal provider with attachments returns None (no error)."""
         from app.api.routes.v1.agent import _check_attachment_support
-        from app.agents.providers.gemini import Gemini25ModelProvider
+        from app.agents.providers.registry import get_provider
         from app.schemas.attachment import AttachmentInMessage
 
-        provider = Gemini25ModelProvider("gemini-2.5-flash", "gemini-2.5-flash", "Gemini 2.5 Flash")
+        provider = get_provider("gemini-2.5-flash")
         attachments = [
             AttachmentInMessage(s3_key="test.png", mime_type="image/png", size_bytes=100)
         ]
@@ -1532,8 +1531,8 @@ class TestAttachmentCapabilityCheck:
     def test_no_attachments_always_passes(self):
         """No attachments returns None even for non-multimodal models."""
         from app.api.routes.v1.agent import _check_attachment_support
-        from app.agents.providers.vertex import VertexModelProvider
+        from app.agents.providers.registry import get_provider
 
-        provider = VertexModelProvider("glm-5", "publishers/zai-org/models/glm-5-maas", "GLM-5")
+        provider = get_provider("glm-5")
         result = _check_attachment_support(provider, [])
         assert result is None

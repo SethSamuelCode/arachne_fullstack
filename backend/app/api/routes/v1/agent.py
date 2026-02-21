@@ -495,6 +495,12 @@ async def agent_websocket(
                 # Resolve provider once — used by both optimize_context_window and get_agent
                 provider = get_provider(user.default_model or DEFAULT_MODEL_ID)
 
+                # Reject attachments if the model does not support multimodal input
+                attachment_error = _check_attachment_support(provider, attachments)
+                if attachment_error:
+                    await manager.send_event(websocket, "error", {"message": attachment_error})
+                    continue
+
                 # Enrich history with tool call context for LLM learning
                 if current_conversation_id:
                     conversation_history = await enrich_history_with_tool_calls(
@@ -550,12 +556,6 @@ async def agent_websocket(
                     cached_prompt_name=optimized["cached_prompt_name"],
                     skip_tool_registration=optimized["skip_tool_registration"],
                 )
-
-                # Reject attachments if the model does not support multimodal input
-                attachment_error = _check_attachment_support(provider, attachments)
-                if attachment_error:
-                    await manager.send_event(websocket, "error", {"message": attachment_error})
-                    continue
 
                 # Build multimodal input if attachments are present
                 try:
