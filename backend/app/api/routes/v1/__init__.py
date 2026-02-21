@@ -15,11 +15,15 @@ from app.api.routes.v1 import files
 from app.api.routes.v1 import admin_settings
 from app.api.routes.v1 import storage_proxy
 from app.api.routes.v1 import plans
+from app.api.routes.v1 import models
 
 v1_router = APIRouter()
 
 # Health check routes (no auth required)
 v1_router.include_router(health.router, tags=["health"])
+
+# Model list route (public — no auth required)
+v1_router.include_router(models.router, tags=["models"])
 
 # Authentication routes
 v1_router.include_router(auth.router, prefix="/auth", tags=["auth"])
