@@ -3,7 +3,7 @@
 import logging
 
 from app.agents.providers.base import ModelProvider
-from app.agents.providers.gemini import Gemini25ModelProvider, Gemini3ModelProvider
+from app.agents.providers.gemini import Gemini3ModelProvider, Gemini25ModelProvider
 from app.agents.providers.vertex import VertexModelProvider
 
 logger = logging.getLogger(__name__)
@@ -67,16 +67,14 @@ def get_provider(model_id: str) -> ModelProvider:
     """
     if model_id in MODEL_REGISTRY:
         return MODEL_REGISTRY[model_id]
-    logger.warning(
-        "Unknown model '%s', falling back to default '%s'", model_id, DEFAULT_MODEL_ID
-    )
+    logger.warning("Unknown model '%s', falling back to default '%s'", model_id, DEFAULT_MODEL_ID)
     return MODEL_REGISTRY[DEFAULT_MODEL_ID]
 
 
 def get_model_list() -> list[dict[str, object]]:
     """Return a list of all available models for the /models API endpoint.
 
-    Each entry has: id, label, provider, supports_thinking.
+    Each entry has: id, label, provider, supports_thinking, modalities.
     """
     return [
         {
@@ -84,6 +82,7 @@ def get_model_list() -> list[dict[str, object]]:
             "label": provider.display_name,
             "provider": provider.provider_label,
             "supports_thinking": provider.supports_thinking,
+            "modalities": provider.modalities.model_dump(),
         }
         for provider in MODEL_REGISTRY.values()
     ]
