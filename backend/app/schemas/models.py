@@ -16,3 +16,4 @@ class ModelInfo(BaseModel):
 # app.agents.providers.registry. This string alias avoids circular imports
 # while being importable from schemas.
 DEFAULT_GEMINI_MODEL: str = "gemini-2.5-flash"
+DEFAULT_MODEL_ID: str = DEFAULT_GEMINI_MODEL  # Canonical alias; same as registry.DEFAULT_MODEL_ID

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from app.schemas.models import DEFAULT_GEMINI_MODEL
+from app.schemas.models import DEFAULT_MODEL_ID
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ class SpawnAgentDeps:
 
     spawn_depth: int = 0
     spawn_max_depth: int = 10
-    model_name: str = DEFAULT_GEMINI_MODEL
+    model_name: str = DEFAULT_MODEL_ID
     system_prompt: str | None = None
 
     # Caching support: if set, use cached content instead of registering tools

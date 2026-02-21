@@ -145,6 +145,8 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
                 <model name="gemini-2.5-pro">Complex reasoning, coding, creative writing.</model>
                 <model name="gemini-3-flash-preview">High speed with moderate reasoning.</model>
                 <model name="gemini-3-pro-preview">MAX REASONING. Architecture, security analysis, very hard problems.</model>
+                <model name="gemini-3.1-pro-preview">Improved Gemini 3 Pro; prefer over gemini-3-pro-preview for complex tasks requiring enhanced reasoning.</model>
+                <model name="glm-5">GLM-5 via Vertex AI. Alternative architecture for tasks requiring non-Google model diversity.</model>
             </model_guide>
 
             <constraints>
@@ -159,8 +161,6 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             </returns>
         </tool_def>
         """
-        import logging
-
         from app.core.cache_manager import get_subagent_cached_content
 
         logger = logging.getLogger(__name__)
