@@ -206,7 +206,7 @@ def get_agent(
         system_prompt: Custom system prompt (ignored if cached_prompt_name is provided).
         model_name: Model ID to look up in the registry (e.g. "gemini-2.5-flash").
         provider: Pre-resolved ModelProvider (takes precedence over model_name).
-        cached_prompt_name: Provider cache name for the content (e.g. Gemini CachedContent name).
+        cached_prompt_name: Provider-specific cache name for the content (e.g. "cachedContents/abc123").
         skip_tool_registration: Deprecated no-op. Tools are always registered locally
             so PydanticAI can handle tool call responses. Kept for backward compatibility.
 
