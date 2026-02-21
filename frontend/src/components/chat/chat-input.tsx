@@ -35,6 +35,15 @@ export function ChatInput({ onSend, disabled, isProcessing, supportsImages = tru
     }
   }, [message]);
 
+  useEffect(() => {
+    if (!supportsImages && attachments.length > 0) {
+      attachments.forEach((a) => {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      });
+      setAttachments([]);
+    }
+  }, [supportsImages]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const canSend = (message.trim() || hasReadyAttachments) && !disabled && !hasUploadingAttachments;

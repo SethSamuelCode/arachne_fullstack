@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useChat } from "@/hooks";
+import { useChat, useConversations, useModelCapabilities } from "@/hooks";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { Button } from "@/components/ui";
 import { Wifi, WifiOff, RotateCcw, Bot, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { useConversationStore, useChatStore, useAuthStore, useFilesSidebarStore } from "@/stores";
-import { useConversations } from "@/hooks";
 import { useRouter } from "@/i18n/navigation";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, useDefaultLayout } from "react-resizable-panels";
-
-import { useModelCapabilities } from "@/hooks/use-model-capabilities";
 import { SystemPromptSettings } from "./system-prompt-settings";
 import { PinnedContentIndicator } from "./pinned-content-indicator";
 import { ChatFilesSidebar } from "./chat-files-sidebar";

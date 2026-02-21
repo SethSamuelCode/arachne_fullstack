@@ -32,9 +32,14 @@ export function useModelCapabilities(): Modalities {
 
   useEffect(() => {
     fetch("/api/models")
-      .then((r) => r.json())
-      .then((data: ModelEntry[]) => setModels(data))
-      .catch(() => setModels([]));
+      .then((r) => {
+        if (!r.ok) return [];
+        return r.json();
+      })
+      .then((data: unknown) => {
+        if (Array.isArray(data)) setModels(data as ModelEntry[]);
+      })
+      .catch(() => {});
   }, []);
 
   if (!user?.default_model || models.length === 0) {
