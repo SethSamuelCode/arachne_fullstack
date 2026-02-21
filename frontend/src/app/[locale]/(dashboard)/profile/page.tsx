@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -13,15 +12,12 @@ import { ThemeToggle } from "@/components/theme";
 import { User, Mail, Calendar, Shield, Settings, MessageSquare, Brain, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const AVAILABLE_MODELS = [
-  { value: "", label: "Default (Backend Configured)" },
-  { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Preview)" },
-  { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (Preview)" },
-  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Preview)" },
-];
+type ModelOption = {
+  id: string;
+  label: string;
+  provider: string;
+  supports_thinking: boolean;
+};
 
 export default function ProfilePage() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -34,6 +30,18 @@ export default function ProfilePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data: ModelOption[]) => setAvailableModels(data))
+      .catch(() => {
+        setAvailableModels([
+          { id: "", label: "Default (Backend Configured)", provider: "", supports_thinking: false },
+        ]);
+      });
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -176,9 +184,11 @@ export default function ProfilePage() {
                   !isEditing && "bg-muted"
                 )}
               >
-                {AVAILABLE_MODELS.map((model) => (
-                  <option key={model.value} value={model.value}>
+                <option value="">Default (Backend Configured)</option>
+                {availableModels.map((model) => (
+                  <option key={model.id} value={model.id}>
                     {model.label}
+                    {model.provider ? ` — ${model.provider}` : ""}
                   </option>
                 ))}
               </select>
