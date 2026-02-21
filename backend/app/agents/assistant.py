@@ -7,7 +7,7 @@ specific providers.
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
 from pydantic_ai import Agent, BinaryContent, UsageLimits
@@ -153,7 +153,7 @@ class AssistantAgent:
         user_input: MultimodalInput,
         history: list[dict[str, str]] | None = None,
         deps: Deps | None = None,
-    ):
+    ) -> AsyncGenerator[Any, None]:
         """Stream agent execution with full event access.
 
         Args:
@@ -206,8 +206,9 @@ def get_agent(
         system_prompt: Custom system prompt (ignored if cached_prompt_name is provided).
         model_name: Model ID to look up in the registry (e.g. "gemini-2.5-flash").
         provider: Pre-resolved ModelProvider (takes precedence over model_name).
-        cached_prompt_name: Gemini cache name for the content (75% cost savings).
-        skip_tool_registration: If True, skip tool registration (tools in cache).
+        cached_prompt_name: Provider cache name for the content (e.g. Gemini CachedContent name).
+        skip_tool_registration: Deprecated no-op. Tools are always registered locally
+            so PydanticAI can handle tool call responses. Kept for backward compatibility.
 
     Returns:
         Configured AssistantAgent instance.

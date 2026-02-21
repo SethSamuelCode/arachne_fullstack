@@ -992,7 +992,6 @@ class TestContextOptimizer:
     async def test_optimize_empty_history_returns_optimized_context(self):
         """Test optimize_context_window with empty history returns OptimizedContext."""
         from app.agents.context_optimizer import optimize_context_window
-
         from app.agents.providers.registry import get_provider
         result = await optimize_context_window(
             history=[],
@@ -1013,7 +1012,6 @@ class TestContextOptimizer:
     async def test_optimize_returns_optimized_context_structure(self):
         """Test optimize_context_window returns correct OptimizedContext structure."""
         from app.agents.context_optimizer import optimize_context_window
-
         from app.agents.providers.registry import get_provider
         history = [{"role": "user", "content": "Hello"}]
         result = await optimize_context_window(
@@ -1042,7 +1040,6 @@ class TestContextOptimizer:
     async def test_optimize_single_message(self):
         """Test optimize_context_window with single message."""
         from app.agents.context_optimizer import optimize_context_window
-
         from app.agents.providers.registry import get_provider
         history = [{"role": "user", "content": "Hello"}]
         result = await optimize_context_window(
@@ -1348,6 +1345,20 @@ class TestGetAgentFactory:
             model_name="gemini-2.5-flash",
         )
         assert agent.skip_tool_registration is False
+
+    @patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key-for-testing"})
+    def test_tools_always_registered_regardless_of_skip_flag(self):
+        """Test that skip_tool_registration=True is a no-op — tools are always registered."""
+        from unittest.mock import patch as mpatch
+
+        agent = get_agent(
+            model_name="gemini-2.5-flash",
+            skip_tool_registration=True,
+        )
+        with mpatch("app.agents.assistant.register_tools") as mock_register:
+            agent._create_agent()
+            mock_register.assert_called_once()
+
 
 
 class TestToolExtraction:
