@@ -237,7 +237,7 @@ class TestPermissiveSafetySettings:
         """Test that spawned agents also have safety filters disabled."""
         from google.genai.types import HarmBlockThreshold
 
-        from app.agents.tool_register import PERMISSIVE_SAFETY_SETTINGS
+        from app.agents.providers.gemini import PERMISSIVE_SAFETY_SETTINGS
 
         # Verify we have all expected harm categories
         assert len(PERMISSIVE_SAFETY_SETTINGS) == 5

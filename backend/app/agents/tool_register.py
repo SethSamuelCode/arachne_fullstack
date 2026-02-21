@@ -2,12 +2,11 @@ import logging
 from typing import Annotated, Any, Literal, TypeVar
 from uuid import UUID, uuid4
 
-from google.genai.types import HarmBlockThreshold, HarmCategory, ThinkingLevel
 from pydantic import Field
 from pydantic_ai import Agent, BinaryContent, RunContext, ToolReturn
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from tavily import TavilyClient
 
+from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
 from app.agents.tools.academic_search import (
     list_arxiv_categories_impl,
     search_arxiv_impl,
@@ -20,9 +19,7 @@ from app.agents.tools.decorators import safe_tool
 from app.agents.tools.extract_webpage import extract_url
 from app.agents.tools.s3_image import s3_fetch_image_impl
 from app.core.config import settings
-from app.schemas import DEFAULT_GEMINI_MODEL
 from app.schemas.assistant import Deps
-from app.schemas.models import GeminiModelName
 from app.schemas.plan import PlanCreate, PlanRead, PlanTaskCreate, PlanTaskUpdate, PlanUpdate
 from app.schemas.spawn_agent_deps import SpawnAgentDeps
 
@@ -32,17 +29,6 @@ ImageModelName = Literal[
     "imagen-4.0-generate-001",
     "imagen-4.0-ultra-generate-001",
     "imagen-4.0-fast-generate-001",
-]
-
-TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
-
-# Safety settings with all filters disabled for maximum permissiveness
-PERMISSIVE_SAFETY_SETTINGS: list[dict[str, Any]] = [
-    {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.OFF},
-    {"category": HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, "threshold": HarmBlockThreshold.OFF},
 ]
 
 TDeps = TypeVar("TDeps", bound=Deps | SpawnAgentDeps)
@@ -130,8 +116,14 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         system_prompt: Annotated[str | None, Field(
             description="Define the sub-agent's role and expertise (e.g., 'You are a Python security expert'). Defaults to generic assistant."
         )] = None,
-        model_name: Annotated[GeminiModelName | None, Field(
-            description="Model to use. 'gemini-2.5-flash' for standard tasks, 'gemini-2.5-pro' for complex reasoning, 'gemini-3-pro-preview' for MAX reasoning on architecture/security/hard problems."
+        model_name: Annotated[str | None, Field(
+            description="Model ID to use. Options: 'gemini-2.5-flash-lite' (fast/cheap), "
+                        "'gemini-2.5-flash' (default, standard tasks), "
+                        "'gemini-2.5-pro' (complex reasoning), "
+                        "'gemini-3-flash-preview' (fast with reasoning), "
+                        "'gemini-3-pro-preview' (max reasoning), "
+                        "'gemini-3.1-pro-preview' (improved Gemini 3 Pro), "
+                        "'glm-5' (Vertex AI). Use stronger models only when needed."
         )] = None,
     ) -> str:
         """
@@ -183,7 +175,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         effective_system_prompt = (
             system_prompt if system_prompt is not None else DEFAULT_SUBAGENT_PROMPT
         )
-        effective_model = model_name if model_name is not None else DEFAULT_GEMINI_MODEL
+        effective_model = model_name if model_name is not None else DEFAULT_MODEL_ID
 
         # Try to get cached content for default sub-agent prompt
         cached_content_name: str | None = None
@@ -192,7 +184,7 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
         # Only use cache if using the default prompt (cached prompts match)
         if effective_system_prompt == DEFAULT_SUBAGENT_PROMPT:
             cached_content_name = await get_subagent_cached_content(
-                model_name=effective_model.value if hasattr(effective_model, "value") else str(effective_model)
+                model_name=str(effective_model)
             )
             if cached_content_name:
                 skip_tool_registration = True
@@ -210,20 +202,12 @@ def register_tools(agent: Agent[TDeps, str]) -> None:
             skip_tool_registration=skip_tool_registration,
         )
 
-        # Model settings with safety filters disabled and thinking enabled
-        model_settings_kwargs: dict[str, Any] = {
-            "google_safety_settings": PERMISSIVE_SAFETY_SETTINGS,
-            "google_thinking_config": {
-                "thinking_level": ThinkingLevel.HIGH,
-            },
-        }
-        # Add cached content if available
-        if cached_content_name:
-            model_settings_kwargs["google_cached_content"] = cached_content_name
-
-        model_settings = GoogleModelSettings(**model_settings_kwargs)
-
-        sub_model = GoogleModel(child_deps.model_name.value, settings=model_settings)
+        # Delegate sub-agent model creation to the registry provider
+        sub_provider = get_provider(str(child_deps.model_name))
+        sub_model = sub_provider.create_pydantic_model(
+            using_cached_tools=skip_tool_registration,
+            cached_content_name=cached_content_name,
+        )
 
         # Build agent kwargs - omit system_prompt if using cached content
         agent_kwargs: dict[str, Any] = {

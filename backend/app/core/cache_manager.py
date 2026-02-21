@@ -93,7 +93,6 @@ async def _invalidate_all_cached_content(redis_client: RedisClient) -> None:
         return
 
     # Delete each cache
-    from app.agents.context_optimizer import _get_genai_client
 
     client = _get_genai_client()
     deleted_count = 0
@@ -218,17 +217,13 @@ async def initialize_cache_manager(redis_client: RedisClient) -> None:
     logger.info("Initializing cache manager...")
 
     # Validate tools cache (invalidate if tools changed)
-    cache_valid = await validate_tools_cache(redis_client)
+    await validate_tools_cache(redis_client)
 
     if settings.ENABLE_SYSTEM_PROMPT_CACHING:
         # Warm sub-agent caches for common models
-        from app.schemas.models import DEFAULT_GEMINI_MODEL
+        from app.agents.providers.registry import DEFAULT_MODEL_ID
 
-        default_model = (
-            DEFAULT_GEMINI_MODEL.value
-            if hasattr(DEFAULT_GEMINI_MODEL, "value")
-            else str(DEFAULT_GEMINI_MODEL)
-        )
+        default_model = DEFAULT_MODEL_ID
 
         # Only warm if cache was valid or just invalidated (fresh start)
         await warm_subagent_cache(default_model, redis_client)
