@@ -5,3 +5,4 @@ export { useLocalChat } from "./use-local-chat";
 export { useConversations } from "./use-conversations";
 export { useFileTreeDnd } from "./useFileTreeDnd";
 export { usePinContent } from "./use-pin-content";
+export { useModelCapabilities } from "./use-model-capabilities";

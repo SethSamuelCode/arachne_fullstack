@@ -11,6 +11,7 @@ import { useConversations } from "@/hooks";
 import { useRouter } from "@/i18n/navigation";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, useDefaultLayout } from "react-resizable-panels";
 
+import { useModelCapabilities } from "@/hooks/use-model-capabilities";
 import { SystemPromptSettings } from "./system-prompt-settings";
 import { PinnedContentIndicator } from "./pinned-content-indicator";
 import { ChatFilesSidebar } from "./chat-files-sidebar";
@@ -206,6 +207,7 @@ function ChatUI({
   ensureConversation,
 }: ChatUIProps) {
   const { isOpen: sidebarOpen, toggle: toggleSidebar } = useFilesSidebarStore();
+  const modalities = useModelCapabilities();
   const stalenessData = usePinnedContentStore((s) => s.stalenessData);
   const isStale = currentConversationId
     ? stalenessData[currentConversationId]?.is_stale ?? false
@@ -270,6 +272,7 @@ function ChatUI({
                 onSend={sendMessage}
                 disabled={!isConnected || isProcessing}
                 isProcessing={isProcessing}
+                supportsImages={modalities.images}
               />
               <div className="flex items-center justify-between mt-3 pt-3 border-t">
                 <div className="flex items-center gap-2">

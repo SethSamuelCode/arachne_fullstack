@@ -10,9 +10,10 @@ interface ChatInputProps {
   onSend: (message: string, attachments?: ChatAttachment[]) => void;
   disabled?: boolean;
   isProcessing?: boolean;
+  supportsImages?: boolean;
 }
 
-export function ChatInput({ onSend, disabled, isProcessing }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isProcessing, supportsImages = true }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,11 +63,13 @@ export function ChatInput({ onSend, disabled, isProcessing }: ChatInputProps) {
     <form onSubmit={handleSubmit} className="relative">
       {/* Attachment Input */}
       <div className="flex items-end gap-2">
-        <ImageAttachmentInput
-          attachments={attachments}
-          onAttachmentsChange={setAttachments}
-          disabled={disabled}
-        />
+        {supportsImages && (
+          <ImageAttachmentInput
+            attachments={attachments}
+            onAttachmentsChange={setAttachments}
+            disabled={disabled}
+          />
+        )}
 
         <div className="flex-1 relative">
           <textarea
