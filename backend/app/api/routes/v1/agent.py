@@ -31,8 +31,8 @@ from pydantic_ai.messages import (
 
 from app.agents.assistant import Deps, get_agent
 from app.agents.context_optimizer import OptimizedContext, optimize_context_window
-from app.agents.providers.registry import get_provider
 from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
+from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
 from app.agents.tools import get_tool_definitions
 from app.api.deps import get_conversation_service, get_current_user_ws
 from app.clients.redis import RedisClient
@@ -472,8 +472,8 @@ async def agent_websocket(
             )
 
             try:
-                # Use user's default model preference or backend default
-                model_name = user.default_model
+                # Resolve provider once — used by both optimize_context_window and get_agent
+                provider = get_provider(user.default_model or DEFAULT_MODEL_ID)
 
                 # Enrich history with tool call context for LLM learning
                 if current_conversation_id:
@@ -510,7 +510,7 @@ async def agent_websocket(
                 # Uses 85% of model's context limit for better responsiveness
                 optimized: OptimizedContext = await optimize_context_window(
                     history=conversation_history,
-                    provider=get_provider(model_name or "gemini-2.5-flash"),
+                    provider=provider,
                     system_prompt=system_prompt,
                     tool_definitions=tool_definitions,
                     redis_client=redis_client,
@@ -526,7 +526,7 @@ async def agent_websocket(
                 # skip_tool_registration=True when tools are already in the cached content
                 assistant = get_agent(
                     system_prompt=optimized["system_prompt"],
-                    model_name=model_name,
+                    provider=provider,
                     cached_prompt_name=optimized["cached_prompt_name"],
                     skip_tool_registration=optimized["skip_tool_registration"],
                 )
@@ -571,10 +571,10 @@ async def agent_websocket(
                                     "user_prompt_processed",
                                     {"prompt": serialize_content(node.user_prompt)},
                                 )
-    
+
                             elif Agent.is_model_request_node(node):
                                 await manager.send_event(websocket, "model_request_start", {})
-    
+
                                 async with node.stream(agent_run.ctx) as request_stream:
                                     async for event in request_stream:
                                         if isinstance(event, PartStartEvent):
@@ -587,7 +587,10 @@ async def agent_websocket(
                                                 },
                                             )
                                             # Send initial content from TextPart if present
-                                            if isinstance(event.part, TextPart) and event.part.content:
+                                            if (
+                                                isinstance(event.part, TextPart)
+                                                and event.part.content
+                                            ):
                                                 await manager.send_event(
                                                     websocket,
                                                     "text_delta",
@@ -597,7 +600,10 @@ async def agent_websocket(
                                                     },
                                                 )
                                             # Handle ThinkingPart - stream to client and accumulate
-                                            elif isinstance(event.part, ThinkingPart) and event.part.content:
+                                            elif (
+                                                isinstance(event.part, ThinkingPart)
+                                                and event.part.content
+                                            ):
                                                 thinking_content_buffer.append(event.part.content)
                                                 if settings.AGENT_STREAM_THINKING:
                                                     await manager.send_event(
@@ -608,7 +614,7 @@ async def agent_websocket(
                                                             "content": event.part.content,
                                                         },
                                                     )
-    
+
                                         elif isinstance(event, PartDeltaEvent):
                                             if isinstance(event.delta, TextPartDelta):
                                                 await manager.send_event(
@@ -620,8 +626,13 @@ async def agent_websocket(
                                                     },
                                                 )
                                             # Handle ThinkingPartDelta - stream to client and accumulate
-                                            elif isinstance(event.delta, ThinkingPartDelta) and event.delta.content_delta:
-                                                thinking_content_buffer.append(event.delta.content_delta)
+                                            elif (
+                                                isinstance(event.delta, ThinkingPartDelta)
+                                                and event.delta.content_delta
+                                            ):
+                                                thinking_content_buffer.append(
+                                                    event.delta.content_delta
+                                                )
                                                 if settings.AGENT_STREAM_THINKING:
                                                     await manager.send_event(
                                                         websocket,
@@ -640,17 +651,17 @@ async def agent_websocket(
                                                         "args_delta": event.delta.args_delta,
                                                     },
                                                 )
-    
+
                                         elif isinstance(event, FinalResultEvent):
                                             await manager.send_event(
                                                 websocket,
                                                 "final_result_start",
                                                 {"tool_name": event.tool_name},
                                             )
-    
+
                             elif Agent.is_call_tools_node(node):
                                 await manager.send_event(websocket, "call_tools_start", {})
-    
+
                                 async with node.stream(agent_run.ctx) as handle_stream:
                                     async for event in handle_stream:
                                         if isinstance(event, FunctionToolCallEvent):
@@ -663,26 +674,30 @@ async def agent_websocket(
                                                     "tool_call_id": event.part.tool_call_id,
                                                 },
                                             )
-    
+
                                             # Persist tool call to database
                                             if current_conversation_id:
                                                 try:
                                                     # Create assistant message if not exists
                                                     if assistant_message_id is None:
                                                         async with get_db_context() as db:
-                                                            conv_service = get_conversation_service(db)
+                                                            conv_service = get_conversation_service(
+                                                                db
+                                                            )
                                                             assistant_msg = await conv_service.add_message(
                                                                 UUID(current_conversation_id),
                                                                 MessageCreate(
                                                                     role="assistant",
                                                                     content="",  # Will be updated after agent completes
                                                                     model_name=assistant.model_name
-                                                                    if hasattr(assistant, "model_name")
+                                                                    if hasattr(
+                                                                        assistant, "model_name"
+                                                                    )
                                                                     else None,
                                                                 ),
                                                             )
                                                             assistant_message_id = assistant_msg.id
-    
+
                                                     # Start tool call
                                                     async with get_db_context() as db:
                                                         conv_service = get_conversation_service(db)
@@ -698,17 +713,19 @@ async def agent_websocket(
                                                             ),
                                                         )
                                                         # Map PydanticAI ID to DB UUID
-                                                        tool_call_mapping[event.part.tool_call_id] = (
-                                                            tool_call.id
-                                                        )
+                                                        tool_call_mapping[
+                                                            event.part.tool_call_id
+                                                        ] = tool_call.id
                                                 except Exception as e:
                                                     logger.warning(
                                                         f"Failed to persist tool call start: {e}"
                                                     )
-    
+
                                         elif isinstance(event, FunctionToolResultEvent):
                                             # Serialize content, handling BinaryContent for images
-                                            content_parts = serialize_tool_content(event.result.content)
+                                            content_parts = serialize_tool_content(
+                                                event.result.content
+                                            )
                                             await manager.send_event(
                                                 websocket,
                                                 "tool_result",
@@ -717,7 +734,7 @@ async def agent_websocket(
                                                     "content": content_parts,
                                                 },
                                             )
-    
+
                                             # Persist tool result to database
                                             if (
                                                 current_conversation_id
@@ -728,18 +745,19 @@ async def agent_websocket(
                                                     db_tool_call_id = tool_call_mapping[
                                                         event.tool_call_id
                                                     ]
-    
+
                                                     # Serialize result for database (text only, truncated)
                                                     result_text = serialize_tool_result_for_db(
                                                         event.result.content
                                                     )
-    
+
                                                     # Detect if this is an error result
                                                     is_error = (
                                                         isinstance(event.result.content, dict)
-                                                        and event.result.content.get("error") is True
+                                                        and event.result.content.get("error")
+                                                        is True
                                                     )
-    
+
                                                     # Complete tool call
                                                     async with get_db_context() as db:
                                                         conv_service = get_conversation_service(db)
@@ -755,14 +773,14 @@ async def agent_websocket(
                                                     logger.warning(
                                                         f"Failed to persist tool result: {e}"
                                                     )
-    
+
                             elif Agent.is_end_node(node) and agent_run.result is not None:
                                 await manager.send_event(
                                     websocket,
                                     "final_result",
                                     {"output": agent_run.result.output},
                                 )
-    
+
                 # Update conversation history
                 conversation_history.append({"role": "user", "content": user_message})
                 if agent_run.result:
@@ -773,8 +791,10 @@ async def agent_websocket(
                 # Save or update assistant response to database
                 if current_conversation_id and agent_run.result:
                     # Combine thinking content if any was captured
-                    final_thinking_content = "".join(thinking_content_buffer) if thinking_content_buffer else None
-                    
+                    final_thinking_content = (
+                        "".join(thinking_content_buffer) if thinking_content_buffer else None
+                    )
+
                     try:
                         async with get_db_context() as db:
                             conv_service = get_conversation_service(db)
