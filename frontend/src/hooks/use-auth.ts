@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useAuthStore } from "@/stores";
+import { useAuthStore, useThemeStore } from "@/stores";
+import { Theme } from "@/stores/theme-store";
 import { apiClient, ApiError } from "@/lib/api-client";
 import type { User, LoginRequest, RegisterRequest } from "@/types";
 import { ROUTES } from "@/lib/constants";
@@ -56,6 +57,9 @@ export function useAuth() {
       // Re-fetch user after token refresh to get updated data
       const userData = await apiClient.get<User>("/auth/me");
       setUser(userData);
+      if (userData?.theme) {
+        useThemeStore.getState().setTheme(userData.theme as Theme);
+      }
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -112,6 +116,9 @@ export function useAuth() {
       try {
         const userData = await apiClient.get<User>("/auth/me");
         setUser(userData);
+        if (userData?.theme) {
+          useThemeStore.getState().setTheme(userData.theme as Theme);
+        }
         // Start proactive refresh timer after successful auth check
         scheduleRefresh();
       } catch {
@@ -152,6 +159,9 @@ export function useAuth() {
           credentials
         );
         setUser(response.user);
+        if (response.user?.theme) {
+          useThemeStore.getState().setTheme(response.user.theme as Theme);
+        }
 
         // Check for callback URL from middleware redirect
         const callbackUrl = searchParams.get("callbackUrl");

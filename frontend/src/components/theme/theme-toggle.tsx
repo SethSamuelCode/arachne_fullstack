@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { Moon, Sun, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useThemeStore, Theme, getResolvedTheme } from "@/stores/theme-store";
+import { useAuthStore } from "@/stores";
+import { apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 interface ThemeToggleProps {
@@ -22,13 +24,23 @@ export function ThemeToggle({ variant = "icon", className, isCollapsed = false }
     setMounted(true);
   }, []);
 
-  const resolvedTheme = getResolvedTheme(theme);
+  const handleSetTheme = async (newTheme: Theme) => {
+    setTheme(newTheme);
+    const isAuthenticated = useAuthStore.getState().isAuthenticated;
+    if (isAuthenticated) {
+      try {
+        await apiClient.patch("/users/me", { theme: newTheme });
+      } catch (error) {
+        console.error("Failed to save theme to backend", error);
+      }
+    }
+  };
 
   const cycleTheme = () => {
     const themes: Theme[] = ["light", "dark", "system"];
     const currentIndex = themes.indexOf(theme);
     const nextIndex = (currentIndex + 1) % themes.length;
-    setTheme(themes[nextIndex]);
+    handleSetTheme(themes[nextIndex]);
   };
 
   const getThemeIcon = () => {
@@ -124,7 +136,7 @@ export function ThemeToggle({ variant = "icon", className, isCollapsed = false }
       <Button
         variant={theme === "light" ? "default" : "ghost"}
         size="icon"
-        onClick={() => setTheme("light")}
+        onClick={() => handleSetTheme("light")}
         aria-label="Light mode"
         title="Light mode"
       >
@@ -133,7 +145,7 @@ export function ThemeToggle({ variant = "icon", className, isCollapsed = false }
       <Button
         variant={theme === "dark" ? "default" : "ghost"}
         size="icon"
-        onClick={() => setTheme("dark")}
+        onClick={() => handleSetTheme("dark")}
         aria-label="Dark mode"
         title="Dark mode"
       >
@@ -142,7 +154,7 @@ export function ThemeToggle({ variant = "icon", className, isCollapsed = false }
       <Button
         variant={theme === "system" ? "default" : "ghost"}
         size="icon"
-        onClick={() => setTheme("system")}
+        onClick={() => handleSetTheme("system")}
         aria-label="System theme"
         title="System theme"
       >

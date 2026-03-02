@@ -14,6 +14,7 @@ export interface User {
   role?: UserRole;
   default_system_prompt?: string;
   default_model?: string;
+  theme?: "light" | "dark" | "system";
   created_at: string;
   updated_at?: string;
 }

@@ -58,6 +58,7 @@ class UserUpdate(BaseSchema):
     role: UserRole | None = None
     default_system_prompt: str | None = None
     default_model: str | None = None
+    theme: str | None = None
 
 
 class UserRead(UserBase, TimestampSchema):
@@ -68,6 +69,7 @@ class UserRead(UserBase, TimestampSchema):
     role: UserRole = UserRole.USER
     default_system_prompt: str | None = None
     default_model: str | None = None
+    theme: str | None = None
 
 
 class UserInDB(UserRead):
