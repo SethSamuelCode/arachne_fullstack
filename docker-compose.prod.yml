@@ -27,6 +27,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./service_account.json:/app/service_account.json:ro
+      # - ./backend/alembic:/app/alembic:rw
     networks:
       - backend-internal
     ports:
