@@ -819,6 +819,13 @@ async def agent_websocket(
     returned in the 'conversation_created' event.
     """
 
+    import warnings
+    warnings.warn(
+        "WebSocket agent endpoint is deprecated. Use POST /agent/run + SSE instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+
     await manager.connect(websocket)
 
     # Conversation state per connection

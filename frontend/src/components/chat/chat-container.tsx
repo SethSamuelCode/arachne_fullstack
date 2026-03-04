@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useChat, useConversations, useModelCapabilities } from "@/hooks";
+import { useConversations, useModelCapabilities } from "@/hooks";
+import { useAgentRun } from "@/hooks/use-agent-run";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { Button } from "@/components/ui";
-import { Wifi, WifiOff, RotateCcw, Bot, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { RotateCcw, Bot, PanelRightOpen, PanelRightClose, Square } from "lucide-react";
 import { useConversationStore, useChatStore, useAuthStore, useFilesSidebarStore } from "@/stores";
 import { useRouter } from "@/i18n/navigation";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, useDefaultLayout } from "react-resizable-panels";
@@ -66,13 +67,11 @@ function AuthenticatedChatContainer() {
 
   const {
     messages,
-    isConnected,
     isProcessing,
-    connect,
-    disconnect,
     sendMessage,
+    cancelRun,
     clearMessages,
-  } = useChat({
+  } = useAgentRun({
     conversationId: currentConversationId,
     onConversationCreated: handleConversationCreated,
     ensureConversation,
@@ -141,11 +140,6 @@ function AuthenticatedChatContainer() {
     }
   }, [currentMessages, addChatMessage]);
 
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
-
   // Auto-scroll to bottom only if user is near the bottom
   useEffect(() => {
     if (isUserNearBottomRef.current) {
@@ -156,9 +150,9 @@ function AuthenticatedChatContainer() {
   return (
     <ChatUI
       messages={messages}
-      isConnected={isConnected}
       isProcessing={isProcessing}
       sendMessage={(content, attachments) => sendMessage(content, attachments, systemPrompt)}
+      cancelRun={cancelRun}
       clearMessages={clearMessages}
       messagesEndRef={messagesEndRef}
       scrollContainerRef={scrollContainerRef}
@@ -174,9 +168,9 @@ function AuthenticatedChatContainer() {
 
 interface ChatUIProps {
   messages: import("@/types").ChatMessage[];
-  isConnected: boolean;
   isProcessing: boolean;
   sendMessage: (content: string, attachments?: import("@/types").ChatAttachment[]) => void;
+  cancelRun: () => void;
   clearMessages: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -190,9 +184,9 @@ interface ChatUIProps {
 
 function ChatUI({
   messages,
-  isConnected,
   isProcessing,
   sendMessage,
+  cancelRun,
   clearMessages,
   messagesEndRef,
   scrollContainerRef,
@@ -267,20 +261,23 @@ function ChatUI({
             <div className="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
               <ChatInput
                 onSend={sendMessage}
-                disabled={!isConnected || isProcessing}
+                disabled={isProcessing}
                 isProcessing={isProcessing}
                 supportsImages={modalities.images}
               />
               <div className="flex items-center justify-between mt-3 pt-3 border-t">
                 <div className="flex items-center gap-2">
-                  {isConnected ? (
-                    <Wifi className="h-3.5 w-3.5 text-green-500" />
-                  ) : (
-                    <WifiOff className="h-3.5 w-3.5 text-red-500" />
+                  {isProcessing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={cancelRun}
+                      className="text-xs h-7 px-2 text-destructive hover:text-destructive"
+                    >
+                      <Square className="h-3 w-3 mr-1 fill-current" />
+                      Stop
+                    </Button>
                   )}
-                  <span className="text-xs text-muted-foreground">
-                    {isConnected ? "Connected" : "Disconnected"}
-                  </span>
                   {currentConversationId && (
                     <PinnedContentIndicator conversationId={currentConversationId} />
                   )}

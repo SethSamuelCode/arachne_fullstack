@@ -25,6 +25,11 @@ interface AttachmentPayload {
   filename?: string;
 }
 
+/**
+ * @deprecated Use useAgentRun from "@/hooks/use-agent-run" instead.
+ * This WebSocket-based hook is replaced by the SSE-based useAgentRun hook
+ * which supports background execution and reconnection via Last-Event-ID.
+ */
 export function useChat(options: UseChatOptions = {}) {
   const { conversationId, onConversationCreated, ensureConversation } = options;
   const { setCurrentConversationId } = useConversationStore();

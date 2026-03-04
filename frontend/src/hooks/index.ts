@@ -1,5 +1,7 @@
 export { useAuth } from "./use-auth";
 export { useWebSocket } from "./use-websocket";
+export { useAgentRun } from "./use-agent-run";
+/** @deprecated Use useAgentRun instead */
 export { useChat } from "./use-chat";
 export { useLocalChat } from "./use-local-chat";
 export { useConversations } from "./use-conversations";
