@@ -81,7 +81,7 @@ export interface ToolCall {
   status: "pending" | "running" | "completed" | "error";
 }
 
-// WebSocket event types from backend
+// WebSocket/SSE event types from backend
 export type WSEventType =
   | "user_prompt"
   | "user_prompt_processed"
@@ -96,6 +96,7 @@ export type WSEventType =
   | "final_result_start"
   | "final_result"
   | "complete"
+  | "cancelled"
   | "error"
   | "conversation_created"
   | "conversation_updated"
