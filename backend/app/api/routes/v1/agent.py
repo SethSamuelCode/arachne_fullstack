@@ -1,13 +1,19 @@
-"""AI Agent WebSocket routes with streaming support (PydanticAI)."""
+"""AI Agent routes with streaming support (PydanticAI).
+
+Provides both HTTP (SSE-based) and WebSocket (legacy) endpoints for agent execution.
+"""
 
 import base64
+import json
 import logging
+import uuid as uuid_mod
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import (
     Agent,
     BinaryContent,
@@ -37,8 +43,10 @@ from app.agents.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agents.providers.base import ModelProvider
 from app.agents.providers.registry import DEFAULT_MODEL_ID, get_provider
 from app.agents.tools import get_tool_definitions
-from app.api.deps import get_conversation_service, get_current_user_ws
+from app.api.deps import get_conversation_service, get_current_user, get_current_user_ws, get_redis
 from app.clients.redis import RedisClient
+from app.services.agent_job import AgentJobService
+from app.worker.tasks.agent_run import run_agent_task
 from app.core.config import settings
 from app.core.utils import serialize_tool_result_for_db
 from app.db.models.user import User
@@ -559,6 +567,211 @@ async def _run_agent_non_streaming(
         "complete",
         {"conversation_id": conversation_id},
     )
+
+
+# ---------------------------------------------------------------------------
+# HTTP endpoints for decoupled agent execution (SSE-based)
+# ---------------------------------------------------------------------------
+
+
+class AgentRunRequest(BaseModel):
+    """Request body for starting an agent run."""
+
+    conversation_id: str | None = None
+    content: str
+    model: str | None = None
+    system_prompt: str | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AgentRunResponse(BaseModel):
+    """Response from starting an agent run."""
+
+    job_id: str
+    conversation_id: str
+    stream_url: str
+
+
+@router.post("/agent/run", status_code=202, response_model=AgentRunResponse)
+async def start_agent_run(
+    body: AgentRunRequest,
+    user: User = Depends(get_current_user),
+    redis: RedisClient = Depends(get_redis),
+) -> AgentRunResponse:
+    """Start a background agent run. Returns job_id and SSE stream URL."""
+    job_id = str(uuid_mod.uuid4())
+    conversation_history: list[dict[str, str]] = []
+
+    async with get_db_context() as db:
+        conv_service = get_conversation_service(db)
+
+        if body.conversation_id:
+            await conv_service.get_conversation(UUID(body.conversation_id))
+            conversation_id = body.conversation_id
+
+            # Restore history
+            _, total = await conv_service.list_messages(UUID(conversation_id), limit=1)
+            fetch_limit = 1000
+            skip = max(0, total - fetch_limit)
+            restored, _ = await conv_service.list_messages(
+                UUID(conversation_id), skip=skip, limit=fetch_limit, include_tool_calls=True,
+            )
+            for msg in restored:
+                conversation_history.append({"role": msg.role, "content": msg.content or ""})
+        else:
+            conv_system_prompt = body.system_prompt or user.default_system_prompt or DEFAULT_SYSTEM_PROMPT
+            conv = await conv_service.create_conversation(
+                ConversationCreate(user_id=user.id, title=None, system_prompt=conv_system_prompt),
+            )
+            conversation_id = str(conv.id)
+
+        # Save user message
+        await conv_service.add_message(
+            UUID(conversation_id), MessageCreate(role="user", content=body.content),
+        )
+
+    # Retrieve system prompt for this conversation
+    system_prompt_text: str = DEFAULT_SYSTEM_PROMPT
+    async with get_db_context() as db:
+        conv_service = get_conversation_service(db)
+        conv_obj = await conv_service.get_conversation(UUID(conversation_id))
+        if conv_obj and conv_obj.system_prompt:
+            system_prompt_text = conv_obj.system_prompt
+        elif user.default_system_prompt:
+            system_prompt_text = user.default_system_prompt
+
+    # Enrich history with tool calls
+    conversation_history = await enrich_history_with_tool_calls(
+        conversation_history, UUID(conversation_id),
+    )
+
+    # Enqueue Celery task
+    model_name = body.model or user.default_model or DEFAULT_MODEL_ID
+    celery_result = run_agent_task.delay(
+        job_id=job_id,
+        conversation_id=conversation_id,
+        user_id=str(user.id),
+        user_email=user.email,
+        user_message=body.content,
+        model_name=model_name,
+        system_prompt=system_prompt_text,
+        message_history=conversation_history,
+        attachments=body.attachments,
+    )
+
+    # Store job metadata
+    job_service = AgentJobService(redis)
+    await job_service.create_job(
+        job_id,
+        conversation_id=conversation_id,
+        user_id=str(user.id),
+        celery_task_id=celery_result.id,
+    )
+
+    return AgentRunResponse(
+        job_id=job_id,
+        conversation_id=conversation_id,
+        stream_url=f"/api/v1/agent/run/{job_id}/stream",
+    )
+
+
+@router.get("/agent/run/{job_id}/stream")
+async def stream_agent_run(
+    job_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    redis: RedisClient = Depends(get_redis),
+) -> StreamingResponse:
+    """SSE endpoint for streaming agent run events. Supports Last-Event-ID for reconnection."""
+    job_service = AgentJobService(redis)
+    job_meta = await job_service.get_job_status(job_id)
+
+    if not job_meta:
+        return JSONResponse({"detail": "Job not found"}, status_code=404)
+
+    if job_meta.get("user_id") != str(user.id):
+        return JSONResponse({"detail": "Not authorized"}, status_code=403)
+
+    last_event_id = request.headers.get("Last-Event-ID", "0")
+
+    async def event_generator():
+        cursor = last_event_id
+        while True:
+            if await request.is_disconnected():
+                return
+
+            events = await job_service.read_events(
+                job_id, last_id=cursor, block=5000, count=50,
+            )
+
+            if events:
+                for event in events:
+                    cursor = event["stream_id"]
+                    yield (
+                        f"id: {event['stream_id']}\n"
+                        f"event: {event['type']}\n"
+                        f"data: {json.dumps(event['data'])}\n\n"
+                    )
+                    if event["type"] in ("complete", "cancelled", "error"):
+                        return
+            else:
+                meta = await job_service.get_job_status(job_id)
+                if meta and meta.get("status") in ("completed", "failed", "cancelled"):
+                    return
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/agent/run/{job_id}/cancel")
+async def cancel_agent_run(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    redis: RedisClient = Depends(get_redis),
+):
+    """Cancel a running agent job."""
+    job_service = AgentJobService(redis)
+    job_meta = await job_service.get_job_status(job_id)
+
+    if not job_meta:
+        return JSONResponse({"detail": "Job not found"}, status_code=404)
+
+    if job_meta.get("user_id") != str(user.id):
+        return JSONResponse({"detail": "Not authorized"}, status_code=403)
+
+    await job_service.request_cancellation(job_id)
+    return {"status": "cancelling"}
+
+
+@router.get("/agent/run/{job_id}/status")
+async def get_agent_run_status(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    redis: RedisClient = Depends(get_redis),
+):
+    """Get the status of an agent run."""
+    job_service = AgentJobService(redis)
+    job_meta = await job_service.get_job_status(job_id)
+
+    if not job_meta:
+        return JSONResponse({"detail": "Job not found"}, status_code=404)
+
+    if job_meta.get("user_id") != str(user.id):
+        return JSONResponse({"detail": "Not authorized"}, status_code=403)
+
+    return job_meta
+
+
+# ---------------------------------------------------------------------------
+# Legacy WebSocket endpoint (deprecated — use POST /agent/run + SSE instead)
+# ---------------------------------------------------------------------------
 
 
 @router.websocket("/ws/agent")
